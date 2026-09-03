@@ -18,6 +18,7 @@ const swagger_1 = require("@nestjs/swagger");
 const auth_service_1 = require("./auth.service");
 const login_dto_1 = require("./dto/login.dto");
 const register_dto_1 = require("./dto/register.dto");
+const refresh_token_dto_1 = require("./dto/refresh-token.dto");
 const forgot_password_dto_1 = require("./dto/forgot-password.dto");
 const verify_otp_dto_1 = require("./dto/verify-otp.dto");
 const reset_password_dto_1 = require("./dto/reset-password.dto");
@@ -34,6 +35,9 @@ let AuthController = class AuthController {
     login(loginDto) {
         return this.authService.login(loginDto);
     }
+    refreshToken(refreshTokenDto) {
+        return this.authService.refreshToken(refreshTokenDto);
+    }
     forgotPassword(forgotPasswordDto) {
         return this.authService.forgotPassword(forgotPasswordDto);
     }
@@ -46,13 +50,16 @@ let AuthController = class AuthController {
     getProfile(userId) {
         return this.authService.getProfile(userId);
     }
+    logout(userId, body) {
+        return this.authService.logout(userId, body?.refreshToken);
+    }
 };
 exports.AuthController = AuthController;
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Post)('register'),
     (0, swagger_1.ApiOperation)({ summary: 'Đăng ký tài khoản người dùng mới' }),
-    (0, swagger_1.ApiResponse)({ status: 201, description: 'Đăng ký thành công, trả về thông tin user và accessToken' }),
+    (0, swagger_1.ApiResponse)({ status: 201, description: 'Đăng ký thành công, trả về thông tin user, accessToken và refreshToken' }),
     (0, swagger_1.ApiResponse)({ status: 409, description: 'Email đã tồn tại' }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -63,13 +70,24 @@ __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Post)('login'),
     (0, swagger_1.ApiOperation)({ summary: 'Đăng nhập hệ thống' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Đăng nhập thành công, trả về JWT accessToken' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Đăng nhập thành công, trả về accessToken, refreshToken và thông tin user' }),
     (0, swagger_1.ApiResponse)({ status: 401, description: 'Email hoặc mật khẩu không hợp lệ' }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [login_dto_1.LoginDto]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "login", null);
+__decorate([
+    (0, public_decorator_1.Public)(),
+    (0, common_1.Post)('refresh-token'),
+    (0, swagger_1.ApiOperation)({ summary: 'Làm mới Access Token bằng Refresh Token' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Làm mới token thành công, cấp phát cặp accessToken và refreshToken mới' }),
+    (0, swagger_1.ApiResponse)({ status: 401, description: 'Refresh token không hợp lệ hoặc đã hết hạn' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [refresh_token_dto_1.RefreshTokenDto]),
+    __metadata("design:returntype", void 0)
+], AuthController.prototype, "refreshToken", null);
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Post)('forgot-password'),
@@ -104,7 +122,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "resetPassword", null);
 __decorate([
-    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('me'),
     (0, swagger_1.ApiOperation)({ summary: 'Lấy thông tin tài khoản hiện tại' }),
@@ -114,6 +132,18 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "getProfile", null);
+__decorate([
+    (0, swagger_1.ApiBearerAuth)('JWT-auth'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Post)('logout'),
+    (0, swagger_1.ApiOperation)({ summary: 'Đăng xuất tài khoản và thu hồi token' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Đăng xuất thành công' }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)('id')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], AuthController.prototype, "logout", null);
 exports.AuthController = AuthController = __decorate([
     (0, swagger_1.ApiTags)('Authentication'),
     (0, common_1.Controller)('auth'),

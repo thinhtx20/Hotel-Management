@@ -7,6 +7,7 @@ import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 export declare class AuthService {
     private prisma;
     private jwtService;
@@ -14,6 +15,10 @@ export declare class AuthService {
     private redisService;
     constructor(prisma: PrismaService, jwtService: JwtService, mailService: MailService, redisService: RedisService);
     register(dto: RegisterDto): Promise<{
+        accessToken: string;
+        refreshToken: string;
+        tokenType: string;
+        expiresIn: number;
         user: {
             id: string;
             email: string;
@@ -22,9 +27,12 @@ export declare class AuthService {
             role: import(".prisma/client").$Enums.Role;
             createdAt: Date;
         };
-        accessToken: string;
     }>;
     login(dto: LoginDto): Promise<{
+        accessToken: string;
+        refreshToken: string;
+        tokenType: string;
+        expiresIn: number;
         user: {
             id: string;
             email: string;
@@ -32,7 +40,6 @@ export declare class AuthService {
             phone: string;
             role: import(".prisma/client").$Enums.Role;
         };
-        accessToken: string;
     }>;
     getProfile(userId: string): Promise<{
         id: string;
@@ -62,5 +69,24 @@ export declare class AuthService {
         success: boolean;
         message: string;
     }>;
+    refreshToken(dto: RefreshTokenDto): Promise<{
+        user: {
+            id: string;
+            email: string;
+            fullName: string;
+            phone: string;
+            role: import(".prisma/client").$Enums.Role;
+        };
+        accessToken: string;
+        refreshToken: string;
+        tokenType: string;
+        expiresIn: number;
+    }>;
+    logout(userId: string, refreshToken?: string): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    private generateTokens;
+    private parseExpiresInToSeconds;
     private generateToken;
 }

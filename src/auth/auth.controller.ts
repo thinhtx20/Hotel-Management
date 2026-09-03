@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -18,7 +19,7 @@ export class AuthController {
   @Public()
   @Post('register')
   @ApiOperation({ summary: 'Đăng ký tài khoản người dùng mới' })
-  @ApiResponse({ status: 201, description: 'Đăng ký thành công, trả về thông tin user và accessToken' })
+  @ApiResponse({ status: 201, description: 'Đăng ký thành công, trả về thông tin user, accessToken và refreshToken' })
   @ApiResponse({ status: 409, description: 'Email đã tồn tại' })
   register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
@@ -27,10 +28,19 @@ export class AuthController {
   @Public()
   @Post('login')
   @ApiOperation({ summary: 'Đăng nhập hệ thống' })
-  @ApiResponse({ status: 200, description: 'Đăng nhập thành công, trả về JWT accessToken' })
+  @ApiResponse({ status: 200, description: 'Đăng nhập thành công, trả về accessToken, refreshToken và thông tin user' })
   @ApiResponse({ status: 401, description: 'Email hoặc mật khẩu không hợp lệ' })
   login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Public()
+  @Post('refresh-token')
+  @ApiOperation({ summary: 'Làm mới Access Token bằng Refresh Token' })
+  @ApiResponse({ status: 200, description: 'Làm mới token thành công, cấp phát cặp accessToken và refreshToken mới' })
+  @ApiResponse({ status: 401, description: 'Refresh token không hợp lệ hoặc đã hết hạn' })
+  refreshToken(@Body() refreshTokenDto: RefreshTokenDto) {
+    return this.authService.refreshToken(refreshTokenDto);
   }
 
   @Public()
@@ -60,13 +70,25 @@ export class AuthController {
     return this.authService.resetPassword(resetPasswordDto);
   }
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard)
   @Get('me')
   @ApiOperation({ summary: 'Lấy thông tin tài khoản hiện tại' })
   @ApiResponse({ status: 200, description: 'Thông tin tài khoản' })
   getProfile(@CurrentUser('id') userId: string) {
     return this.authService.getProfile(userId);
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  @ApiOperation({ summary: 'Đăng xuất tài khoản và thu hồi token' })
+  @ApiResponse({ status: 200, description: 'Đăng xuất thành công' })
+  logout(
+    @CurrentUser('id') userId: string,
+    @Body() body?: Partial<RefreshTokenDto>,
+  ) {
+    return this.authService.logout(userId, body?.refreshToken);
   }
 }
 

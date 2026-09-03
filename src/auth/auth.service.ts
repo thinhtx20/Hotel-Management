@@ -15,6 +15,7 @@ import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { Role } from '@prisma/client';
 
 @Injectable()
@@ -55,11 +56,11 @@ export class AuthService {
       },
     });
 
-    const token = this.generateToken(user.id, user.email, user.role);
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
 
     return {
       user,
-      accessToken: token,
+      ...tokens,
     };
   }
 
@@ -81,7 +82,7 @@ export class AuthService {
       throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
     }
 
-    const token = this.generateToken(user.id, user.email, user.role);
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
 
     return {
       user: {
@@ -91,7 +92,7 @@ export class AuthService {
         phone: user.phone,
         role: user.role,
       },
-      accessToken: token,
+      ...tokens,
     };
   }
 
@@ -304,8 +305,155 @@ export class AuthService {
     };
   }
 
+  /**
+   * Cấp lại accessToken & refreshToken mới khi accessToken hết hạn (Token Rotation)
+   */
+  async refreshToken(dto: RefreshTokenDto) {
+    const refreshSecret =
+      process.env.JWT_REFRESH_SECRET || 'super-secret-hotel-refresh-jwt-key-2026';
+    let payload: any;
+
+    try {
+      payload = this.jwtService.verify(dto.refreshToken, {
+        secret: refreshSecret,
+      });
+    } catch (err) {
+      // Fallback xác thực với JWT_SECRET trong trường hợp token tạo từ secret chung
+      try {
+        const fallbackSecret =
+          process.env.JWT_SECRET || 'super-secret-hotel-jwt-key-2026-change-in-production';
+        payload = this.jwtService.verify(dto.refreshToken, {
+          secret: fallbackSecret,
+        });
+      } catch (fallbackErr) {
+        throw new UnauthorizedException('Refresh token không hợp lệ hoặc đã hết hạn');
+      }
+    }
+
+    if (!payload || !payload.sub) {
+      throw new UnauthorizedException('Refresh token không hợp lệ');
+    }
+
+    const userId = payload.sub;
+
+    // Kiểm tra và thu hồi token cũ trong Redis (Token Rotation / Single-use)
+    if (this.redisService?.isReady && payload.jti) {
+      const stored = await this.redisService.get(`auth:refresh:${userId}:${payload.jti}`);
+      if (!stored) {
+        throw new UnauthorizedException('Phiên đăng nhập đã bị thu hồi hoặc đã được làm mới');
+      }
+      await this.redisService.del(`auth:refresh:${userId}:${payload.jti}`);
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Tài khoản người dùng không tồn tại hoặc đã bị khóa');
+    }
+
+    const newTokens = await this.generateTokens(user.id, user.email, user.role);
+
+    return {
+      ...newTokens,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        phone: user.phone,
+        role: user.role,
+      },
+    };
+  }
+
+  /**
+   * Đăng xuất & thu hồi Refresh Token trong Redis
+   */
+  async logout(userId: string, refreshToken?: string) {
+    if (this.redisService?.isReady) {
+      if (refreshToken) {
+        try {
+          const payload: any = this.jwtService.decode(refreshToken);
+          if (payload?.jti) {
+            await this.redisService.del(`auth:refresh:${userId}:${payload.jti}`);
+          }
+        } catch {
+          // Bỏ qua lỗi decode token
+        }
+      } else {
+        await this.redisService.delByPattern(`auth:refresh:${userId}:*`);
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Đăng xuất thành công',
+    };
+  }
+
+  /**
+   * Tạo cặp Access Token và Refresh Token kèm metadata
+   */
+  private async generateTokens(userId: string, email: string, role: Role) {
+    const accessSecret =
+      process.env.JWT_SECRET || 'super-secret-hotel-jwt-key-2026-change-in-production';
+    const refreshSecret =
+      process.env.JWT_REFRESH_SECRET || 'super-secret-hotel-refresh-jwt-key-2026';
+    const accessExpiresIn = process.env.JWT_EXPIRES_IN || '1d';
+    const refreshExpiresIn = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
+
+    const accessPayload = { sub: userId, email, role, type: 'access' };
+    const accessToken = this.jwtService.sign(accessPayload, {
+      secret: accessSecret,
+      expiresIn: accessExpiresIn,
+    });
+
+    const tokenId = crypto.randomUUID();
+    const refreshPayload = { sub: userId, email, role, jti: tokenId, type: 'refresh' };
+    const refreshToken = this.jwtService.sign(refreshPayload, {
+      secret: refreshSecret,
+      expiresIn: refreshExpiresIn,
+    });
+
+    const refreshTtlSeconds = this.parseExpiresInToSeconds(refreshExpiresIn, 7 * 24 * 3600);
+    if (this.redisService?.isReady) {
+      await this.redisService.set(
+        `auth:refresh:${userId}:${tokenId}`,
+        { userId, email, role, createdAt: new Date().toISOString() },
+        refreshTtlSeconds,
+      );
+    }
+
+    const accessExpiresInSeconds = this.parseExpiresInToSeconds(accessExpiresIn, 24 * 3600);
+
+    return {
+      accessToken,
+      refreshToken,
+      tokenType: 'Bearer',
+      expiresIn: accessExpiresInSeconds,
+    };
+  }
+
+  private parseExpiresInToSeconds(expiresIn: string | number, fallbackSeconds = 86400): number {
+    if (typeof expiresIn === 'number') return expiresIn;
+    if (!expiresIn) return fallbackSeconds;
+    const str = String(expiresIn).trim().toLowerCase();
+    const match = str.match(/^(\d+)([smhd]?)$/);
+    if (!match) return fallbackSeconds;
+    const num = parseInt(match[1], 10);
+    const unit = match[2];
+    switch (unit) {
+      case 's': return num;
+      case 'm': return num * 60;
+      case 'h': return num * 3600;
+      case 'd': return num * 86400;
+      default: return num;
+    }
+  }
+
   private generateToken(userId: string, email: string, role: Role): string {
-    const payload = { sub: userId, email, role };
+    const payload = { sub: userId, email, role, type: 'access' };
     return this.jwtService.sign(payload);
   }
 }
