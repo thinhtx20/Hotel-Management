@@ -7,7 +7,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { AddServiceOrderDto, CheckOutDto } from './dto/update-booking-status.dto';
@@ -15,7 +15,38 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { ApiSuccessResponse, ApiErrorResponse } from '../common/decorators/api-success-response.decorator';
 import { BookingStatus, Role } from '@prisma/client';
+
+const SAMPLE_BOOKING = {
+  id: 'b1e4c7a2-9d3f-4e8b-8a21-72948e9102c1',
+  bookingCode: 'BK-2026-0829',
+  customerId: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d',
+  roomId: '3f6c8d20-41ab-4f27-96a8-208935cba48b',
+  checkInDate: '2026-09-05T14:00:00.000Z',
+  checkOutDate: '2026-09-08T12:00:00.000Z',
+  actualCheckIn: null,
+  actualCheckOut: null,
+  guestCount: 2,
+  totalAmount: 3600000,
+  depositAmount: 1000000,
+  status: 'CONFIRMED',
+  specialRequests: 'Nhận phòng tầng cao, yên tĩnh',
+  createdAt: '2026-09-03T07:00:00.000Z',
+  room: {
+    roomNumber: '101',
+    floor: 1,
+    roomType: {
+      name: 'Phòng Deluxe Hướng Biển',
+      basePrice: 1200000,
+    },
+  },
+  customer: {
+    fullName: 'Nguyễn Văn Khách Hàng',
+    phone: '0912345678',
+    email: 'customer@hotel.com',
+  },
+};
 
 @ApiTags('Bookings (Đặt phòng & Lưu trú)')
 @ApiBearerAuth()
@@ -26,7 +57,17 @@ export class BookingsController {
 
   @Post()
   @ApiOperation({ summary: 'Đặt phòng mới (Tự động tính tiền & phòng tránh trùng lịch)' })
-  @ApiResponse({ status: 201, description: 'Đặt phòng thành công' })
+  @ApiSuccessResponse({
+    status: 201,
+    description: 'Đặt phòng thành công',
+    exampleData: SAMPLE_BOOKING,
+  })
+  @ApiErrorResponse({
+    status: 409,
+    message: 'Phòng này đã có khách đặt hoặc đang có người lưu trú trong khoảng thời gian đã chọn',
+    error: 'Conflict',
+    path: '/api/v1/bookings',
+  })
   create(
     @Body() createBookingDto: CreateBookingDto,
     @CurrentUser('id') userId: string,
@@ -40,7 +81,11 @@ export class BookingsController {
   @ApiQuery({ name: 'status', enum: BookingStatus, required: false })
   @ApiQuery({ name: 'customerId', type: String, required: false })
   @ApiQuery({ name: 'roomId', type: String, required: false })
-  @ApiResponse({ status: 200, description: 'Lấy danh sách đặt phòng thành công' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Lấy danh sách đặt phòng thành công',
+    exampleData: [SAMPLE_BOOKING],
+  })
   findAll(
     @CurrentUser('id') userId: string,
     @CurrentUser('role') userRole: Role,
@@ -54,7 +99,17 @@ export class BookingsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Xem chi tiết đơn đặt phòng' })
-  @ApiResponse({ status: 200, description: 'Lấy thông tin chi tiết đơn đặt phòng thành công' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Lấy thông tin chi tiết đơn đặt phòng thành công',
+    exampleData: SAMPLE_BOOKING,
+  })
+  @ApiErrorResponse({
+    status: 404,
+    message: 'Không tìm thấy đơn đặt phòng với ID tương ứng',
+    error: 'Not Found',
+    path: '/api/v1/bookings/:id',
+  })
   findOne(@Param('id') id: string) {
     return this.bookingsService.findOne(id);
   }
@@ -62,7 +117,11 @@ export class BookingsController {
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Post(':id/check-in')
   @ApiOperation({ summary: 'Check-in khách vào nhận phòng (Chuyển phòng sang OCCUPIED)' })
-  @ApiResponse({ status: 200, description: 'Check-in nhận phòng thành công' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Check-in nhận phòng thành công',
+    exampleData: { ...SAMPLE_BOOKING, status: 'CHECKED_IN', actualCheckIn: '2026-09-05T14:10:00.000Z' },
+  })
   checkIn(@Param('id') id: string) {
     return this.bookingsService.checkIn(id);
   }
@@ -70,7 +129,22 @@ export class BookingsController {
   @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
   @Post(':id/check-out')
   @ApiOperation({ summary: 'Check-out trả phòng, tính tiền dịch vụ và xuất hóa đơn' })
-  @ApiResponse({ status: 200, description: 'Check-out và xuất hóa đơn thành công' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Check-out và xuất hóa đơn thành công',
+    exampleData: {
+      booking: { ...SAMPLE_BOOKING, status: 'CHECKED_OUT', actualCheckOut: '2026-09-08T11:45:00.000Z' },
+      invoice: {
+        id: 'inv-1234',
+        invoiceCode: 'INV-2026-0045',
+        roomAmount: 3600000,
+        servicesAmount: 250000,
+        finalAmount: 3850000,
+        paidAmount: 1000000,
+        paymentStatus: 'PARTIAL',
+      },
+    },
+  })
   checkOut(
     @Param('id') id: string,
     @Body() checkOutDto: CheckOutDto,
@@ -81,7 +155,11 @@ export class BookingsController {
 
   @Post(':id/cancel')
   @ApiOperation({ summary: 'Hủy đơn đặt phòng và giải phóng trạng thái phòng' })
-  @ApiResponse({ status: 200, description: 'Hủy đơn đặt phòng thành công' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Hủy đơn đặt phòng thành công',
+    exampleData: { ...SAMPLE_BOOKING, status: 'CANCELLED' },
+  })
   cancel(@Param('id') id: string) {
     return this.bookingsService.cancel(id);
   }
@@ -89,7 +167,19 @@ export class BookingsController {
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Post(':id/services')
   @ApiOperation({ summary: 'Ghi nhận sử dụng dịch vụ phụ trợ (Minibar, giặt là, ăn uống tại phòng)' })
-  @ApiResponse({ status: 201, description: 'Thêm dịch vụ phụ trợ vào phòng thành công' })
+  @ApiSuccessResponse({
+    status: 201,
+    description: 'Thêm dịch vụ phụ trợ vào phòng thành công',
+    exampleData: {
+      id: 'srv-123',
+      bookingId: 'b1e4c7a2-9d3f-4e8b-8a21-72948e9102c1',
+      serviceName: 'Nước ngọt lon Coca & Giặt là áo sơ mi',
+      quantity: 2,
+      unitPrice: 50000,
+      totalPrice: 100000,
+      orderedAt: '2026-09-03T07:00:00.000Z',
+    },
+  })
   addServiceOrder(
     @Param('id') id: string,
     @Body() dto: AddServiceOrderDto,

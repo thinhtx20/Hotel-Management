@@ -25,7 +25,27 @@ const roles_guard_1 = require("../common/guards/roles.guard");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
 const public_decorator_1 = require("../common/decorators/public.decorator");
 const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
+const api_success_response_decorator_1 = require("../common/decorators/api-success-response.decorator");
 const client_1 = require("@prisma/client");
+const SAMPLE_ROOM = {
+    id: '3f6c8d20-41ab-4f27-96a8-208935cba48b',
+    roomNumber: '101',
+    floor: 1,
+    status: 'AVAILABLE',
+    roomTypeId: 'd9e03d76-e17f-4f05-896c-b3a167cf7564',
+    roomTypeName: 'Phòng Deluxe Hướng Biển',
+    roomTypeCode: 'DELUXE_OCEAN',
+    description: 'Phòng cao cấp ngắm trọn bình minh trên biển',
+    pricePerNight: 1200000,
+    images: [
+        'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=800&q=80',
+    ],
+    amenities: ['Wifi tốc độ cao', 'Ban công view biển', 'Bồn tắm nằm', 'Smart TV 55 inch'],
+    capacityAdults: 2,
+    capacityChildren: 1,
+    sizeSqM: 38,
+};
 let RoomsController = class RoomsController {
     constructor(roomsService) {
         this.roomsService = roomsService;
@@ -66,7 +86,17 @@ __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, common_1.Post)(),
     (0, swagger_1.ApiOperation)({ summary: 'Tạo phòng mới (Chỉ Admin)' }),
-    (0, swagger_1.ApiResponse)({ status: 201, description: 'Tạo phòng mới thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 201,
+        description: 'Tạo phòng mới thành công',
+        exampleData: SAMPLE_ROOM,
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 409,
+        message: 'Số phòng 101 đã tồn tại',
+        error: 'Conflict',
+        path: '/api/v1/rooms',
+    }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [create_room_dto_1.CreateRoomDto]),
@@ -76,7 +106,11 @@ __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Get)('search'),
     (0, swagger_1.ApiOperation)({ summary: 'Tìm kiếm phòng Full-Text siêu tốc bằng Elasticsearch (Fuzzy match, tiện ích, khoảng giá)' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Tìm kiếm danh sách phòng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Tìm kiếm danh sách phòng thành công',
+        exampleData: [SAMPLE_ROOM],
+    }),
     __param(0, (0, common_1.Query)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
@@ -87,7 +121,11 @@ __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Get)('available'),
     (0, swagger_1.ApiOperation)({ summary: 'Tìm kiếm danh sách phòng trống theo khoảng thời gian đặt phòng (Redis Caching)' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lấy danh sách phòng trống thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Lấy danh sách phòng trống thành công',
+        exampleData: [SAMPLE_ROOM],
+    }),
     __param(0, (0, common_1.Query)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
@@ -101,7 +139,11 @@ __decorate([
     (0, swagger_1.ApiQuery)({ name: 'status', enum: client_1.RoomStatus, required: false }),
     (0, swagger_1.ApiQuery)({ name: 'floor', type: Number, required: false }),
     (0, swagger_1.ApiQuery)({ name: 'roomTypeId', type: String, required: false }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lấy danh sách tất cả phòng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Lấy danh sách tất cả phòng thành công',
+        exampleData: [SAMPLE_ROOM],
+    }),
     __param(0, (0, common_1.Query)('status')),
     __param(1, (0, common_1.Query)('floor')),
     __param(2, (0, common_1.Query)('roomTypeId')),
@@ -114,7 +156,17 @@ __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Get)(':id'),
     (0, swagger_1.ApiOperation)({ summary: 'Xem chi tiết thông tin một phòng' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Xem chi tiết thông tin phòng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Xem chi tiết thông tin phòng thành công',
+        exampleData: SAMPLE_ROOM,
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 404,
+        message: 'Không tìm thấy phòng với ID: 3f6c8d20-41ab-4f27-96a8-208935cba48b',
+        error: 'Not Found',
+        path: '/api/v1/rooms/3f6c8d20-41ab-4f27-96a8-208935cba48b',
+    }),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
@@ -127,7 +179,11 @@ __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, common_1.Patch)(':id/status'),
     (0, swagger_1.ApiOperation)({ summary: 'Cập nhật nhanh trạng thái phòng (Trống, Đang ở, Dọn dẹp, Bảo trì)' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Cập nhật trạng thái phòng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Cập nhật trạng thái phòng thành công',
+        exampleData: { ...SAMPLE_ROOM, status: 'CLEANING' },
+    }),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -140,7 +196,11 @@ __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, common_1.Patch)(':id'),
     (0, swagger_1.ApiOperation)({ summary: 'Cập nhật thông tin phòng (Chỉ Admin)' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Cập nhật thông tin phòng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Cập nhật thông tin phòng thành công',
+        exampleData: SAMPLE_ROOM,
+    }),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -153,7 +213,11 @@ __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, common_1.Delete)(':id'),
     (0, swagger_1.ApiOperation)({ summary: 'Xóa phòng (Chỉ Admin)' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Xóa phòng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Xóa phòng thành công',
+        exampleData: { id: '3f6c8d20-41ab-4f27-96a8-208935cba48b', roomNumber: '101' },
+    }),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),

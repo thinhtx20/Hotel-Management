@@ -20,7 +20,18 @@ const update_user_dto_1 = require("./dto/update-user.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
+const api_success_response_decorator_1 = require("../common/decorators/api-success-response.decorator");
 const client_1 = require("@prisma/client");
+const SAMPLE_USER = {
+    id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d',
+    email: 'reception@hotel.com',
+    fullName: 'Lê Thu Hà (Lễ Tân)',
+    phone: '0903334455',
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
+    role: 'RECEPTIONIST',
+    isActive: true,
+    createdAt: '2026-09-03T07:00:00.000Z',
+};
 let UsersController = class UsersController {
     constructor(usersService) {
         this.usersService = usersService;
@@ -44,7 +55,11 @@ __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, swagger_1.ApiOperation)({ summary: 'Lấy danh sách người dùng (Admin & Receptionist)' }),
     (0, swagger_1.ApiQuery)({ name: 'role', enum: client_1.Role, required: false, description: 'Lọc theo vai trò' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lấy danh sách người dùng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Lấy danh sách người dùng thành công',
+        exampleData: [SAMPLE_USER],
+    }),
     __param(0, (0, common_1.Query)('role')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
@@ -54,7 +69,17 @@ __decorate([
     (0, common_1.Get)(':id'),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, swagger_1.ApiOperation)({ summary: 'Chi tiết người dùng theo ID' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Xem thông tin chi tiết người dùng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Xem thông tin chi tiết người dùng thành công',
+        exampleData: SAMPLE_USER,
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 404,
+        message: 'Không tìm thấy người dùng với ID tương ứng',
+        error: 'Not Found',
+        path: '/api/v1/users/:id',
+    }),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
@@ -64,7 +89,11 @@ __decorate([
     (0, common_1.Patch)(':id'),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, swagger_1.ApiOperation)({ summary: 'Cập nhật thông tin / vai trò người dùng (Chỉ Admin)' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Cập nhật thông tin người dùng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Cập nhật thông tin người dùng thành công',
+        exampleData: SAMPLE_USER,
+    }),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -75,7 +104,11 @@ __decorate([
     (0, common_1.Delete)(':id'),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, swagger_1.ApiOperation)({ summary: 'Vô hiệu hóa tài khoản (Chỉ Admin)' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Vô hiệu hóa tài khoản người dùng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Vô hiệu hóa tài khoản người dùng thành công',
+        exampleData: { ...SAMPLE_USER, isActive: false },
+    }),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),

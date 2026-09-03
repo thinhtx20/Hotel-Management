@@ -22,7 +22,37 @@ const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
 const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
+const api_success_response_decorator_1 = require("../common/decorators/api-success-response.decorator");
 const client_1 = require("@prisma/client");
+const SAMPLE_BOOKING = {
+    id: 'b1e4c7a2-9d3f-4e8b-8a21-72948e9102c1',
+    bookingCode: 'BK-2026-0829',
+    customerId: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d',
+    roomId: '3f6c8d20-41ab-4f27-96a8-208935cba48b',
+    checkInDate: '2026-09-05T14:00:00.000Z',
+    checkOutDate: '2026-09-08T12:00:00.000Z',
+    actualCheckIn: null,
+    actualCheckOut: null,
+    guestCount: 2,
+    totalAmount: 3600000,
+    depositAmount: 1000000,
+    status: 'CONFIRMED',
+    specialRequests: 'Nhận phòng tầng cao, yên tĩnh',
+    createdAt: '2026-09-03T07:00:00.000Z',
+    room: {
+        roomNumber: '101',
+        floor: 1,
+        roomType: {
+            name: 'Phòng Deluxe Hướng Biển',
+            basePrice: 1200000,
+        },
+    },
+    customer: {
+        fullName: 'Nguyễn Văn Khách Hàng',
+        phone: '0912345678',
+        email: 'customer@hotel.com',
+    },
+};
 let BookingsController = class BookingsController {
     constructor(bookingsService) {
         this.bookingsService = bookingsService;
@@ -54,7 +84,17 @@ exports.BookingsController = BookingsController;
 __decorate([
     (0, common_1.Post)(),
     (0, swagger_1.ApiOperation)({ summary: 'Đặt phòng mới (Tự động tính tiền & phòng tránh trùng lịch)' }),
-    (0, swagger_1.ApiResponse)({ status: 201, description: 'Đặt phòng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 201,
+        description: 'Đặt phòng thành công',
+        exampleData: SAMPLE_BOOKING,
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 409,
+        message: 'Phòng này đã có khách đặt hoặc đang có người lưu trú trong khoảng thời gian đã chọn',
+        error: 'Conflict',
+        path: '/api/v1/bookings',
+    }),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)('id')),
     __param(2, (0, current_user_decorator_1.CurrentUser)('role')),
@@ -68,7 +108,11 @@ __decorate([
     (0, swagger_1.ApiQuery)({ name: 'status', enum: client_1.BookingStatus, required: false }),
     (0, swagger_1.ApiQuery)({ name: 'customerId', type: String, required: false }),
     (0, swagger_1.ApiQuery)({ name: 'roomId', type: String, required: false }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lấy danh sách đặt phòng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Lấy danh sách đặt phòng thành công',
+        exampleData: [SAMPLE_BOOKING],
+    }),
     __param(0, (0, current_user_decorator_1.CurrentUser)('id')),
     __param(1, (0, current_user_decorator_1.CurrentUser)('role')),
     __param(2, (0, common_1.Query)('status')),
@@ -81,7 +125,17 @@ __decorate([
 __decorate([
     (0, common_1.Get)(':id'),
     (0, swagger_1.ApiOperation)({ summary: 'Xem chi tiết đơn đặt phòng' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lấy thông tin chi tiết đơn đặt phòng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Lấy thông tin chi tiết đơn đặt phòng thành công',
+        exampleData: SAMPLE_BOOKING,
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 404,
+        message: 'Không tìm thấy đơn đặt phòng với ID tương ứng',
+        error: 'Not Found',
+        path: '/api/v1/bookings/:id',
+    }),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
@@ -91,7 +145,11 @@ __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, common_1.Post)(':id/check-in'),
     (0, swagger_1.ApiOperation)({ summary: 'Check-in khách vào nhận phòng (Chuyển phòng sang OCCUPIED)' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Check-in nhận phòng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Check-in nhận phòng thành công',
+        exampleData: { ...SAMPLE_BOOKING, status: 'CHECKED_IN', actualCheckIn: '2026-09-05T14:10:00.000Z' },
+    }),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
@@ -101,7 +159,22 @@ __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER),
     (0, common_1.Post)(':id/check-out'),
     (0, swagger_1.ApiOperation)({ summary: 'Check-out trả phòng, tính tiền dịch vụ và xuất hóa đơn' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Check-out và xuất hóa đơn thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Check-out và xuất hóa đơn thành công',
+        exampleData: {
+            booking: { ...SAMPLE_BOOKING, status: 'CHECKED_OUT', actualCheckOut: '2026-09-08T11:45:00.000Z' },
+            invoice: {
+                id: 'inv-1234',
+                invoiceCode: 'INV-2026-0045',
+                roomAmount: 3600000,
+                servicesAmount: 250000,
+                finalAmount: 3850000,
+                paidAmount: 1000000,
+                paymentStatus: 'PARTIAL',
+            },
+        },
+    }),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, current_user_decorator_1.CurrentUser)('id')),
@@ -112,7 +185,11 @@ __decorate([
 __decorate([
     (0, common_1.Post)(':id/cancel'),
     (0, swagger_1.ApiOperation)({ summary: 'Hủy đơn đặt phòng và giải phóng trạng thái phòng' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Hủy đơn đặt phòng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Hủy đơn đặt phòng thành công',
+        exampleData: { ...SAMPLE_BOOKING, status: 'CANCELLED' },
+    }),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
@@ -122,7 +199,19 @@ __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, common_1.Post)(':id/services'),
     (0, swagger_1.ApiOperation)({ summary: 'Ghi nhận sử dụng dịch vụ phụ trợ (Minibar, giặt là, ăn uống tại phòng)' }),
-    (0, swagger_1.ApiResponse)({ status: 201, description: 'Thêm dịch vụ phụ trợ vào phòng thành công' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 201,
+        description: 'Thêm dịch vụ phụ trợ vào phòng thành công',
+        exampleData: {
+            id: 'srv-123',
+            bookingId: 'b1e4c7a2-9d3f-4e8b-8a21-72948e9102c1',
+            serviceName: 'Nước ngọt lon Coca & Giặt là áo sơ mi',
+            quantity: 2,
+            unitPrice: 50000,
+            totalPrice: 100000,
+            orderedAt: '2026-09-03T07:00:00.000Z',
+        },
+    }),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
