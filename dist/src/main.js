@@ -50,7 +50,7 @@ async function bootstrap() {
         },
     });
     const port = process.env.PORT || 3000;
-    await app.listen(port);
+    await app.listen(port, '0.0.0.0');
     logger.log(`🚀 Hotel Management Server is running on: http://localhost:${port}/api/v1`);
     logger.log(`📚 Swagger API Docs available at: http://localhost:${port}/api/docs`);
 }
