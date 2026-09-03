@@ -50,7 +50,7 @@ export class RoomsController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CUSTOMER)
   @Post()
   @ApiOperation({ summary: 'Tạo phòng mới (Chỉ Admin)' })
   @ApiSuccessResponse({
@@ -64,7 +64,10 @@ export class RoomsController {
     error: 'Conflict',
     path: '/api/v1/rooms',
   })
-  create(@Body() createRoomDto: CreateRoomDto) {
+  create(@Body() createRoomDto: CreateRoomDto, @CurrentUser() user?: any) {
+    if (user && user.role !== Role.ADMIN) {
+      createRoomDto.status = RoomStatus.PENDING_APPROVAL;
+    }
     return this.roomsService.create(createRoomDto);
   }
 
@@ -137,6 +140,34 @@ export class RoomsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @Patch(':id/approve')
+  @ApiOperation({ summary: 'Phê duyệt phòng mới vào hoạt động' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Phê duyệt phòng thành công',
+    exampleData: { ...SAMPLE_ROOM, status: 'AVAILABLE' },
+  })
+  approve(@Param('id') id: string) {
+    return this.roomsService.updateStatus(id, RoomStatus.AVAILABLE);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @Patch(':id/reject')
+  @ApiOperation({ summary: 'Từ chối duyệt phòng mới' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Từ chối duyệt phòng thành công',
+    exampleData: { ...SAMPLE_ROOM, status: 'REJECTED' },
+  })
+  reject(@Param('id') id: string) {
+    return this.roomsService.updateStatus(id, RoomStatus.REJECTED);
+  }
+
   @Patch(':id/status')
   @ApiOperation({ summary: 'Cập nhật nhanh trạng thái phòng (Trống, Đang ở, Dọn dẹp, Bảo trì)' })
   @ApiSuccessResponse({

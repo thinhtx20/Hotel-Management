@@ -24,6 +24,8 @@ enum RoomStatus {
   RESERVED
   CLEANING
   MAINTENANCE
+  PENDING_APPROVAL
+  REJECTED
 }
 
 enum BookingStatus {
