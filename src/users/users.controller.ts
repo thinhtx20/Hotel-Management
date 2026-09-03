@@ -10,7 +10,9 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { UsersService } from './users.service';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -23,6 +25,7 @@ const SAMPLE_USER = {
   fullName: 'Lê Thu Hà (Lễ Tân)',
   phone: '0903334455',
   avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
+  avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
   role: 'RECEPTIONIST',
   isActive: true,
   createdAt: '2026-09-03T07:00:00.000Z',
@@ -34,6 +37,20 @@ const SAMPLE_USER = {
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  @Patch('me')
+  @ApiOperation({ summary: 'Cập nhật thông tin tài khoản hiện tại (Mục 03 - P1)' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Cập nhật hồ sơ thành công',
+    exampleData: SAMPLE_USER,
+  })
+  updateMe(
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdateMeDto,
+  ) {
+    return this.usersService.updateMe(userId, dto);
+  }
 
   @Get()
   @Roles(Role.ADMIN, Role.RECEPTIONIST)

@@ -5,6 +5,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 export declare class AuthController {
     private readonly authService;
     constructor(authService: AuthService);
@@ -34,6 +35,7 @@ export declare class AuthController {
             fullName: string;
             phone: string;
             avatar: string;
+            avatarUrl: string;
             role: import(".prisma/client").$Enums.Role;
         };
     }>;
@@ -44,6 +46,7 @@ export declare class AuthController {
             fullName: string;
             phone: string;
             avatar: string;
+            avatarUrl: string;
             role: import(".prisma/client").$Enums.Role;
         };
         accessToken: string;
@@ -71,6 +74,12 @@ export declare class AuthController {
         message: string;
     }>;
     getProfile(userId: string): Promise<{
+        avatarUrl: string;
+        stats: {
+            totalBookings: number;
+            activeBookings: number;
+            averageRating: number;
+        };
         id: string;
         email: string;
         fullName: string;
@@ -79,6 +88,10 @@ export declare class AuthController {
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
         createdAt: Date;
+    }>;
+    changePassword(userId: string, dto: ChangePasswordDto): Promise<{
+        success: boolean;
+        message: string;
     }>;
     logout(userId: string, body?: Partial<RefreshTokenDto>): Promise<{
         success: boolean;

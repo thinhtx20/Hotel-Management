@@ -8,6 +8,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 export declare class AuthService {
     private prisma;
     private jwtService;
@@ -41,10 +42,17 @@ export declare class AuthService {
             fullName: string;
             phone: string;
             avatar: string;
+            avatarUrl: string;
             role: import(".prisma/client").$Enums.Role;
         };
     }>;
     getProfile(userId: string): Promise<{
+        avatarUrl: string;
+        stats: {
+            totalBookings: number;
+            activeBookings: number;
+            averageRating: number;
+        };
         id: string;
         email: string;
         fullName: string;
@@ -53,6 +61,10 @@ export declare class AuthService {
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
         createdAt: Date;
+    }>;
+    changePassword(userId: string, dto: ChangePasswordDto): Promise<{
+        success: boolean;
+        message: string;
     }>;
     forgotPassword(dto: ForgotPasswordDto): Promise<{
         success: boolean;
@@ -80,6 +92,7 @@ export declare class AuthService {
             fullName: string;
             phone: string;
             avatar: string;
+            avatarUrl: string;
             role: import(".prisma/client").$Enums.Role;
         };
         accessToken: string;

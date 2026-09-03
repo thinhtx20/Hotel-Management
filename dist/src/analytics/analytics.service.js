@@ -88,22 +88,43 @@ let AnalyticsService = class AnalyticsService {
             revenueChangePercent = Number((((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100).toFixed(1));
         }
         const occupancyRate = totalRooms > 0 ? Number(((occupiedRooms / totalRooms) * 100).toFixed(1)) : 0;
+        const dailyRev = await this.getDailyRevenue(7);
+        const revenue7Days = dailyRev.series.map((s) => ({
+            date: s.date,
+            label: s.label,
+            amount: s.revenue,
+            revenue: s.revenue,
+            invoiceCount: s.invoiceCount,
+        }));
+        const roomStatusBreakdown = {
+            AVAILABLE: availableRooms,
+            OCCUPIED: occupiedRooms,
+            RESERVED: reservedRooms,
+            CLEANING: cleaningRooms,
+            MAINTENANCE: maintenanceRooms,
+        };
         return {
+            totalRevenueToday: todayRevenue,
+            todayRevenue,
+            yesterdayRevenue,
+            revenueChangePercent,
+            occupancyRate,
             totalRooms,
             availableRooms,
             occupiedRooms,
             reservedRooms,
             cleaningRooms,
             maintenanceRooms,
-            occupancyRate,
+            checkInsToday: todayCheckIns,
             todayCheckIns,
+            checkOutsToday: todayCheckOuts,
             todayCheckOuts,
             activeBookings,
-            todayRevenue,
-            yesterdayRevenue,
-            revenueChangePercent,
             pendingBookings,
+            pendingInvoicesCount: unpaidInvoices,
             unpaidInvoices,
+            roomStatusBreakdown,
+            revenue7Days,
             rooms: {
                 total: totalRooms,
                 available: availableRooms,

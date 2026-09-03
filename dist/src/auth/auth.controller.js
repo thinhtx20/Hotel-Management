@@ -22,6 +22,7 @@ const refresh_token_dto_1 = require("./dto/refresh-token.dto");
 const forgot_password_dto_1 = require("./dto/forgot-password.dto");
 const verify_otp_dto_1 = require("./dto/verify-otp.dto");
 const reset_password_dto_1 = require("./dto/reset-password.dto");
+const change_password_dto_1 = require("./dto/change-password.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
 const public_decorator_1 = require("../common/decorators/public.decorator");
@@ -50,6 +51,9 @@ let AuthController = class AuthController {
     }
     getProfile(userId) {
         return this.authService.getProfile(userId);
+    }
+    changePassword(userId, dto) {
+        return this.authService.changePassword(userId, dto);
     }
     logout(userId, body) {
         return this.authService.logout(userId, body?.refreshToken);
@@ -260,6 +264,32 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "getProfile", null);
+__decorate([
+    (0, swagger_1.ApiBearerAuth)('JWT-auth'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Post)('change-password'),
+    (0, swagger_1.ApiOperation)({ summary: 'Đổi mật khẩu cho người dùng hiện tại (Mục 03 - P1)' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Đổi mật khẩu thành công',
+        message: 'Đổi mật khẩu thành công',
+        exampleData: {
+            success: true,
+            message: 'Đổi mật khẩu thành công',
+        },
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 400,
+        message: 'Mật khẩu hiện tại không chính xác',
+        error: 'Bad Request',
+        path: '/api/v1/auth/change-password',
+    }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)('id')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, change_password_dto_1.ChangePasswordDto]),
+    __metadata("design:returntype", void 0)
+], AuthController.prototype, "changePassword", null);
 __decorate([
     (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

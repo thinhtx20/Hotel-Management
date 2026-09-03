@@ -73,6 +73,11 @@ export class RoomsService {
       },
       include: {
         roomType: true,
+        bookings: {
+          where: { status: BookingStatus.CHECKED_IN },
+          take: 1,
+          include: { customer: { select: { fullName: true, phone: true } } },
+        },
       },
       orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
     });

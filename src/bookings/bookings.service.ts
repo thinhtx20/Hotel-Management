@@ -109,15 +109,33 @@ export class BookingsService {
       // Xóa cache danh sách phòng trống trong Redis
       await this.redis.delByPattern('cache:rooms:*');
 
-      return booking;
+      return this.toBookingResponse(booking);
     } finally {
       // 2. Luôn giải phóng khóa phân tán an toàn bằng Lua script
       await this.redis.releaseLock(lockKey, lockToken);
     }
   }
 
+  private toBookingResponse(b: any) {
+    const checkIn = new Date(b.checkInDate);
+    const checkOut = new Date(b.checkOutDate);
+    const diff = Math.abs(checkOut.getTime() - checkIn.getTime());
+    const nights = Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+    const paymentStatus = b.invoice?.paymentStatus || (b.depositAmount > 0 ? 'PARTIAL' : 'UNPAID');
+    const invoiceId = b.invoice?.id || null;
+    const canCancel = b.status === BookingStatus.PENDING || b.status === BookingStatus.CONFIRMED;
+
+    return {
+      ...b,
+      nights,
+      paymentStatus,
+      invoiceId,
+      canCancel,
+    };
+  }
+
   async findAll(status?: BookingStatus, customerId?: string, roomId?: string) {
-    return this.prisma.booking.findMany({
+    const list = await this.prisma.booking.findMany({
       where: {
         ...(status ? { status } : {}),
         ...(customerId ? { customerId } : {}),
@@ -131,6 +149,8 @@ export class BookingsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    return list.map((b) => this.toBookingResponse(b));
   }
 
   async findOne(id: string) {
@@ -148,7 +168,7 @@ export class BookingsService {
       throw new NotFoundException(`Không tìm thấy đơn đặt phòng ID: ${id}`);
     }
 
-    return booking;
+    return this.toBookingResponse(booking);
   }
 
   async checkIn(id: string) {
@@ -251,6 +271,7 @@ export class BookingsService {
 
     return {
       message: 'Check-out và thanh toán hóa đơn thành công',
+      invoiceId: invoice.id,
       booking: updatedBooking,
       invoice,
     };

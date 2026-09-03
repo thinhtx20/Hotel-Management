@@ -80,6 +80,22 @@ export declare class UsersService {
         isActive: boolean;
         updatedAt: Date;
     }>;
+    updateMe(id: string, dto: {
+        fullName?: string;
+        phone?: string;
+        avatar?: string;
+    }): Promise<{
+        avatarUrl: string;
+        id: string;
+        email: string;
+        fullName: string;
+        phone: string;
+        avatar: string;
+        role: import(".prisma/client").$Enums.Role;
+        isActive: boolean;
+        createdAt: Date;
+        updatedAt: Date;
+    }>;
     remove(id: string): Promise<{
         id: string;
         email: string;

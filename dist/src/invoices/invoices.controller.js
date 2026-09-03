@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const invoices_service_1 = require("./invoices.service");
 const record_payment_dto_1 = require("./dto/record-payment.dto");
+const create_invoice_dto_1 = require("./dto/create-invoice.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
@@ -37,6 +38,16 @@ const SAMPLE_INVOICE = {
     paymentStatus: 'PAID',
     paidAt: '2026-09-03T07:00:00.000Z',
     issuedById: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d',
+    roomNumber: '101',
+    customerName: 'Nguyễn Văn Khách Hàng',
+    customerPhone: '0912345678',
+    items: [
+        { name: 'Tiền thuê phòng P.101', quantity: 1, unitPrice: 3600000, amount: 3600000 },
+        { name: 'Minibar trọn gói', quantity: 1, unitPrice: 200000, amount: 200000 },
+    ],
+    payments: [
+        { amount: 3800000, paymentMethod: 'CREDIT_CARD', paidAt: '2026-09-03T07:00:00.000Z', cashierName: 'Lê Thu Ngân' },
+    ],
     booking: {
         bookingCode: 'BK-2026-0829',
         customer: {
@@ -52,6 +63,12 @@ let InvoicesController = class InvoicesController {
     constructor(invoicesService) {
         this.invoicesService = invoicesService;
     }
+    getSummary(date) {
+        return this.invoicesService.getSummary(date);
+    }
+    create(dto, cashierId) {
+        return this.invoicesService.create(dto, cashierId);
+    }
     findAll(status) {
         return this.invoicesService.findAll(status);
     }
@@ -63,6 +80,43 @@ let InvoicesController = class InvoicesController {
     }
 };
 exports.InvoicesController = InvoicesController;
+__decorate([
+    (0, common_1.Get)('summary'),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER),
+    (0, swagger_1.ApiOperation)({ summary: 'Tổng quan doanh thu hôm nay và số lượng hóa đơn cho thu ngân' }),
+    (0, swagger_1.ApiQuery)({ name: 'date', required: false, description: 'today hoặc ngày theo định dạng YYYY-MM-DD' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Lấy tóm tắt doanh thu thành công',
+        exampleData: {
+            date: '2026-09-03',
+            todayRevenue: 128500000,
+            totalInvoices: 18,
+            paidInvoices: 14,
+            unpaidInvoices: 3,
+            partialInvoices: 1,
+        },
+    }),
+    __param(0, (0, common_1.Query)('date')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "getSummary", null);
+__decorate([
+    (0, common_1.Post)(),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.CASHIER),
+    (0, swagger_1.ApiOperation)({ summary: 'Tạo hóa đơn thủ công cho đơn đặt phòng' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 201,
+        description: 'Tạo hóa đơn thành công',
+        exampleData: SAMPLE_INVOICE,
+    }),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [create_invoice_dto_1.CreateInvoiceDto, String]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)(),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER),

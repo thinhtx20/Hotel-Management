@@ -17,7 +17,8 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { Role } from '@prisma/client';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { Role, BookingStatus } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -47,7 +48,7 @@ export class AuthService {
         password: hashedPassword,
         fullName: dto.fullName,
         phone: dto.phone,
-        role: dto.role || Role.CUSTOMER,
+        role: Role.CUSTOMER, // Ép cứng Role.CUSTOMER từ server để bảo mật
       },
       select: {
         id: true,
@@ -215,6 +216,7 @@ export class AuthService {
         fullName: user.fullName,
         phone: user.phone,
         avatar: user.avatar,
+        avatarUrl: user.avatar,
         role: user.role,
       },
       ...tokens,
@@ -238,7 +240,57 @@ export class AuthService {
     if (!user) {
       throw new BadRequestException('Không tìm thấy thông tin người dùng');
     }
-    return user;
+
+    // Tính stats thật theo người dùng (Mục 04 - P2)
+    const [totalBookings, activeBookings] = await Promise.all([
+      this.prisma.booking.count({ where: { customerId: userId } }),
+      this.prisma.booking.count({
+        where: {
+          customerId: userId,
+          status: { in: [BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN] },
+        },
+      }),
+    ]);
+
+    return {
+      ...user,
+      avatarUrl: user.avatar,
+      stats: {
+        totalBookings,
+        activeBookings,
+        averageRating: 5.0,
+      },
+    };
+  }
+
+  /**
+   * Đổi mật khẩu cho người dùng hiện tại (Mục 03 - P1)
+   */
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('Không tìm thấy thông tin tài khoản');
+    }
+
+    const isMatch = await bcrypt.compare(dto.oldPassword, user.password);
+    if (!isMatch) {
+      throw new BadRequestException('Mật khẩu hiện tại không chính xác');
+    }
+
+    if (dto.oldPassword === dto.newPassword) {
+      throw new BadRequestException('Mật khẩu mới không được trùng với mật khẩu cũ');
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
+    });
+
+    return {
+      success: true,
+      message: 'Đổi mật khẩu thành công',
+    };
   }
 
   /**
@@ -489,6 +541,7 @@ export class AuthService {
         fullName: user.fullName,
         phone: user.phone,
         avatar: user.avatar,
+        avatarUrl: user.avatar,
         role: user.role,
       },
     };

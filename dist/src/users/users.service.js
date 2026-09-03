@@ -80,6 +80,32 @@ let UsersService = class UsersService {
             },
         });
     }
+    async updateMe(id, dto) {
+        await this.findOne(id);
+        const updated = await this.prisma.user.update({
+            where: { id },
+            data: {
+                ...(dto.fullName ? { fullName: dto.fullName } : {}),
+                ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
+                ...(dto.avatar !== undefined ? { avatar: dto.avatar } : {}),
+            },
+            select: {
+                id: true,
+                email: true,
+                fullName: true,
+                phone: true,
+                avatar: true,
+                role: true,
+                isActive: true,
+                createdAt: true,
+                updatedAt: true,
+            },
+        });
+        return {
+            ...updated,
+            avatarUrl: updated.avatar,
+        };
+    }
     async remove(id) {
         await this.findOne(id);
         return this.prisma.user.update({

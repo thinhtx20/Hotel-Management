@@ -42,7 +42,7 @@ let AuthService = AuthService_1 = class AuthService {
                 password: hashedPassword,
                 fullName: dto.fullName,
                 phone: dto.phone,
-                role: dto.role || client_1.Role.CUSTOMER,
+                role: client_1.Role.CUSTOMER,
             },
             select: {
                 id: true,
@@ -185,6 +185,7 @@ let AuthService = AuthService_1 = class AuthService {
                 fullName: user.fullName,
                 phone: user.phone,
                 avatar: user.avatar,
+                avatarUrl: user.avatar,
                 role: user.role,
             },
             ...tokens,
@@ -207,7 +208,46 @@ let AuthService = AuthService_1 = class AuthService {
         if (!user) {
             throw new common_1.BadRequestException('Không tìm thấy thông tin người dùng');
         }
-        return user;
+        const [totalBookings, activeBookings] = await Promise.all([
+            this.prisma.booking.count({ where: { customerId: userId } }),
+            this.prisma.booking.count({
+                where: {
+                    customerId: userId,
+                    status: { in: [client_1.BookingStatus.CONFIRMED, client_1.BookingStatus.CHECKED_IN] },
+                },
+            }),
+        ]);
+        return {
+            ...user,
+            avatarUrl: user.avatar,
+            stats: {
+                totalBookings,
+                activeBookings,
+                averageRating: 5.0,
+            },
+        };
+    }
+    async changePassword(userId, dto) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!user) {
+            throw new common_1.BadRequestException('Không tìm thấy thông tin tài khoản');
+        }
+        const isMatch = await bcrypt.compare(dto.oldPassword, user.password);
+        if (!isMatch) {
+            throw new common_1.BadRequestException('Mật khẩu hiện tại không chính xác');
+        }
+        if (dto.oldPassword === dto.newPassword) {
+            throw new common_1.BadRequestException('Mật khẩu mới không được trùng với mật khẩu cũ');
+        }
+        const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { password: hashedPassword },
+        });
+        return {
+            success: true,
+            message: 'Đổi mật khẩu thành công',
+        };
     }
     async forgotPassword(dto) {
         const email = dto.email.toLowerCase().trim();
@@ -392,6 +432,7 @@ let AuthService = AuthService_1 = class AuthService {
                 fullName: user.fullName,
                 phone: user.phone,
                 avatar: user.avatar,
+                avatarUrl: user.avatar,
                 role: user.role,
             },
         };

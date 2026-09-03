@@ -7,6 +7,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -205,6 +206,32 @@ export class AuthController {
   })
   getProfile(@CurrentUser('id') userId: string) {
     return this.authService.getProfile(userId);
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  @ApiOperation({ summary: 'Đổi mật khẩu cho người dùng hiện tại (Mục 03 - P1)' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Đổi mật khẩu thành công',
+    message: 'Đổi mật khẩu thành công',
+    exampleData: {
+      success: true,
+      message: 'Đổi mật khẩu thành công',
+    },
+  })
+  @ApiErrorResponse({
+    status: 400,
+    message: 'Mật khẩu hiện tại không chính xác',
+    error: 'Bad Request',
+    path: '/api/v1/auth/change-password',
+  })
+  changePassword(
+    @CurrentUser('id') userId: string,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(userId, dto);
   }
 
   @ApiBearerAuth('JWT-auth')

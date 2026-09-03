@@ -81,14 +81,30 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 },
             });
             await this.redis.delByPattern('cache:rooms:*');
-            return booking;
+            return this.toBookingResponse(booking);
         }
         finally {
             await this.redis.releaseLock(lockKey, lockToken);
         }
     }
+    toBookingResponse(b) {
+        const checkIn = new Date(b.checkInDate);
+        const checkOut = new Date(b.checkOutDate);
+        const diff = Math.abs(checkOut.getTime() - checkIn.getTime());
+        const nights = Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+        const paymentStatus = b.invoice?.paymentStatus || (b.depositAmount > 0 ? 'PARTIAL' : 'UNPAID');
+        const invoiceId = b.invoice?.id || null;
+        const canCancel = b.status === client_1.BookingStatus.PENDING || b.status === client_1.BookingStatus.CONFIRMED;
+        return {
+            ...b,
+            nights,
+            paymentStatus,
+            invoiceId,
+            canCancel,
+        };
+    }
     async findAll(status, customerId, roomId) {
-        return this.prisma.booking.findMany({
+        const list = await this.prisma.booking.findMany({
             where: {
                 ...(status ? { status } : {}),
                 ...(customerId ? { customerId } : {}),
@@ -102,6 +118,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
             },
             orderBy: { createdAt: 'desc' },
         });
+        return list.map((b) => this.toBookingResponse(b));
     }
     async findOne(id) {
         const booking = await this.prisma.booking.findUnique({
@@ -116,7 +133,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
         if (!booking) {
             throw new common_1.NotFoundException(`Không tìm thấy đơn đặt phòng ID: ${id}`);
         }
-        return booking;
+        return this.toBookingResponse(booking);
     }
     async checkIn(id) {
         const booking = await this.findOne(id);
@@ -204,6 +221,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
         await this.redis.delByPattern('cache:rooms:*');
         return {
             message: 'Check-out và thanh toán hóa đơn thành công',
+            invoiceId: invoice.id,
             booking: updatedBooking,
             invoice,
         };

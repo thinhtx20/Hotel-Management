@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   Param,
   Query,
@@ -161,6 +162,17 @@ export class BookingsController {
     exampleData: { ...SAMPLE_BOOKING, status: 'CANCELLED' },
   })
   cancel(@Param('id') id: string) {
+    return this.bookingsService.cancel(id);
+  }
+
+  @Patch(':id/cancel')
+  @ApiOperation({ summary: 'Hủy đơn đặt phòng (PATCH alias cho client Flutter)' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Hủy đơn đặt phòng thành công',
+    exampleData: { ...SAMPLE_BOOKING, status: 'CANCELLED' },
+  })
+  cancelPatch(@Param('id') id: string) {
     return this.bookingsService.cancel(id);
   }
 

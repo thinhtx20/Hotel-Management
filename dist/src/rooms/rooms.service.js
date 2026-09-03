@@ -66,6 +66,11 @@ let RoomsService = class RoomsService {
             },
             include: {
                 roomType: true,
+                bookings: {
+                    where: { status: client_1.BookingStatus.CHECKED_IN },
+                    take: 1,
+                    include: { customer: { select: { fullName: true, phone: true } } },
+                },
             },
             orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
         });

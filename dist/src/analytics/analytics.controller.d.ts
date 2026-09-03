@@ -3,21 +3,39 @@ export declare class AnalyticsController {
     private readonly analyticsService;
     constructor(analyticsService: AnalyticsService);
     getDashboard(): Promise<{
+        totalRevenueToday: number;
+        todayRevenue: number;
+        yesterdayRevenue: number;
+        revenueChangePercent: number;
+        occupancyRate: number;
         totalRooms: number;
         availableRooms: number;
         occupiedRooms: number;
         reservedRooms: number;
         cleaningRooms: number;
         maintenanceRooms: number;
-        occupancyRate: number;
+        checkInsToday: number;
         todayCheckIns: number;
+        checkOutsToday: number;
         todayCheckOuts: number;
         activeBookings: number;
-        todayRevenue: number;
-        yesterdayRevenue: number;
-        revenueChangePercent: number;
         pendingBookings: number;
+        pendingInvoicesCount: number;
         unpaidInvoices: number;
+        roomStatusBreakdown: {
+            AVAILABLE: number;
+            OCCUPIED: number;
+            RESERVED: number;
+            CLEANING: number;
+            MAINTENANCE: number;
+        };
+        revenue7Days: {
+            date: string;
+            label: string;
+            amount: number;
+            revenue: number;
+            invoiceCount: number;
+        }[];
         rooms: {
             total: number;
             available: number;

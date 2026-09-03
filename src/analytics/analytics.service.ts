@@ -105,23 +105,47 @@ export class AnalyticsService {
     // occupancyRate là số thực (number), không kèm dấu % (BE-1)
     const occupancyRate = totalRooms > 0 ? Number(((occupiedRooms / totalRooms) * 100).toFixed(1)) : 0;
 
+    // Lấy chuỗi doanh thu 7 ngày gần nhất để nhúng trực tiếp vào Dashboard
+    const dailyRev = await this.getDailyRevenue(7);
+    const revenue7Days = dailyRev.series.map((s) => ({
+      date: s.date,
+      label: s.label,
+      amount: s.revenue,
+      revenue: s.revenue,
+      invoiceCount: s.invoiceCount,
+    }));
+
+    const roomStatusBreakdown = {
+      AVAILABLE: availableRooms,
+      OCCUPIED: occupiedRooms,
+      RESERVED: reservedRooms,
+      CLEANING: cleaningRooms,
+      MAINTENANCE: maintenanceRooms,
+    };
+
     return {
-      // Hợp đồng phẳng mới cho FE (BE-1 & BE-6)
+      // Hợp đồng phẳng đầy đủ cho FE (BE-1, BE-6 & Claude Artifact Section 05)
+      totalRevenueToday: todayRevenue,
+      todayRevenue,
+      yesterdayRevenue,
+      revenueChangePercent,
+      occupancyRate,
       totalRooms,
       availableRooms,
       occupiedRooms,
       reservedRooms,
       cleaningRooms,
       maintenanceRooms,
-      occupancyRate,
+      checkInsToday: todayCheckIns,
       todayCheckIns,
+      checkOutsToday: todayCheckOuts,
       todayCheckOuts,
       activeBookings,
-      todayRevenue,
-      yesterdayRevenue,
-      revenueChangePercent,
       pendingBookings,
+      pendingInvoicesCount: unpaidInvoices,
       unpaidInvoices,
+      roomStatusBreakdown,
+      revenue7Days,
 
       // Khối lồng cũ để giữ tương thích ngược
       rooms: {

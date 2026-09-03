@@ -10,6 +10,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { InvoicesService } from './invoices.service';
 import { RecordPaymentDto } from './dto/record-payment.dto';
+import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -31,6 +32,16 @@ const SAMPLE_INVOICE = {
   paymentStatus: 'PAID',
   paidAt: '2026-09-03T07:00:00.000Z',
   issuedById: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d',
+  roomNumber: '101',
+  customerName: 'Nguyễn Văn Khách Hàng',
+  customerPhone: '0912345678',
+  items: [
+    { name: 'Tiền thuê phòng P.101', quantity: 1, unitPrice: 3600000, amount: 3600000 },
+    { name: 'Minibar trọn gói', quantity: 1, unitPrice: 200000, amount: 200000 },
+  ],
+  payments: [
+    { amount: 3800000, paymentMethod: 'CREDIT_CARD', paidAt: '2026-09-03T07:00:00.000Z', cashierName: 'Lê Thu Ngân' },
+  ],
   booking: {
     bookingCode: 'BK-2026-0829',
     customer: {
@@ -49,6 +60,41 @@ const SAMPLE_INVOICE = {
 @Controller('invoices')
 export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}
+
+  @Get('summary')
+  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
+  @ApiOperation({ summary: 'Tổng quan doanh thu hôm nay và số lượng hóa đơn cho thu ngân' })
+  @ApiQuery({ name: 'date', required: false, description: 'today hoặc ngày theo định dạng YYYY-MM-DD' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Lấy tóm tắt doanh thu thành công',
+    exampleData: {
+      date: '2026-09-03',
+      todayRevenue: 128500000,
+      totalInvoices: 18,
+      paidInvoices: 14,
+      unpaidInvoices: 3,
+      partialInvoices: 1,
+    },
+  })
+  getSummary(@Query('date') date?: string) {
+    return this.invoicesService.getSummary(date);
+  }
+
+  @Post()
+  @Roles(Role.ADMIN, Role.CASHIER)
+  @ApiOperation({ summary: 'Tạo hóa đơn thủ công cho đơn đặt phòng' })
+  @ApiSuccessResponse({
+    status: 201,
+    description: 'Tạo hóa đơn thành công',
+    exampleData: SAMPLE_INVOICE,
+  })
+  create(
+    @Body() dto: CreateInvoiceDto,
+    @CurrentUser('id') cashierId: string,
+  ) {
+    return this.invoicesService.create(dto, cashierId);
+  }
 
   @Get()
   @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)

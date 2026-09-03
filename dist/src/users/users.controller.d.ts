@@ -1,9 +1,22 @@
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { Role } from '@prisma/client';
 export declare class UsersController {
     private readonly usersService;
     constructor(usersService: UsersService);
+    updateMe(userId: string, dto: UpdateMeDto): Promise<{
+        avatarUrl: string;
+        id: string;
+        email: string;
+        fullName: string;
+        phone: string;
+        avatar: string;
+        role: import(".prisma/client").$Enums.Role;
+        isActive: boolean;
+        createdAt: Date;
+        updatedAt: Date;
+    }>;
     findAll(role?: Role): Promise<{
         id: string;
         email: string;

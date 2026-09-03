@@ -76,6 +76,9 @@ let BookingsController = class BookingsController {
     cancel(id) {
         return this.bookingsService.cancel(id);
     }
+    cancelPatch(id) {
+        return this.bookingsService.cancel(id);
+    }
     addServiceOrder(id, dto) {
         return this.bookingsService.addServiceOrder(id, dto);
     }
@@ -195,6 +198,19 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], BookingsController.prototype, "cancel", null);
+__decorate([
+    (0, common_1.Patch)(':id/cancel'),
+    (0, swagger_1.ApiOperation)({ summary: 'Hủy đơn đặt phòng (PATCH alias cho client Flutter)' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Hủy đơn đặt phòng thành công',
+        exampleData: { ...SAMPLE_BOOKING, status: 'CANCELLED' },
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], BookingsController.prototype, "cancelPatch", null);
 __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, common_1.Post)(':id/services'),

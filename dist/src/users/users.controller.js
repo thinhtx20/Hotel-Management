@@ -16,7 +16,9 @@ exports.UsersController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const users_service_1 = require("./users.service");
+const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
 const update_user_dto_1 = require("./dto/update-user.dto");
+const update_me_dto_1 = require("./dto/update-me.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
@@ -28,6 +30,7 @@ const SAMPLE_USER = {
     fullName: 'Lê Thu Hà (Lễ Tân)',
     phone: '0903334455',
     avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
+    avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
     role: 'RECEPTIONIST',
     isActive: true,
     createdAt: '2026-09-03T07:00:00.000Z',
@@ -35,6 +38,9 @@ const SAMPLE_USER = {
 let UsersController = class UsersController {
     constructor(usersService) {
         this.usersService = usersService;
+    }
+    updateMe(userId, dto) {
+        return this.usersService.updateMe(userId, dto);
     }
     findAll(role) {
         return this.usersService.findAll(role);
@@ -50,6 +56,20 @@ let UsersController = class UsersController {
     }
 };
 exports.UsersController = UsersController;
+__decorate([
+    (0, common_1.Patch)('me'),
+    (0, swagger_1.ApiOperation)({ summary: 'Cập nhật thông tin tài khoản hiện tại (Mục 03 - P1)' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Cập nhật hồ sơ thành công',
+        exampleData: SAMPLE_USER,
+    }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)('id')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, update_me_dto_1.UpdateMeDto]),
+    __metadata("design:returntype", void 0)
+], UsersController.prototype, "updateMe", null);
 __decorate([
     (0, common_1.Get)(),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
