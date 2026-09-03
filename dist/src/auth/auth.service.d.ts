@@ -13,6 +13,7 @@ export declare class AuthService {
     private jwtService;
     private mailService;
     private redisService;
+    private readonly logger;
     constructor(prisma: PrismaService, jwtService: JwtService, mailService: MailService, redisService: RedisService);
     register(dto: RegisterDto): Promise<{
         accessToken: string;
