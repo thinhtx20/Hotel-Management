@@ -7,7 +7,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { AddServiceOrderDto, CheckOutDto } from './dto/update-booking-status.dto';
@@ -26,6 +26,7 @@ export class BookingsController {
 
   @Post()
   @ApiOperation({ summary: 'Đặt phòng mới (Tự động tính tiền & phòng tránh trùng lịch)' })
+  @ApiResponse({ status: 201, description: 'Đặt phòng thành công' })
   create(
     @Body() createBookingDto: CreateBookingDto,
     @CurrentUser('id') userId: string,
@@ -39,6 +40,7 @@ export class BookingsController {
   @ApiQuery({ name: 'status', enum: BookingStatus, required: false })
   @ApiQuery({ name: 'customerId', type: String, required: false })
   @ApiQuery({ name: 'roomId', type: String, required: false })
+  @ApiResponse({ status: 200, description: 'Lấy danh sách đặt phòng thành công' })
   findAll(
     @CurrentUser('id') userId: string,
     @CurrentUser('role') userRole: Role,
@@ -46,13 +48,13 @@ export class BookingsController {
     @Query('customerId') customerId?: string,
     @Query('roomId') roomId?: string,
   ) {
-    // Nếu là CUSTOMER thì chỉ xem được danh sách đơn đặt của chính mình
     const finalCustomerId = userRole === Role.CUSTOMER ? userId : customerId;
     return this.bookingsService.findAll(status, finalCustomerId, roomId);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Xem chi tiết đơn đặt phòng' })
+  @ApiResponse({ status: 200, description: 'Lấy thông tin chi tiết đơn đặt phòng thành công' })
   findOne(@Param('id') id: string) {
     return this.bookingsService.findOne(id);
   }
@@ -60,6 +62,7 @@ export class BookingsController {
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Post(':id/check-in')
   @ApiOperation({ summary: 'Check-in khách vào nhận phòng (Chuyển phòng sang OCCUPIED)' })
+  @ApiResponse({ status: 200, description: 'Check-in nhận phòng thành công' })
   checkIn(@Param('id') id: string) {
     return this.bookingsService.checkIn(id);
   }
@@ -67,6 +70,7 @@ export class BookingsController {
   @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
   @Post(':id/check-out')
   @ApiOperation({ summary: 'Check-out trả phòng, tính tiền dịch vụ và xuất hóa đơn' })
+  @ApiResponse({ status: 200, description: 'Check-out và xuất hóa đơn thành công' })
   checkOut(
     @Param('id') id: string,
     @Body() checkOutDto: CheckOutDto,
@@ -77,6 +81,7 @@ export class BookingsController {
 
   @Post(':id/cancel')
   @ApiOperation({ summary: 'Hủy đơn đặt phòng và giải phóng trạng thái phòng' })
+  @ApiResponse({ status: 200, description: 'Hủy đơn đặt phòng thành công' })
   cancel(@Param('id') id: string) {
     return this.bookingsService.cancel(id);
   }
@@ -84,6 +89,7 @@ export class BookingsController {
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Post(':id/services')
   @ApiOperation({ summary: 'Ghi nhận sử dụng dịch vụ phụ trợ (Minibar, giặt là, ăn uống tại phòng)' })
+  @ApiResponse({ status: 201, description: 'Thêm dịch vụ phụ trợ vào phòng thành công' })
   addServiceOrder(
     @Param('id') id: string,
     @Body() dto: AddServiceOrderDto,

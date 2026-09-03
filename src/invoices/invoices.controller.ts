@@ -7,7 +7,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { InvoicesService } from './invoices.service';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -27,6 +27,7 @@ export class InvoicesController {
   @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
   @ApiOperation({ summary: 'Lấy danh sách hóa đơn theo trạng thái thanh toán' })
   @ApiQuery({ name: 'status', enum: PaymentStatus, required: false })
+  @ApiResponse({ status: 200, description: 'Lấy danh sách hóa đơn thành công' })
   findAll(@Query('status') status?: PaymentStatus) {
     return this.invoicesService.findAll(status);
   }
@@ -34,6 +35,7 @@ export class InvoicesController {
   @Get(':id')
   @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
   @ApiOperation({ summary: 'Xem chi tiết hóa đơn, tiền phòng và bảng kê dịch vụ phụ trợ' })
+  @ApiResponse({ status: 200, description: 'Xem chi tiết hóa đơn thành công' })
   findOne(@Param('id') id: string) {
     return this.invoicesService.findOne(id);
   }
@@ -41,6 +43,7 @@ export class InvoicesController {
   @Post(':id/pay')
   @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
   @ApiOperation({ summary: 'Ghi nhận thanh toán hóa đơn (Thu ngân / Kế toán)' })
+  @ApiResponse({ status: 200, description: 'Ghi nhận thanh toán hóa đơn thành công' })
   recordPayment(
     @Param('id') id: string,
     @Body() dto: RecordPaymentDto,

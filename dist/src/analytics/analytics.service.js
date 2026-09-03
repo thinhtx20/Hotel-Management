@@ -22,10 +22,15 @@ let AnalyticsService = class AnalyticsService {
         todayStart.setHours(0, 0, 0, 0);
         const todayEnd = new Date();
         todayEnd.setHours(23, 59, 59, 999);
-        const [totalRooms, availableRooms, occupiedRooms, cleaningRooms, maintenanceRooms,] = await Promise.all([
+        const yesterdayStart = new Date(todayStart);
+        yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+        const yesterdayEnd = new Date(todayEnd);
+        yesterdayEnd.setDate(yesterdayEnd.getDate() - 1);
+        const [totalRooms, availableRooms, occupiedRooms, reservedRooms, cleaningRooms, maintenanceRooms,] = await Promise.all([
             this.prisma.room.count(),
             this.prisma.room.count({ where: { status: client_1.RoomStatus.AVAILABLE } }),
             this.prisma.room.count({ where: { status: client_1.RoomStatus.OCCUPIED } }),
+            this.prisma.room.count({ where: { status: client_1.RoomStatus.RESERVED } }),
             this.prisma.room.count({ where: { status: client_1.RoomStatus.CLEANING } }),
             this.prisma.room.count({ where: { status: client_1.RoomStatus.MAINTENANCE } }),
         ]);
@@ -48,16 +53,62 @@ let AnalyticsService = class AnalyticsService {
                 },
             }),
         ]);
-        const revenueAggregate = await this.prisma.invoice.aggregate({
-            _sum: { paidAmount: true },
-            where: { paymentStatus: client_1.PaymentStatus.PAID },
-        });
-        const occupancyRate = totalRooms > 0 ? ((occupiedRooms / totalRooms) * 100).toFixed(1) : '0';
+        const [allRevenueAggregate, todayRevenueAggregate, yesterdayRevenueAggregate, pendingBookings, unpaidInvoices,] = await Promise.all([
+            this.prisma.invoice.aggregate({
+                _sum: { paidAmount: true },
+                where: { paymentStatus: client_1.PaymentStatus.PAID },
+            }),
+            this.prisma.invoice.aggregate({
+                _sum: { paidAmount: true },
+                where: {
+                    paymentStatus: client_1.PaymentStatus.PAID,
+                    paidAt: { gte: todayStart, lte: todayEnd },
+                },
+            }),
+            this.prisma.invoice.aggregate({
+                _sum: { paidAmount: true },
+                where: {
+                    paymentStatus: client_1.PaymentStatus.PAID,
+                    paidAt: { gte: yesterdayStart, lte: yesterdayEnd },
+                },
+            }),
+            this.prisma.booking.count({
+                where: { status: client_1.BookingStatus.PENDING },
+            }),
+            this.prisma.invoice.count({
+                where: {
+                    paymentStatus: { in: [client_1.PaymentStatus.UNPAID, client_1.PaymentStatus.PARTIAL] },
+                },
+            }),
+        ]);
+        const todayRevenue = todayRevenueAggregate._sum.paidAmount || 0;
+        const yesterdayRevenue = yesterdayRevenueAggregate._sum.paidAmount || 0;
+        let revenueChangePercent = null;
+        if (yesterdayRevenue > 0) {
+            revenueChangePercent = Number((((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100).toFixed(1));
+        }
+        const occupancyRate = totalRooms > 0 ? Number(((occupiedRooms / totalRooms) * 100).toFixed(1)) : 0;
         return {
+            totalRooms,
+            availableRooms,
+            occupiedRooms,
+            reservedRooms,
+            cleaningRooms,
+            maintenanceRooms,
+            occupancyRate,
+            todayCheckIns,
+            todayCheckOuts,
+            activeBookings,
+            todayRevenue,
+            yesterdayRevenue,
+            revenueChangePercent,
+            pendingBookings,
+            unpaidInvoices,
             rooms: {
                 total: totalRooms,
                 available: availableRooms,
                 occupied: occupiedRooms,
+                reserved: reservedRooms,
                 cleaning: cleaningRooms,
                 maintenance: maintenanceRooms,
                 occupancyRate: `${occupancyRate}%`,
@@ -67,7 +118,71 @@ let AnalyticsService = class AnalyticsService {
                 expectedCheckOuts: todayCheckOuts,
                 activeBookings,
             },
-            totalRevenue: revenueAggregate._sum.paidAmount || 0,
+            totalRevenue: allRevenueAggregate._sum.paidAmount || 0,
+        };
+    }
+    async getDailyRevenue(days = 7) {
+        const numDays = Math.max(1, Math.min(days || 7, 90));
+        const dayBuckets = [];
+        const weekdayLabels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+        for (let i = numDays - 1; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            const start = new Date(d);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(d);
+            end.setHours(23, 59, 59, 999);
+            const year = start.getFullYear();
+            const month = String(start.getMonth() + 1).padStart(2, '0');
+            const day = String(start.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${day}`;
+            const label = weekdayLabels[start.getDay()];
+            dayBuckets.push({ dateStr, label, start, end });
+        }
+        const rangeStart = dayBuckets[0].start;
+        const rangeEnd = dayBuckets[dayBuckets.length - 1].end;
+        const invoices = await this.prisma.invoice.findMany({
+            where: {
+                paidAt: { gte: rangeStart, lte: rangeEnd },
+                paymentStatus: client_1.PaymentStatus.PAID,
+            },
+            select: {
+                paidAmount: true,
+                paidAt: true,
+            },
+        });
+        const series = dayBuckets.map((bucket) => {
+            let revenue = 0;
+            let invoiceCount = 0;
+            for (const inv of invoices) {
+                if (inv.paidAt && inv.paidAt >= bucket.start && inv.paidAt <= bucket.end) {
+                    revenue += inv.paidAmount;
+                    invoiceCount += 1;
+                }
+            }
+            return {
+                date: bucket.dateStr,
+                label: bucket.label,
+                revenue,
+                invoiceCount,
+            };
+        });
+        const total = series.reduce((acc, item) => acc + item.revenue, 0);
+        const average = numDays > 0 ? Math.round(total / numDays) : 0;
+        let peak = series[0]
+            ? { date: series[0].date, revenue: series[0].revenue }
+            : { date: '', revenue: 0 };
+        for (const item of series) {
+            if (item.revenue > peak.revenue) {
+                peak = { date: item.date, revenue: item.revenue };
+            }
+        }
+        return {
+            days: numDays,
+            series,
+            total,
+            average,
+            peak,
         };
     }
     async getRevenueAnalytics(year) {
@@ -131,6 +246,7 @@ let AnalyticsService = class AnalyticsService {
             const total = rt.rooms.length;
             const occupied = rt.rooms.filter((r) => r.status === client_1.RoomStatus.OCCUPIED).length;
             const available = rt.rooms.filter((r) => r.status === client_1.RoomStatus.AVAILABLE).length;
+            const reserved = rt.rooms.filter((r) => r.status === client_1.RoomStatus.RESERVED).length;
             const rate = total > 0 ? ((occupied / total) * 100).toFixed(1) : '0';
             return {
                 roomTypeId: rt.id,
@@ -140,6 +256,7 @@ let AnalyticsService = class AnalyticsService {
                 totalRooms: total,
                 occupiedRooms: occupied,
                 availableRooms: available,
+                reservedRooms: reserved,
                 occupancyRate: `${rate}%`,
             };
         });

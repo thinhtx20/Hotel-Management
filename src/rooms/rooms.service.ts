@@ -10,7 +10,8 @@ import { ElasticsearchService } from '../elasticsearch/elasticsearch.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { QueryAvailableRoomsDto } from './dto/query-available-rooms.dto';
-import { SearchRoomDto } from './dto/search-room.dto';
+import { RoomSortOption, SearchRoomDto } from './dto/search-room.dto';
+import { toRoomResponse } from './dto/room-response.dto';
 import { BookingStatus, RoomStatus } from '@prisma/client';
 
 @Injectable()
@@ -60,11 +61,11 @@ export class RoomsService {
       amenities: room.roomType.amenities,
     });
 
-    return room;
+    return toRoomResponse(room, true);
   }
 
-  async findAll(status?: RoomStatus, floor?: number, roomTypeId?: string) {
-    return this.prisma.room.findMany({
+  async findAll(status?: RoomStatus, floor?: number, roomTypeId?: string, includeNotes = false) {
+    const rooms = await this.prisma.room.findMany({
       where: {
         ...(status ? { status } : {}),
         ...(floor ? { floor } : {}),
@@ -75,9 +76,11 @@ export class RoomsService {
       },
       orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
     });
+
+    return rooms.map((r) => toRoomResponse(r, includeNotes));
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, includeNotes = false) {
     const room = await this.prisma.room.findUnique({
       where: { id },
       include: {
@@ -94,13 +97,13 @@ export class RoomsService {
       throw new NotFoundException(`Không tìm thấy phòng với ID: ${id}`);
     }
 
-    return room;
+    return toRoomResponse(room, includeNotes);
   }
 
   /**
    * Tìm kiếm phòng trống có tích hợp Redis Caching (TTL 60 giây)
    */
-  async findAvailable(query: QueryAvailableRoomsDto) {
+  async findAvailable(query: QueryAvailableRoomsDto, includeNotes = false) {
     const checkIn = new Date(query.checkInDate);
     const checkOut = new Date(query.checkOutDate);
 
@@ -145,51 +148,85 @@ export class RoomsService {
       orderBy: { roomNumber: 'asc' },
     });
 
-    // Lưu vào Redis cache trong 60 giây
-    await this.redis.set(cacheKey, availableRooms, 60);
+    const mapped = availableRooms.map((r) => toRoomResponse(r, includeNotes));
 
-    return availableRooms;
+    // Lưu vào Redis cache trong 60 giây
+    await this.redis.set(cacheKey, mapped, 60);
+
+    return mapped;
   }
 
   /**
-   * Tìm kiếm thông minh Full-Text Search qua Elasticsearch
+   * Tìm kiếm thông minh Full-Text Search qua Elasticsearch với fallback PostgreSQL (BE-3, BE-7, BE-8)
    */
-  async search(dto: SearchRoomDto) {
+  async search(dto: SearchRoomDto, includeNotes = false) {
     if (this.esService.isReady) {
-      const esResults = await this.esService.searchRooms(
+      const esRoomIds = await this.esService.searchRooms(
         dto.q,
         dto.minPrice,
         dto.maxPrice,
         dto.amenities,
+        dto.floor,
+        dto.status,
+        dto.sort,
       );
-      if (esResults.length > 0) {
-        return esResults;
+
+      if (esRoomIds.length > 0) {
+        // Hydrate lại từ Postgres theo đúng danh sách ID để có ảnh và tiện ích đầy đủ (BE-8)
+        const rooms = await this.prisma.room.findMany({
+          where: { id: { in: esRoomIds } },
+          include: { roomType: true },
+        });
+
+        const roomMap = new Map(rooms.map((r) => [r.id, r]));
+        return esRoomIds
+          .map((id) => roomMap.get(id))
+          .filter((r): r is (typeof rooms)[0] => !!r)
+          .map((r) => toRoomResponse(r, includeNotes));
       }
     }
 
-    // Fallback: Tìm kiếm trong PostgreSQL nếu ES chưa bật
-    return this.prisma.room.findMany({
-      where: {
-        status: RoomStatus.AVAILABLE,
-        roomType: {
-          ...(dto.minPrice ? { basePrice: { gte: dto.minPrice } } : {}),
-          ...(dto.maxPrice ? { basePrice: { lte: dto.maxPrice } } : {}),
-          ...(dto.q
-            ? {
-                OR: [
-                  { name: { contains: dto.q, mode: 'insensitive' } },
-                  { description: { contains: dto.q, mode: 'insensitive' } },
-                ],
-              }
-            : {}),
-        },
+    // Fallback: Tìm kiếm trong PostgreSQL nếu ES chưa bật hoặc không có kết quả
+    const where: any = {
+      ...(dto.status ? { status: dto.status } : {}),
+      ...(dto.floor ? { floor: dto.floor } : {}),
+      roomType: {
+        ...(dto.minPrice ? { basePrice: { gte: dto.minPrice } } : {}),
+        ...(dto.maxPrice ? { basePrice: { lte: dto.maxPrice } } : {}),
+        ...(dto.amenities && dto.amenities.length > 0
+          ? { amenities: { hasEvery: dto.amenities } }
+          : {}),
+        ...(dto.q
+          ? {
+              OR: [
+                { name: { contains: dto.q, mode: 'insensitive' } },
+                { description: { contains: dto.q, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
       },
+    };
+
+    let orderBy: any[] = [{ floor: 'asc' }, { roomNumber: 'asc' }];
+    if (dto.sort === RoomSortOption.PRICE_ASC) {
+      orderBy = [{ roomType: { basePrice: 'asc' } }, { roomNumber: 'asc' }];
+    } else if (dto.sort === RoomSortOption.PRICE_DESC) {
+      orderBy = [{ roomType: { basePrice: 'desc' } }, { roomNumber: 'asc' }];
+    } else if (dto.sort === RoomSortOption.FLOOR_DESC) {
+      orderBy = [{ floor: 'desc' }, { roomNumber: 'asc' }];
+    }
+
+    const rooms = await this.prisma.room.findMany({
+      where,
       include: { roomType: true },
+      orderBy,
     });
+
+    return rooms.map((r) => toRoomResponse(r, includeNotes));
   }
 
   async update(id: string, dto: UpdateRoomDto) {
-    await this.findOne(id);
+    await this.findOne(id, true);
     const updated = await this.prisma.room.update({
       where: { id },
       data: dto,
@@ -214,11 +251,11 @@ export class RoomsService {
       amenities: updated.roomType.amenities,
     });
 
-    return updated;
+    return toRoomResponse(updated, true);
   }
 
   async updateStatus(id: string, status: RoomStatus) {
-    await this.findOne(id);
+    await this.findOne(id, true);
     const updated = await this.prisma.room.update({
       where: { id },
       data: { status },
@@ -226,11 +263,11 @@ export class RoomsService {
     });
 
     await this.redis.delByPattern('cache:rooms:*');
-    return updated;
+    return toRoomResponse(updated, true);
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    await this.findOne(id, true);
     const deleted = await this.prisma.room.delete({
       where: { id },
     });

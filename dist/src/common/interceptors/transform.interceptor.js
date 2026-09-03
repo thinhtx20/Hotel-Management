@@ -14,12 +14,21 @@ let TransformInterceptor = class TransformInterceptor {
         const ctx = context.switchToHttp();
         const response = ctx.getResponse();
         const statusCode = response.statusCode;
-        return next.handle().pipe((0, operators_1.map)((data) => ({
-            statusCode,
-            success: true,
-            data,
-            timestamp: new Date().toISOString(),
-        })));
+        return next.handle().pipe((0, operators_1.map)((data) => {
+            let message = 'Thành công';
+            if (data && typeof data === 'object' && !Array.isArray(data) && 'message' in data) {
+                if (typeof data.message === 'string') {
+                    message = data.message;
+                }
+            }
+            return {
+                statusCode,
+                success: true,
+                message,
+                data: data !== undefined ? data : null,
+                timestamp: new Date().toISOString(),
+            };
+        }));
     }
 };
 exports.TransformInterceptor = TransformInterceptor;

@@ -8,7 +8,7 @@ import {
   Delete,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { RoomTypesService } from './room-types.service';
 import { CreateRoomTypeDto } from './dto/create-room-type.dto';
 import { UpdateRoomTypeDto } from './dto/update-room-type.dto';
@@ -28,6 +28,7 @@ export class RoomTypesController {
   @Roles(Role.ADMIN)
   @Post()
   @ApiOperation({ summary: 'Tạo loại phòng mới (Chỉ Admin)' })
+  @ApiResponse({ status: 201, description: 'Tạo loại phòng mới thành công' })
   create(@Body() createRoomTypeDto: CreateRoomTypeDto) {
     return this.roomTypesService.create(createRoomTypeDto);
   }
@@ -35,6 +36,7 @@ export class RoomTypesController {
   @Public()
   @Get()
   @ApiOperation({ summary: 'Lấy danh sách loại phòng và tiện nghi (Công khai)' })
+  @ApiResponse({ status: 200, description: 'Lấy danh sách loại phòng thành công' })
   findAll() {
     return this.roomTypesService.findAll();
   }
@@ -42,6 +44,7 @@ export class RoomTypesController {
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết một loại phòng (Công khai)' })
+  @ApiResponse({ status: 200, description: 'Lấy chi tiết loại phòng thành công' })
   findOne(@Param('id') id: string) {
     return this.roomTypesService.findOne(id);
   }
@@ -51,6 +54,7 @@ export class RoomTypesController {
   @Roles(Role.ADMIN)
   @Patch(':id')
   @ApiOperation({ summary: 'Cập nhật loại phòng và đơn giá (Chỉ Admin)' })
+  @ApiResponse({ status: 200, description: 'Cập nhật loại phòng thành công' })
   update(
     @Param('id') id: string,
     @Body() updateRoomTypeDto: UpdateRoomTypeDto,
@@ -63,6 +67,7 @@ export class RoomTypesController {
   @Roles(Role.ADMIN)
   @Delete(':id')
   @ApiOperation({ summary: 'Xóa loại phòng (Chỉ Admin)' })
+  @ApiResponse({ status: 200, description: 'Xóa loại phòng thành công' })
   remove(@Param('id') id: string) {
     return this.roomTypesService.remove(id);
   }

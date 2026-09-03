@@ -3,6 +3,7 @@ import { Observable } from 'rxjs';
 export interface Response<T> {
     statusCode: number;
     success: boolean;
+    message: string;
     data: T;
     timestamp: string;
 }

@@ -14,6 +14,8 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const redis_service_1 = require("../redis/redis.service");
 const elasticsearch_service_1 = require("../elasticsearch/elasticsearch.service");
+const search_room_dto_1 = require("./dto/search-room.dto");
+const room_response_dto_1 = require("./dto/room-response.dto");
 const client_1 = require("@prisma/client");
 let RoomsService = class RoomsService {
     constructor(prisma, redis, esService) {
@@ -53,10 +55,10 @@ let RoomsService = class RoomsService {
             capacityChildren: room.roomType.capacityChildren,
             amenities: room.roomType.amenities,
         });
-        return room;
+        return (0, room_response_dto_1.toRoomResponse)(room, true);
     }
-    async findAll(status, floor, roomTypeId) {
-        return this.prisma.room.findMany({
+    async findAll(status, floor, roomTypeId, includeNotes = false) {
+        const rooms = await this.prisma.room.findMany({
             where: {
                 ...(status ? { status } : {}),
                 ...(floor ? { floor } : {}),
@@ -67,8 +69,9 @@ let RoomsService = class RoomsService {
             },
             orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
         });
+        return rooms.map((r) => (0, room_response_dto_1.toRoomResponse)(r, includeNotes));
     }
-    async findOne(id) {
+    async findOne(id, includeNotes = false) {
         const room = await this.prisma.room.findUnique({
             where: { id },
             include: {
@@ -83,9 +86,9 @@ let RoomsService = class RoomsService {
         if (!room) {
             throw new common_1.NotFoundException(`Không tìm thấy phòng với ID: ${id}`);
         }
-        return room;
+        return (0, room_response_dto_1.toRoomResponse)(room, includeNotes);
     }
-    async findAvailable(query) {
+    async findAvailable(query, includeNotes = false) {
         const checkIn = new Date(query.checkInDate);
         const checkOut = new Date(query.checkOutDate);
         if (checkIn >= checkOut) {
@@ -123,37 +126,63 @@ let RoomsService = class RoomsService {
             },
             orderBy: { roomNumber: 'asc' },
         });
-        await this.redis.set(cacheKey, availableRooms, 60);
-        return availableRooms;
+        const mapped = availableRooms.map((r) => (0, room_response_dto_1.toRoomResponse)(r, includeNotes));
+        await this.redis.set(cacheKey, mapped, 60);
+        return mapped;
     }
-    async search(dto) {
+    async search(dto, includeNotes = false) {
         if (this.esService.isReady) {
-            const esResults = await this.esService.searchRooms(dto.q, dto.minPrice, dto.maxPrice, dto.amenities);
-            if (esResults.length > 0) {
-                return esResults;
+            const esRoomIds = await this.esService.searchRooms(dto.q, dto.minPrice, dto.maxPrice, dto.amenities, dto.floor, dto.status, dto.sort);
+            if (esRoomIds.length > 0) {
+                const rooms = await this.prisma.room.findMany({
+                    where: { id: { in: esRoomIds } },
+                    include: { roomType: true },
+                });
+                const roomMap = new Map(rooms.map((r) => [r.id, r]));
+                return esRoomIds
+                    .map((id) => roomMap.get(id))
+                    .filter((r) => !!r)
+                    .map((r) => (0, room_response_dto_1.toRoomResponse)(r, includeNotes));
             }
         }
-        return this.prisma.room.findMany({
-            where: {
-                status: client_1.RoomStatus.AVAILABLE,
-                roomType: {
-                    ...(dto.minPrice ? { basePrice: { gte: dto.minPrice } } : {}),
-                    ...(dto.maxPrice ? { basePrice: { lte: dto.maxPrice } } : {}),
-                    ...(dto.q
-                        ? {
-                            OR: [
-                                { name: { contains: dto.q, mode: 'insensitive' } },
-                                { description: { contains: dto.q, mode: 'insensitive' } },
-                            ],
-                        }
-                        : {}),
-                },
+        const where = {
+            ...(dto.status ? { status: dto.status } : {}),
+            ...(dto.floor ? { floor: dto.floor } : {}),
+            roomType: {
+                ...(dto.minPrice ? { basePrice: { gte: dto.minPrice } } : {}),
+                ...(dto.maxPrice ? { basePrice: { lte: dto.maxPrice } } : {}),
+                ...(dto.amenities && dto.amenities.length > 0
+                    ? { amenities: { hasEvery: dto.amenities } }
+                    : {}),
+                ...(dto.q
+                    ? {
+                        OR: [
+                            { name: { contains: dto.q, mode: 'insensitive' } },
+                            { description: { contains: dto.q, mode: 'insensitive' } },
+                        ],
+                    }
+                    : {}),
             },
+        };
+        let orderBy = [{ floor: 'asc' }, { roomNumber: 'asc' }];
+        if (dto.sort === search_room_dto_1.RoomSortOption.PRICE_ASC) {
+            orderBy = [{ roomType: { basePrice: 'asc' } }, { roomNumber: 'asc' }];
+        }
+        else if (dto.sort === search_room_dto_1.RoomSortOption.PRICE_DESC) {
+            orderBy = [{ roomType: { basePrice: 'desc' } }, { roomNumber: 'asc' }];
+        }
+        else if (dto.sort === search_room_dto_1.RoomSortOption.FLOOR_DESC) {
+            orderBy = [{ floor: 'desc' }, { roomNumber: 'asc' }];
+        }
+        const rooms = await this.prisma.room.findMany({
+            where,
             include: { roomType: true },
+            orderBy,
         });
+        return rooms.map((r) => (0, room_response_dto_1.toRoomResponse)(r, includeNotes));
     }
     async update(id, dto) {
-        await this.findOne(id);
+        await this.findOne(id, true);
         const updated = await this.prisma.room.update({
             where: { id },
             data: dto,
@@ -174,20 +203,20 @@ let RoomsService = class RoomsService {
             capacityChildren: updated.roomType.capacityChildren,
             amenities: updated.roomType.amenities,
         });
-        return updated;
+        return (0, room_response_dto_1.toRoomResponse)(updated, true);
     }
     async updateStatus(id, status) {
-        await this.findOne(id);
+        await this.findOne(id, true);
         const updated = await this.prisma.room.update({
             where: { id },
             data: { status },
             include: { roomType: true },
         });
         await this.redis.delByPattern('cache:rooms:*');
-        return updated;
+        return (0, room_response_dto_1.toRoomResponse)(updated, true);
     }
     async remove(id) {
-        await this.findOne(id);
+        await this.findOne(id, true);
         const deleted = await this.prisma.room.delete({
             where: { id },
         });

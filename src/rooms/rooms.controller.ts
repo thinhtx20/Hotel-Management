@@ -9,7 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { RoomsService } from './rooms.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto, UpdateRoomStatusDto } from './dto/update-room.dto';
@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Role, RoomStatus } from '@prisma/client';
 
 @ApiTags('Rooms (Quản lý Phòng & Tìm kiếm)')
@@ -31,6 +32,7 @@ export class RoomsController {
   @Roles(Role.ADMIN)
   @Post()
   @ApiOperation({ summary: 'Tạo phòng mới (Chỉ Admin)' })
+  @ApiResponse({ status: 201, description: 'Tạo phòng mới thành công' })
   create(@Body() createRoomDto: CreateRoomDto) {
     return this.roomsService.create(createRoomDto);
   }
@@ -38,15 +40,19 @@ export class RoomsController {
   @Public()
   @Get('search')
   @ApiOperation({ summary: 'Tìm kiếm phòng Full-Text siêu tốc bằng Elasticsearch (Fuzzy match, tiện ích, khoảng giá)' })
-  search(@Query() searchDto: SearchRoomDto) {
-    return this.roomsService.search(searchDto);
+  @ApiResponse({ status: 200, description: 'Tìm kiếm danh sách phòng thành công' })
+  search(@Query() searchDto: SearchRoomDto, @CurrentUser() user?: any) {
+    const isStaff = user?.role === Role.ADMIN || user?.role === Role.RECEPTIONIST;
+    return this.roomsService.search(searchDto, isStaff);
   }
 
   @Public()
   @Get('available')
   @ApiOperation({ summary: 'Tìm kiếm danh sách phòng trống theo khoảng thời gian đặt phòng (Redis Caching)' })
-  findAvailable(@Query() query: QueryAvailableRoomsDto) {
-    return this.roomsService.findAvailable(query);
+  @ApiResponse({ status: 200, description: 'Lấy danh sách phòng trống thành công' })
+  findAvailable(@Query() query: QueryAvailableRoomsDto, @CurrentUser() user?: any) {
+    const isStaff = user?.role === Role.ADMIN || user?.role === Role.RECEPTIONIST;
+    return this.roomsService.findAvailable(query, isStaff);
   }
 
   @Public()
@@ -55,19 +61,24 @@ export class RoomsController {
   @ApiQuery({ name: 'status', enum: RoomStatus, required: false })
   @ApiQuery({ name: 'floor', type: Number, required: false })
   @ApiQuery({ name: 'roomTypeId', type: String, required: false })
+  @ApiResponse({ status: 200, description: 'Lấy danh sách tất cả phòng thành công' })
   findAll(
     @Query('status') status?: RoomStatus,
     @Query('floor') floor?: number,
     @Query('roomTypeId') roomTypeId?: string,
+    @CurrentUser() user?: any,
   ) {
-    return this.roomsService.findAll(status, floor ? Number(floor) : undefined, roomTypeId);
+    const isStaff = user?.role === Role.ADMIN || user?.role === Role.RECEPTIONIST;
+    return this.roomsService.findAll(status, floor ? Number(floor) : undefined, roomTypeId, isStaff);
   }
 
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'Xem chi tiết thông tin một phòng' })
-  findOne(@Param('id') id: string) {
-    return this.roomsService.findOne(id);
+  @ApiResponse({ status: 200, description: 'Xem chi tiết thông tin phòng thành công' })
+  findOne(@Param('id') id: string, @CurrentUser() user?: any) {
+    const isStaff = user?.role === Role.ADMIN || user?.role === Role.RECEPTIONIST;
+    return this.roomsService.findOne(id, isStaff);
   }
 
   @ApiBearerAuth()
@@ -75,6 +86,7 @@ export class RoomsController {
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Patch(':id/status')
   @ApiOperation({ summary: 'Cập nhật nhanh trạng thái phòng (Trống, Đang ở, Dọn dẹp, Bảo trì)' })
+  @ApiResponse({ status: 200, description: 'Cập nhật trạng thái phòng thành công' })
   updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateRoomStatusDto,
@@ -87,6 +99,7 @@ export class RoomsController {
   @Roles(Role.ADMIN)
   @Patch(':id')
   @ApiOperation({ summary: 'Cập nhật thông tin phòng (Chỉ Admin)' })
+  @ApiResponse({ status: 200, description: 'Cập nhật thông tin phòng thành công' })
   update(@Param('id') id: string, @Body() updateRoomDto: UpdateRoomDto) {
     return this.roomsService.update(id, updateRoomDto);
   }
@@ -96,6 +109,7 @@ export class RoomsController {
   @Roles(Role.ADMIN)
   @Delete(':id')
   @ApiOperation({ summary: 'Xóa phòng (Chỉ Admin)' })
+  @ApiResponse({ status: 200, description: 'Xóa phòng thành công' })
   remove(@Param('id') id: string) {
     return this.roomsService.remove(id);
   }

@@ -24,6 +24,7 @@ const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
 const public_decorator_1 = require("../common/decorators/public.decorator");
+const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
 const client_1 = require("@prisma/client");
 let RoomsController = class RoomsController {
     constructor(roomsService) {
@@ -32,17 +33,21 @@ let RoomsController = class RoomsController {
     create(createRoomDto) {
         return this.roomsService.create(createRoomDto);
     }
-    search(searchDto) {
-        return this.roomsService.search(searchDto);
+    search(searchDto, user) {
+        const isStaff = user?.role === client_1.Role.ADMIN || user?.role === client_1.Role.RECEPTIONIST;
+        return this.roomsService.search(searchDto, isStaff);
     }
-    findAvailable(query) {
-        return this.roomsService.findAvailable(query);
+    findAvailable(query, user) {
+        const isStaff = user?.role === client_1.Role.ADMIN || user?.role === client_1.Role.RECEPTIONIST;
+        return this.roomsService.findAvailable(query, isStaff);
     }
-    findAll(status, floor, roomTypeId) {
-        return this.roomsService.findAll(status, floor ? Number(floor) : undefined, roomTypeId);
+    findAll(status, floor, roomTypeId, user) {
+        const isStaff = user?.role === client_1.Role.ADMIN || user?.role === client_1.Role.RECEPTIONIST;
+        return this.roomsService.findAll(status, floor ? Number(floor) : undefined, roomTypeId, isStaff);
     }
-    findOne(id) {
-        return this.roomsService.findOne(id);
+    findOne(id, user) {
+        const isStaff = user?.role === client_1.Role.ADMIN || user?.role === client_1.Role.RECEPTIONIST;
+        return this.roomsService.findOne(id, isStaff);
     }
     updateStatus(id, dto) {
         return this.roomsService.updateStatus(id, dto.status);
@@ -61,6 +66,7 @@ __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, common_1.Post)(),
     (0, swagger_1.ApiOperation)({ summary: 'Tạo phòng mới (Chỉ Admin)' }),
+    (0, swagger_1.ApiResponse)({ status: 201, description: 'Tạo phòng mới thành công' }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [create_room_dto_1.CreateRoomDto]),
@@ -70,18 +76,22 @@ __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Get)('search'),
     (0, swagger_1.ApiOperation)({ summary: 'Tìm kiếm phòng Full-Text siêu tốc bằng Elasticsearch (Fuzzy match, tiện ích, khoảng giá)' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Tìm kiếm danh sách phòng thành công' }),
     __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [search_room_dto_1.SearchRoomDto]),
+    __metadata("design:paramtypes", [search_room_dto_1.SearchRoomDto, Object]),
     __metadata("design:returntype", void 0)
 ], RoomsController.prototype, "search", null);
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Get)('available'),
     (0, swagger_1.ApiOperation)({ summary: 'Tìm kiếm danh sách phòng trống theo khoảng thời gian đặt phòng (Redis Caching)' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lấy danh sách phòng trống thành công' }),
     __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [query_available_rooms_dto_1.QueryAvailableRoomsDto]),
+    __metadata("design:paramtypes", [query_available_rooms_dto_1.QueryAvailableRoomsDto, Object]),
     __metadata("design:returntype", void 0)
 ], RoomsController.prototype, "findAvailable", null);
 __decorate([
@@ -91,20 +101,24 @@ __decorate([
     (0, swagger_1.ApiQuery)({ name: 'status', enum: client_1.RoomStatus, required: false }),
     (0, swagger_1.ApiQuery)({ name: 'floor', type: Number, required: false }),
     (0, swagger_1.ApiQuery)({ name: 'roomTypeId', type: String, required: false }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lấy danh sách tất cả phòng thành công' }),
     __param(0, (0, common_1.Query)('status')),
     __param(1, (0, common_1.Query)('floor')),
     __param(2, (0, common_1.Query)('roomTypeId')),
+    __param(3, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Number, String]),
+    __metadata("design:paramtypes", [String, Number, String, Object]),
     __metadata("design:returntype", void 0)
 ], RoomsController.prototype, "findAll", null);
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Get)(':id'),
     (0, swagger_1.ApiOperation)({ summary: 'Xem chi tiết thông tin một phòng' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Xem chi tiết thông tin phòng thành công' }),
     __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], RoomsController.prototype, "findOne", null);
 __decorate([
@@ -113,6 +127,7 @@ __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, common_1.Patch)(':id/status'),
     (0, swagger_1.ApiOperation)({ summary: 'Cập nhật nhanh trạng thái phòng (Trống, Đang ở, Dọn dẹp, Bảo trì)' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Cập nhật trạng thái phòng thành công' }),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -125,6 +140,7 @@ __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, common_1.Patch)(':id'),
     (0, swagger_1.ApiOperation)({ summary: 'Cập nhật thông tin phòng (Chỉ Admin)' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Cập nhật thông tin phòng thành công' }),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -137,6 +153,7 @@ __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, common_1.Delete)(':id'),
     (0, swagger_1.ApiOperation)({ summary: 'Xóa phòng (Chỉ Admin)' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Xóa phòng thành công' }),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),

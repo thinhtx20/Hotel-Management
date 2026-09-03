@@ -10,6 +10,7 @@ import { map } from 'rxjs/operators';
 export interface Response<T> {
   statusCode: number;
   success: boolean;
+  message: string;
   data: T;
   timestamp: string;
 }
@@ -22,12 +23,22 @@ export class TransformInterceptor<T> implements NestInterceptor<T, Response<T>> 
     const statusCode = response.statusCode;
 
     return next.handle().pipe(
-      map((data) => ({
-        statusCode,
-        success: true,
-        data,
-        timestamp: new Date().toISOString(),
-      })),
+      map((data) => {
+        let message = 'Thành công';
+        if (data && typeof data === 'object' && !Array.isArray(data) && 'message' in data) {
+          if (typeof (data as any).message === 'string') {
+            message = (data as any).message;
+          }
+        }
+
+        return {
+          statusCode,
+          success: true,
+          message,
+          data: data !== undefined ? data : null,
+          timestamp: new Date().toISOString(),
+        };
+      }),
     );
   }
 }

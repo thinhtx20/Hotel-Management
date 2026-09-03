@@ -9,6 +9,7 @@ var AllExceptionsFilter_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AllExceptionsFilter = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 let AllExceptionsFilter = AllExceptionsFilter_1 = class AllExceptionsFilter {
     constructor() {
         this.logger = new common_1.Logger(AllExceptionsFilter_1.name);
@@ -17,20 +18,78 @@ let AllExceptionsFilter = AllExceptionsFilter_1 = class AllExceptionsFilter {
         const ctx = host.switchToHttp();
         const response = ctx.getResponse();
         const request = ctx.getRequest();
-        const status = exception instanceof common_1.HttpException
-            ? exception.getStatus()
-            : common_1.HttpStatus.INTERNAL_SERVER_ERROR;
-        const message = exception instanceof common_1.HttpException
-            ? exception.getResponse()
-            : 'Internal Server Error';
-        const errorMessage = typeof message === 'object' && message !== null
-            ? message.message || JSON.stringify(message)
-            : message;
-        this.logger.error(`[${request.method}] ${request.url} - Error: ${JSON.stringify(errorMessage)}`);
+        let status = common_1.HttpStatus.INTERNAL_SERVER_ERROR;
+        let displayMessage = 'Đã có lỗi xảy ra trên hệ thống. Vui lòng thử lại sau.';
+        let errorTitle = 'Internal Server Error';
+        let errorsList = undefined;
+        if (exception instanceof common_1.HttpException) {
+            status = exception.getStatus();
+            const res = exception.getResponse();
+            if (typeof res === 'string') {
+                displayMessage = res;
+                errorTitle = exception.name || 'Http Exception';
+            }
+            else if (typeof res === 'object' && res !== null) {
+                const resObj = res;
+                errorTitle = resObj.error || exception.name || 'Http Exception';
+                if (Array.isArray(resObj.message)) {
+                    errorsList = resObj.message;
+                    displayMessage = resObj.message.join('. ');
+                }
+                else if (typeof resObj.message === 'string') {
+                    displayMessage = resObj.message;
+                }
+                else {
+                    displayMessage = JSON.stringify(resObj.message || res);
+                }
+            }
+        }
+        else if (exception instanceof client_1.Prisma.PrismaClientKnownRequestError) {
+            switch (exception.code) {
+                case 'P2002': {
+                    status = common_1.HttpStatus.CONFLICT;
+                    errorTitle = 'Conflict';
+                    const target = exception.meta?.target?.join(', ');
+                    displayMessage = target
+                        ? `Dữ liệu '${target}' đã tồn tại trong hệ thống, vui lòng kiểm tra lại.`
+                        : 'Dữ liệu bị trùng lặp trong hệ thống.';
+                    break;
+                }
+                case 'P2025': {
+                    status = common_1.HttpStatus.NOT_FOUND;
+                    errorTitle = 'Not Found';
+                    displayMessage = 'Không tìm thấy bản ghi dữ liệu yêu cầu trong hệ thống.';
+                    break;
+                }
+                case 'P2003': {
+                    status = common_1.HttpStatus.BAD_REQUEST;
+                    errorTitle = 'Bad Request';
+                    displayMessage = 'Dữ liệu liên quan không hợp lệ hoặc đang được sử dụng ở bảng khác.';
+                    break;
+                }
+                default: {
+                    status = common_1.HttpStatus.BAD_REQUEST;
+                    errorTitle = 'Database Error';
+                    displayMessage = `Lỗi thao tác cơ sở dữ liệu (${exception.code}).`;
+                    break;
+                }
+            }
+        }
+        else if (exception instanceof Error) {
+            status = common_1.HttpStatus.INTERNAL_SERVER_ERROR;
+            errorTitle = exception.name || 'Error';
+            displayMessage = exception.message || 'Lỗi xử lý yêu cầu trên máy chủ.';
+        }
+        if (!displayMessage || typeof displayMessage !== 'string' || displayMessage.trim() === '') {
+            displayMessage = 'Đã có lỗi xảy ra. Vui lòng thử lại.';
+        }
+        this.logger.error(`[${request.method}] ${request.url} - Status: ${status} - Error: ${errorTitle} - Message: ${displayMessage}`);
         response.status(status).json({
             statusCode: status,
             success: false,
-            message: errorMessage,
+            message: displayMessage,
+            error: errorTitle,
+            ...(errorsList && errorsList.length > 0 ? { errors: errorsList } : {}),
             timestamp: new Date().toISOString(),
             path: request.url,
         });

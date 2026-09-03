@@ -20,14 +20,20 @@ let JwtAuthGuard = class JwtAuthGuard extends (0, passport_1.AuthGuard)('jwt') {
         this.reflector = reflector;
     }
     canActivate(context) {
+        return super.canActivate(context);
+    }
+    handleRequest(err, user, info, context) {
         const isPublic = this.reflector.getAllAndOverride(public_decorator_1.IS_PUBLIC_KEY, [
             context.getHandler(),
             context.getClass(),
         ]);
         if (isPublic) {
-            return true;
+            return user || null;
         }
-        return super.canActivate(context);
+        if (err || !user) {
+            throw err || new common_1.UnauthorizedException('Bạn chưa đăng nhập hoặc phiên làm việc đã hết hạn');
+        }
+        return user;
     }
 };
 exports.JwtAuthGuard = JwtAuthGuard;

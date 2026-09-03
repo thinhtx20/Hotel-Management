@@ -112,14 +112,18 @@ export class ElasticsearchService implements OnModuleInit {
   }
 
   /**
-   * Tìm kiếm Full-Text siêu tốc với Fuzzy Matching và Filters
+   * Tìm kiếm Full-Text siêu tốc với Fuzzy Matching và Filters (BE-8)
+   * Trả về mảng roomId theo đúng thứ tự xếp hạng của Elasticsearch để hydrate lại từ DB
    */
   async searchRooms(
     query?: string,
     minPrice?: number,
     maxPrice?: number,
     amenities?: string[],
-  ): Promise<RoomSearchDocument[]> {
+    floor?: number,
+    status?: string,
+    sort?: string,
+  ): Promise<string[]> {
     if (!this.isReady || !this.client) {
       return [];
     }
@@ -149,11 +153,30 @@ export class ElasticsearchService implements OnModuleInit {
         filterClauses.push({ range: { basePrice: range } });
       }
 
+      // Filter theo tầng
+      if (floor !== undefined) {
+        filterClauses.push({ term: { floor } });
+      }
+
+      // Filter theo trạng thái phòng
+      if (status) {
+        filterClauses.push({ term: { status } });
+      }
+
       // Filter theo danh sách tiện ích
       if (amenities && amenities.length > 0) {
         amenities.forEach((amenity) => {
           filterClauses.push({ term: { amenities: amenity } });
         });
+      }
+
+      let sortOptions: any[] = [];
+      if (sort === 'PRICE_ASC') {
+        sortOptions = [{ basePrice: { order: 'asc' } }, '_score'];
+      } else if (sort === 'PRICE_DESC') {
+        sortOptions = [{ basePrice: { order: 'desc' } }, '_score'];
+      } else if (sort === 'FLOOR_DESC') {
+        sortOptions = [{ floor: { order: 'desc' } }, '_score'];
       }
 
       const response = await this.client.search<RoomSearchDocument>({
@@ -164,9 +187,13 @@ export class ElasticsearchService implements OnModuleInit {
             filter: filterClauses,
           },
         },
+        ...(sortOptions.length > 0 ? { sort: sortOptions } : {}),
+        size: 50,
       } as any);
 
-      return (response.hits.hits || []).map((hit: any) => hit._source as RoomSearchDocument);
+      return (response.hits.hits || [])
+        .map((hit: any) => (hit._source?.id || hit._id) as string)
+        .filter(Boolean);
     } catch (err: any) {
       this.logger.warn(`Lỗi tìm kiếm Elasticsearch: ${err.message}`);
       return [];

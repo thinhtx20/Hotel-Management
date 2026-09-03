@@ -23,5 +23,5 @@ export declare class ElasticsearchService implements OnModuleInit {
     private initIndex;
     indexRoom(roomDoc: RoomSearchDocument): Promise<void>;
     removeRoom(roomId: string): Promise<void>;
-    searchRooms(query?: string, minPrice?: number, maxPrice?: number, amenities?: string[]): Promise<RoomSearchDocument[]>;
+    searchRooms(query?: string, minPrice?: number, maxPrice?: number, amenities?: string[], floor?: number, status?: string, sort?: string): Promise<string[]>;
 }

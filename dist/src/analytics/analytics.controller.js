@@ -30,6 +30,9 @@ let AnalyticsController = class AnalyticsController {
     getRevenue(year) {
         return this.analyticsService.getRevenueAnalytics(year ? Number(year) : undefined);
     }
+    getDailyRevenue(days) {
+        return this.analyticsService.getDailyRevenue(days ? Number(days) : 7);
+    }
     getOccupancyByType() {
         return this.analyticsService.getOccupancyByRoomType();
     }
@@ -38,6 +41,7 @@ exports.AnalyticsController = AnalyticsController;
 __decorate([
     (0, common_1.Get)('dashboard'),
     (0, swagger_1.ApiOperation)({ summary: 'Tổng quan chỉ số phòng, khách hôm nay và tỷ lệ lấp đầy' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lấy dữ liệu tổng quan Dashboard thành công' }),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
@@ -47,14 +51,26 @@ __decorate([
     (0, common_1.Get)('revenue'),
     (0, swagger_1.ApiOperation)({ summary: 'Báo cáo doanh thu theo năm và biểu đồ 12 tháng (Chỉ Admin)' }),
     (0, swagger_1.ApiQuery)({ name: 'year', type: Number, required: false, example: 2026 }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lấy báo cáo doanh thu theo năm thành công' }),
     __param(0, (0, common_1.Query)('year')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Number]),
     __metadata("design:returntype", void 0)
 ], AnalyticsController.prototype, "getRevenue", null);
 __decorate([
+    (0, common_1.Get)('revenue/daily'),
+    (0, swagger_1.ApiOperation)({ summary: 'Báo cáo doanh thu theo chuỗi ngày gần nhất (mặc định 7 ngày)' }),
+    (0, swagger_1.ApiQuery)({ name: 'days', type: Number, required: false, example: 7 }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lấy báo cáo doanh thu theo ngày thành công' }),
+    __param(0, (0, common_1.Query)('days')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", void 0)
+], AnalyticsController.prototype, "getDailyRevenue", null);
+__decorate([
     (0, common_1.Get)('occupancy-by-type'),
     (0, swagger_1.ApiOperation)({ summary: 'Thống kê tỷ lệ lấp đầy theo từng loại phòng' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Lấy thống kê tỷ lệ lấp đầy theo hạng phòng thành công' }),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)

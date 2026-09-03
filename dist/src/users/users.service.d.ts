@@ -9,6 +9,7 @@ export declare class UsersService {
         email: string;
         fullName: string;
         phone: string;
+        avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
         createdAt: Date;
@@ -21,6 +22,7 @@ export declare class UsersService {
         email: string;
         fullName: string;
         phone: string;
+        avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
         createdAt: Date;
@@ -73,6 +75,7 @@ export declare class UsersService {
         email: string;
         fullName: string;
         phone: string;
+        avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
         updatedAt: Date;

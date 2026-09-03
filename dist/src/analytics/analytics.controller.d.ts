@@ -3,10 +3,26 @@ export declare class AnalyticsController {
     private readonly analyticsService;
     constructor(analyticsService: AnalyticsService);
     getDashboard(): Promise<{
+        totalRooms: number;
+        availableRooms: number;
+        occupiedRooms: number;
+        reservedRooms: number;
+        cleaningRooms: number;
+        maintenanceRooms: number;
+        occupancyRate: number;
+        todayCheckIns: number;
+        todayCheckOuts: number;
+        activeBookings: number;
+        todayRevenue: number;
+        yesterdayRevenue: number;
+        revenueChangePercent: number;
+        pendingBookings: number;
+        unpaidInvoices: number;
         rooms: {
             total: number;
             available: number;
             occupied: number;
+            reserved: number;
             cleaning: number;
             maintenance: number;
             occupancyRate: string;
@@ -34,6 +50,21 @@ export declare class AnalyticsController {
             invoiceCount: number;
         }[];
     }>;
+    getDailyRevenue(days?: number): Promise<{
+        days: number;
+        series: {
+            date: string;
+            label: string;
+            revenue: number;
+            invoiceCount: number;
+        }[];
+        total: number;
+        average: number;
+        peak: {
+            date: string;
+            revenue: number;
+        };
+    }>;
     getOccupancyByType(): Promise<{
         roomTypeId: string;
         roomTypeName: string;
@@ -42,6 +73,7 @@ export declare class AnalyticsController {
         totalRooms: number;
         occupiedRooms: number;
         availableRooms: number;
+        reservedRooms: number;
         occupancyRate: string;
     }[]>;
 }

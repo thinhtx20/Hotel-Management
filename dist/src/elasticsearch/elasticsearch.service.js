@@ -99,7 +99,7 @@ let ElasticsearchService = ElasticsearchService_1 = class ElasticsearchService {
             this.logger.warn(`Lỗi khi xóa phòng ${roomId} khỏi Elasticsearch: ${err.message}`);
         }
     }
-    async searchRooms(query, minPrice, maxPrice, amenities) {
+    async searchRooms(query, minPrice, maxPrice, amenities, floor, status, sort) {
         if (!this.isReady || !this.client) {
             return [];
         }
@@ -126,10 +126,26 @@ let ElasticsearchService = ElasticsearchService_1 = class ElasticsearchService {
                     range.lte = maxPrice;
                 filterClauses.push({ range: { basePrice: range } });
             }
+            if (floor !== undefined) {
+                filterClauses.push({ term: { floor } });
+            }
+            if (status) {
+                filterClauses.push({ term: { status } });
+            }
             if (amenities && amenities.length > 0) {
                 amenities.forEach((amenity) => {
                     filterClauses.push({ term: { amenities: amenity } });
                 });
+            }
+            let sortOptions = [];
+            if (sort === 'PRICE_ASC') {
+                sortOptions = [{ basePrice: { order: 'asc' } }, '_score'];
+            }
+            else if (sort === 'PRICE_DESC') {
+                sortOptions = [{ basePrice: { order: 'desc' } }, '_score'];
+            }
+            else if (sort === 'FLOOR_DESC') {
+                sortOptions = [{ floor: { order: 'desc' } }, '_score'];
             }
             const response = await this.client.search({
                 index: this.INDEX_NAME,
@@ -139,8 +155,12 @@ let ElasticsearchService = ElasticsearchService_1 = class ElasticsearchService {
                         filter: filterClauses,
                     },
                 },
+                ...(sortOptions.length > 0 ? { sort: sortOptions } : {}),
+                size: 50,
             });
-            return (response.hits.hits || []).map((hit) => hit._source);
+            return (response.hits.hits || [])
+                .map((hit) => (hit._source?.id || hit._id))
+                .filter(Boolean);
         }
         catch (err) {
             this.logger.warn(`Lỗi tìm kiếm Elasticsearch: ${err.message}`);
