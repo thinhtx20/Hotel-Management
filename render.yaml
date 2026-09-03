@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: hotel-management-backend
+    runtime: docker
+    plan: free
+    region: singapore
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hotel-postgres
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: "7d"
+      - key: DEFAULT_OTP
+        value: "123456"
+
+databases:
+  - name: hotel-postgres
+    plan: free
+    region: singapore
+    databaseName: hotel_db
+    user: postgres
