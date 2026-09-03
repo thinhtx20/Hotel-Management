@@ -118,12 +118,23 @@ async function main() {
   // CUSTOMER
   const customer1 = await prisma.user.create({
     data: {
-      email: 'khachhang1@gmail.com',
+      email: 'customer@hotel.com',
       password: custPassword,
       fullName: 'Nguyễn Anh Tuấn (Khách VIP Platinum)',
       phone: '0918889900',
       role: Role.CUSTOMER,
       avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=400&q=80',
+    },
+  });
+
+  const customerOld1 = await prisma.user.create({
+    data: {
+      email: 'khachhang1@gmail.com',
+      password: custPassword,
+      fullName: 'Phạm Văn Hùng (Khách Thân thiết)',
+      phone: '0918889911',
+      role: Role.CUSTOMER,
+      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
     },
   });
 
