@@ -118,7 +118,7 @@ let RoomsService = class RoomsService {
         const availableRooms = await this.prisma.room.findMany({
             where: {
                 id: { notIn: busyRoomIds },
-                status: { notIn: [client_1.RoomStatus.MAINTENANCE] },
+                status: { notIn: [client_1.RoomStatus.MAINTENANCE, client_1.RoomStatus.PENDING_APPROVAL, client_1.RoomStatus.REJECTED] },
                 ...(query.roomTypeId ? { roomTypeId: query.roomTypeId } : {}),
                 roomType: query.guestCount
                     ? {

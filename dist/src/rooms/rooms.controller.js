@@ -50,7 +50,10 @@ let RoomsController = class RoomsController {
     constructor(roomsService) {
         this.roomsService = roomsService;
     }
-    create(createRoomDto) {
+    create(createRoomDto, user) {
+        if (user && user.role !== client_1.Role.ADMIN) {
+            createRoomDto.status = client_1.RoomStatus.PENDING_APPROVAL;
+        }
         return this.roomsService.create(createRoomDto);
     }
     search(searchDto, user) {
@@ -69,6 +72,12 @@ let RoomsController = class RoomsController {
         const isStaff = user?.role === client_1.Role.ADMIN || user?.role === client_1.Role.RECEPTIONIST;
         return this.roomsService.findOne(id, isStaff);
     }
+    approve(id) {
+        return this.roomsService.updateStatus(id, client_1.RoomStatus.AVAILABLE);
+    }
+    reject(id) {
+        return this.roomsService.updateStatus(id, client_1.RoomStatus.REJECTED);
+    }
     updateStatus(id, dto) {
         return this.roomsService.updateStatus(id, dto.status);
     }
@@ -83,7 +92,7 @@ exports.RoomsController = RoomsController;
 __decorate([
     (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CUSTOMER),
     (0, common_1.Post)(),
     (0, swagger_1.ApiOperation)({ summary: 'Tạo phòng mới (Chỉ Admin)' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
@@ -98,8 +107,9 @@ __decorate([
         path: '/api/v1/rooms',
     }),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [create_room_dto_1.CreateRoomDto]),
+    __metadata("design:paramtypes", [create_room_dto_1.CreateRoomDto, Object]),
     __metadata("design:returntype", void 0)
 ], RoomsController.prototype, "create", null);
 __decorate([
@@ -177,6 +187,38 @@ __decorate([
     (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, common_1.Patch)(':id/approve'),
+    (0, swagger_1.ApiOperation)({ summary: 'Phê duyệt phòng mới vào hoạt động' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Phê duyệt phòng thành công',
+        exampleData: { ...SAMPLE_ROOM, status: 'AVAILABLE' },
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], RoomsController.prototype, "approve", null);
+__decorate([
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, common_1.Patch)(':id/reject'),
+    (0, swagger_1.ApiOperation)({ summary: 'Từ chối duyệt phòng mới' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Từ chối duyệt phòng thành công',
+        exampleData: { ...SAMPLE_ROOM, status: 'REJECTED' },
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], RoomsController.prototype, "reject", null);
+__decorate([
     (0, common_1.Patch)(':id/status'),
     (0, swagger_1.ApiOperation)({ summary: 'Cập nhật nhanh trạng thái phòng (Trống, Đang ở, Dọn dẹp, Bảo trì)' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({

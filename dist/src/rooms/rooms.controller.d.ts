@@ -7,11 +7,13 @@ import { RoomStatus } from '@prisma/client';
 export declare class RoomsController {
     private readonly roomsService;
     constructor(roomsService: RoomsService);
-    create(createRoomDto: CreateRoomDto): Promise<import("./dto/room-response.dto").RoomResponse>;
+    create(createRoomDto: CreateRoomDto, user?: any): Promise<import("./dto/room-response.dto").RoomResponse>;
     search(searchDto: SearchRoomDto, user?: any): Promise<import("./dto/room-response.dto").RoomResponse[]>;
     findAvailable(query: QueryAvailableRoomsDto, user?: any): Promise<any[]>;
     findAll(status?: RoomStatus, floor?: number, roomTypeId?: string, user?: any): Promise<import("./dto/room-response.dto").RoomResponse[]>;
     findOne(id: string, user?: any): Promise<import("./dto/room-response.dto").RoomResponse>;
+    approve(id: string): Promise<import("./dto/room-response.dto").RoomResponse>;
+    reject(id: string): Promise<import("./dto/room-response.dto").RoomResponse>;
     updateStatus(id: string, dto: UpdateRoomStatusDto): Promise<import("./dto/room-response.dto").RoomResponse>;
     update(id: string, updateRoomDto: UpdateRoomDto): Promise<import("./dto/room-response.dto").RoomResponse>;
     remove(id: string): Promise<{
