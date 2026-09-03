@@ -12,7 +12,6 @@ FROM node:20-alpine
 RUN apk add --no-cache openssl libc6-compat
 WORKDIR /usr/src/app
 ENV NODE_ENV=production
-ENV DATABASE_URL="postgresql://postgres:postgres123@postgres:5432/hotel_db?schema=public"
 COPY package*.json ./
 COPY prisma ./prisma/
 RUN npm install --omit=dev
