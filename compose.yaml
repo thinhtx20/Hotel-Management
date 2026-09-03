@@ -1,10 +1,89 @@
+version: '3.8'
+
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hotel_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: hotel_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - hotel_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hotel_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: hotel_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@hotel.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+  redis:
+    image: redis:7-alpine
+    container_name: hotel_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - hotel_redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: hotel_elasticsearch
+    restart: always
+    environment:
+      - node.name=hotel-es-node
+      - cluster.name=hotel-cluster
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - hotel_es_data:/usr/share/elasticsearch/data
+
   hotelmanagementbackend:
     image: hotelmanagementbackend
     build:
       context: .
       dockerfile: ./Dockerfile
-    environment:
-      NODE_ENV: production
+    container_name: hotel_backend
+    restart: always
     ports:
-      - 3000:3000
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      DATABASE_URL: "postgresql://postgres:postgres123@postgres:5432/hotel_db?schema=public"
+      JWT_SECRET: "super-secret-hotel-jwt-key-2026-change-in-production"
+      JWT_EXPIRES_IN: "7d"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ELASTICSEARCH_NODE: "http://elasticsearch:9200"
+      DEFAULT_OTP: "123456"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      elasticsearch:
+        condition: service_started
+
+volumes:
+  hotel_postgres_data:
+  hotel_redis_data:
+  hotel_es_data:

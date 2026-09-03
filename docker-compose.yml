@@ -13,6 +13,11 @@ services:
       - "5432:5432"
     volumes:
       - hotel_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hotel_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
 
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -50,6 +55,33 @@ services:
       - "9200:9200"
     volumes:
       - hotel_es_data:/usr/share/elasticsearch/data
+
+  hotelmanagementbackend:
+    image: hotelmanagementbackend
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    container_name: hotel_backend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      DATABASE_URL: "postgresql://postgres:postgres123@postgres:5432/hotel_db?schema=public"
+      JWT_SECRET: "super-secret-hotel-jwt-key-2026-change-in-production"
+      JWT_EXPIRES_IN: "7d"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ELASTICSEARCH_NODE: "http://elasticsearch:9200"
+      DEFAULT_OTP: "123456"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      elasticsearch:
+        condition: service_started
 
 volumes:
   hotel_postgres_data:
