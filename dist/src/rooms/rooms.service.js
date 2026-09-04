@@ -143,8 +143,9 @@ let RoomsService = class RoomsService {
             include: {
                 roomType: true,
                 bookings: {
+                    where: { status: { in: [client_1.BookingStatus.CHECKED_IN, client_1.BookingStatus.CONFIRMED] } },
+                    orderBy: { checkInDate: 'asc' },
                     take: 5,
-                    orderBy: { checkInDate: 'desc' },
                     include: { customer: { select: { fullName: true, phone: true } } },
                 },
             },
@@ -155,19 +156,25 @@ let RoomsService = class RoomsService {
         return (0, room_response_dto_1.toRoomResponse)(room, includeNotes);
     }
     async findAvailable(query, includeNotes = false) {
-        const checkIn = new Date(query.checkInDate);
-        const checkOut = new Date(query.checkOutDate);
-        if (checkIn >= checkOut) {
+        const rawCheckIn = new Date(query.checkInDate);
+        const rawCheckOut = new Date(query.checkOutDate);
+        if (rawCheckIn >= rawCheckOut) {
             throw new common_1.BadRequestException('Ngày nhận phòng phải trước ngày trả phòng');
         }
+        const checkIn = new Date(rawCheckIn);
+        checkIn.setUTCHours(14, 0, 0, 0);
+        const checkOut = new Date(rawCheckOut);
+        checkOut.setUTCHours(12, 0, 0, 0);
         const cacheKey = `cache:rooms:available:${query.checkInDate}:${query.checkOutDate}:${query.guestCount || 0}:${query.roomTypeId || 'all'}`;
         const cachedData = await this.redis.get(cacheKey);
         if (cachedData) {
             return cachedData;
         }
+        const now = new Date();
         const busyBookings = await this.prisma.booking.findMany({
             where: {
                 status: { in: [client_1.BookingStatus.PENDING, client_1.BookingStatus.CONFIRMED, client_1.BookingStatus.CHECKED_IN] },
+                checkOutDate: { gt: now },
                 AND: [
                     { checkInDate: { lt: checkOut } },
                     { checkOutDate: { gt: checkIn } },

@@ -66,11 +66,15 @@ let BookingsService = BookingsService_1 = class BookingsService {
         return nextStatus;
     }
     async create(dto, currentUserId, currentUserRole) {
-        const checkIn = new Date(dto.checkInDate);
-        const checkOut = new Date(dto.checkOutDate);
-        if (checkIn >= checkOut) {
+        const rawCheckIn = new Date(dto.checkInDate);
+        const rawCheckOut = new Date(dto.checkOutDate);
+        if (rawCheckIn >= rawCheckOut) {
             throw new common_1.BadRequestException('Ngày nhận phòng phải trước ngày trả phòng');
         }
+        const checkIn = new Date(rawCheckIn);
+        checkIn.setUTCHours(14, 0, 0, 0);
+        const checkOut = new Date(rawCheckOut);
+        checkOut.setUTCHours(12, 0, 0, 0);
         const lockKey = `lock:booking:room:${dto.roomId}`;
         const lockToken = await this.redis.acquireLock(lockKey, 6000);
         if (!lockToken) {
@@ -88,10 +92,12 @@ let BookingsService = BookingsService_1 = class BookingsService {
             if (room.status === client_1.RoomStatus.MAINTENANCE) {
                 throw new common_1.BadRequestException('Phòng này hiện đang bảo trì, không thể đặt');
             }
+            const now = new Date();
             const conflictBooking = await this.prisma.booking.findFirst({
                 where: {
                     roomId: dto.roomId,
                     status: { in: [client_1.BookingStatus.PENDING, client_1.BookingStatus.CONFIRMED, client_1.BookingStatus.CHECKED_IN] },
+                    checkOutDate: { gt: now },
                     AND: [
                         { checkInDate: { lt: checkOut } },
                         { checkOutDate: { gt: checkIn } },

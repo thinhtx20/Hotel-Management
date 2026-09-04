@@ -164,8 +164,9 @@ export class RoomsService {
       include: {
         roomType: true,
         bookings: {
+          where: { status: { in: [BookingStatus.CHECKED_IN, BookingStatus.CONFIRMED] } },
+          orderBy: { checkInDate: 'asc' },
           take: 5,
-          orderBy: { checkInDate: 'desc' },
           include: { customer: { select: { fullName: true, phone: true } } },
         },
       },
@@ -182,12 +183,20 @@ export class RoomsService {
    * Tìm kiếm phòng trống có tích hợp Redis Caching (TTL 60 giây)
    */
   async findAvailable(query: QueryAvailableRoomsDto, includeNotes = false) {
-    const checkIn = new Date(query.checkInDate);
-    const checkOut = new Date(query.checkOutDate);
+    const rawCheckIn = new Date(query.checkInDate);
+    const rawCheckOut = new Date(query.checkOutDate);
 
-    if (checkIn >= checkOut) {
+    if (rawCheckIn >= rawCheckOut) {
       throw new BadRequestException('Ngày nhận phòng phải trước ngày trả phòng');
     }
+
+    // Chuẩn hóa giờ nhận phòng (14:00 UTC) và giờ trả phòng (12:00 UTC) tiêu chuẩn khách sạn
+    // Để khách trả phòng lúc 12:00 không làm xung đột khách mới nhận phòng lúc 14:00 cùng ngày
+    const checkIn = new Date(rawCheckIn);
+    checkIn.setUTCHours(14, 0, 0, 0);
+
+    const checkOut = new Date(rawCheckOut);
+    checkOut.setUTCHours(12, 0, 0, 0);
 
     const cacheKey = `cache:rooms:available:${query.checkInDate}:${query.checkOutDate}:${query.guestCount || 0}:${query.roomTypeId || 'all'}`;
     const cachedData = await this.redis.get<any[]>(cacheKey);
@@ -195,11 +204,15 @@ export class RoomsService {
       return cachedData;
     }
 
+    const now = new Date();
+
     // Lấy danh sách roomId đã bị đặt trong khoảng thời gian này
     // Bao gồm cả PENDING (chờ duyệt), CONFIRMED (đã duyệt) và CHECKED_IN (đang ở)
+    // Bỏ qua các đơn quá hạn trả phòng trong quá khứ
     const busyBookings = await this.prisma.booking.findMany({
       where: {
         status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN] },
+        checkOutDate: { gt: now },
         AND: [
           { checkInDate: { lt: checkOut } },
           { checkOutDate: { gt: checkIn } },

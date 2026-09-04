@@ -1,4 +1,5 @@
 import { Room, RoomType, RoomStatus, BookingStatus } from '@prisma/client';
+import { deriveRoomStatus } from '../../common/utils/room-status.util';
 
 export interface RoomCurrentBooking {
   id: string;
@@ -482,11 +483,24 @@ export function toRoomResponse(
   room: Room & { roomType: RoomType; bookings?: any[] },
   includeNotes = false,
 ): RoomResponse {
+  const now = new Date();
   let currentBooking: RoomCurrentBooking | null = null;
   if (room.bookings && room.bookings.length > 0) {
+    const endOfToday = new Date(now);
+    endOfToday.setHours(23, 59, 59, 999);
+
     const active =
-      room.bookings.find((b) => b.status === BookingStatus.CHECKED_IN) ||
-      room.bookings.find((b) => b.status === BookingStatus.CONFIRMED);
+      room.bookings.find(
+        (b) =>
+          b.status === BookingStatus.CHECKED_IN &&
+          new Date(b.checkOutDate) > now,
+      ) ||
+      room.bookings.find(
+        (b) =>
+          b.status === BookingStatus.CONFIRMED &&
+          new Date(b.checkOutDate) > now &&
+          (b.checkInDate ? new Date(b.checkInDate) <= endOfToday : true),
+      );
     if (active) {
       const isCheckedIn = active.status === BookingStatus.CHECKED_IN;
       currentBooking = {
@@ -514,11 +528,14 @@ export function toRoomResponse(
   const code = room.roomType?.code || 'STD-D';
   const meta = ROOM_TYPE_METADATA_MAP[code] || ROOM_TYPE_METADATA_MAP['STD-D'];
 
+  // Suy diễn trạng thái thực tế thời gian thực (Real-time Derived Status)
+  const effectiveStatus = deriveRoomStatus(room.status, room.bookings || [], now);
+
   const res: RoomResponse = {
     id: room.id,
     roomNumber: room.roomNumber,
     floor: room.floor,
-    status: room.status,
+    status: effectiveStatus,
     roomTypeId: room.roomTypeId,
     roomTypeName: room.roomType?.name || '',
     roomTypeCode: code,

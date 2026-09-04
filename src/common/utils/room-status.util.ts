@@ -12,15 +12,16 @@ export const MANUAL_ROOM_STATUSES: RoomStatus[] = [
 
 export interface RoomStatusBookingInput {
   status: BookingStatus;
+  checkInDate?: Date;
   checkOutDate: Date;
 }
 
 /**
  * Nguồn sự thật duy nhất cho trạng thái phòng suy ra từ lịch đặt phòng.
  *
- *  - Đang có khách CHECKED_IN            -> OCCUPIED
- *  - Có đơn CONFIRMED chưa tới ngày trả  -> RESERVED
- *  - Không có đơn nào đang giữ phòng     -> giữ CLEANING nếu đang dọn, ngược lại AVAILABLE
+ *  - Đang có khách CHECKED_IN và chưa hết hạn trả phòng -> OCCUPIED
+ *  - Có đơn CONFIRMED giữ phòng cho ngày hôm nay (chưa qua ngày trả) -> RESERVED
+ *  - Không có đơn nào đang giữ phòng hôm nay -> giữ CLEANING nếu đang dọn, ngược lại AVAILABLE
  *
  * Đơn PENDING KHÔNG chiếm phòng: khách mới gửi yêu cầu, lễ tân chưa xác nhận.
  */
@@ -33,19 +34,39 @@ export function deriveRoomStatus(
     return currentStatus;
   }
 
-  if (bookings.some((b) => b.status === BookingStatus.CHECKED_IN)) {
+  // 1. Đang có khách CHECKED_IN và chưa qua giờ trả phòng
+  if (
+    bookings.some(
+      (b) =>
+        b.status === BookingStatus.CHECKED_IN &&
+        new Date(b.checkOutDate) > now,
+    )
+  ) {
     return RoomStatus.OCCUPIED;
   }
 
+  // Cuối ngày hôm nay để xét đơn đặt phòng có hiệu lực cho ngày hôm nay
+  const endOfToday = new Date(now);
+  endOfToday.setHours(23, 59, 59, 999);
+
+  // 2. Có đơn CONFIRMED đang giữ phòng cho hôm nay:
+  // Đã hoặc sẽ nhận phòng trước cuối ngày hôm nay, và chưa tới giờ trả phòng.
   if (
-    bookings.some(
-      (b) => b.status === BookingStatus.CONFIRMED && new Date(b.checkOutDate) > now,
-    )
+    bookings.some((b) => {
+      if (b.status !== BookingStatus.CONFIRMED) return false;
+      const checkOut = new Date(b.checkOutDate);
+      if (checkOut <= now) return false;
+      if (b.checkInDate) {
+        const checkIn = new Date(b.checkInDate);
+        return checkIn <= endOfToday;
+      }
+      return true;
+    })
   ) {
     return RoomStatus.RESERVED;
   }
 
-  // Phòng vừa trả và đang dọn dẹp vẫn phải chờ buồng phòng xác nhận xong.
+  // 3. Phòng vừa trả và đang dọn dẹp vẫn phải chờ buồng phòng xác nhận xong.
   if (currentStatus === RoomStatus.CLEANING) {
     return RoomStatus.CLEANING;
   }

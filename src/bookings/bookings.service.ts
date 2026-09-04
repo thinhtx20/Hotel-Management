@@ -94,12 +94,20 @@ export class BookingsService {
    * Chống Race-Condition tuyệt đối khi nhiều khách cùng đặt 1 phòng
    */
   async create(dto: CreateBookingDto, currentUserId: string, currentUserRole: Role) {
-    const checkIn = new Date(dto.checkInDate);
-    const checkOut = new Date(dto.checkOutDate);
+    const rawCheckIn = new Date(dto.checkInDate);
+    const rawCheckOut = new Date(dto.checkOutDate);
 
-    if (checkIn >= checkOut) {
+    if (rawCheckIn >= rawCheckOut) {
       throw new BadRequestException('Ngày nhận phòng phải trước ngày trả phòng');
     }
+
+    // Chuẩn hóa giờ nhận phòng (14:00 UTC) và giờ trả phòng (12:00 UTC) tiêu chuẩn khách sạn
+    // Để ngày chuyển tiếp giữa 2 khách (12:00 checkout và 14:00 checkin) không bị xung đột
+    const checkIn = new Date(rawCheckIn);
+    checkIn.setUTCHours(14, 0, 0, 0);
+
+    const checkOut = new Date(rawCheckOut);
+    checkOut.setUTCHours(12, 0, 0, 0);
 
     // 1. Chiếm khóa phân tán (Distributed Lock) trên phòng này
     const lockKey = `lock:booking:room:${dto.roomId}`;
@@ -126,12 +134,16 @@ export class BookingsService {
         throw new BadRequestException('Phòng này hiện đang bảo trì, không thể đặt');
       }
 
+      const now = new Date();
+
       // Kiểm tra xung đột lịch đặt phòng (Overlap check trong DB)
       // Bao gồm cả PENDING (chờ duyệt), CONFIRMED (đã duyệt) và CHECKED_IN (đang ở)
+      // Bỏ qua các đơn quá hạn trả phòng trong quá khứ
       const conflictBooking = await this.prisma.booking.findFirst({
         where: {
           roomId: dto.roomId,
           status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN] },
+          checkOutDate: { gt: now },
           AND: [
             { checkInDate: { lt: checkOut } },
             { checkOutDate: { gt: checkIn } },
