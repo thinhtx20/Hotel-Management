@@ -125,8 +125,24 @@ export class BookingsService {
     const invoiceId = b.invoice?.id || null;
     const canCancel = b.status === BookingStatus.PENDING || b.status === BookingStatus.CONFIRMED;
 
+    let room = b.room;
+    if (room) {
+      const roomImages = (room.roomType?.images && room.roomType.images.length > 0)
+        ? room.roomType.images
+        : [
+            'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1000&q=80',
+          ];
+      room = {
+        ...room,
+        image: roomImages[0] || '',
+        imageUrl: roomImages[0] || '',
+        images: roomImages,
+      };
+    }
+
     return {
       ...b,
+      room,
       nights,
       paymentStatus,
       invoiceId,

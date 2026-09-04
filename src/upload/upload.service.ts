@@ -4,6 +4,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
@@ -12,6 +13,7 @@ import { randomUUID } from 'crypto';
 import * as path from 'path';
 import * as fs from 'fs';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import {
   UploadedFileDto,
   UploadMultipleFilesDto,
@@ -29,6 +31,7 @@ export class UploadService {
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly redis?: RedisService,
   ) {
     const cloudName =
       this.configService.get<string>('CLOUDINARY_CLOUD_NAME') ||
@@ -215,15 +218,70 @@ export class UploadService {
   }
 
   /**
+   * Helper xóa cache danh sách phòng trong Redis khi có ảnh mới
+   */
+  private async clearRoomsCache() {
+    if (this.redis) {
+      try {
+        await this.redis.delByPattern('cache:rooms:*');
+      } catch (err: any) {
+        this.logger.warn(`Không thể xóa cache phòng trên Redis: ${err.message}`);
+      }
+    }
+  }
+
+  /**
    * Chuyên biệt: Tải 1 ảnh phòng
-   * Có tuỳ chọn tự động gán vào danh sách `images` của RoomType
+   * Hỗ trợ gán vào Room (roomId) hoặc RoomType (roomTypeId), trả về đầy đủ ảnh của phòng
    */
   async uploadRoomImage(
     file: Express.Multer.File,
     roomTypeId?: string,
+    roomId?: string,
   ): Promise<UploadedFileDto> {
     const result = await this.uploadImage(file, 'rooms', UploadCategory.ROOM);
 
+    // 1. Trường hợp truyền ID của phòng cụ thể (Room ID)
+    if (roomId) {
+      const room = await this.prisma.room.findUnique({
+        where: { id: roomId },
+        include: { roomType: true },
+      });
+      if (!room) {
+        throw new NotFoundException(`Không tìm thấy phòng với ID: ${roomId}`);
+      }
+
+      const existingImages = room.roomType?.images || [];
+      const updatedImages = [...existingImages, result.url];
+
+      const updatedRoomType = await this.prisma.roomType.update({
+        where: { id: room.roomTypeId },
+        data: { images: updatedImages },
+        select: { id: true, name: true, code: true, images: true, basePrice: true },
+      });
+
+      result.images = updatedImages;
+      result.image = updatedImages[0] || result.url;
+      result.roomType = updatedRoomType;
+      result.room = {
+        id: room.id,
+        roomNumber: room.roomNumber,
+        floor: room.floor,
+        status: room.status,
+        image: updatedImages[0] || result.url,
+        imageUrl: updatedImages[0] || result.url,
+        images: updatedImages,
+        roomTypeId: room.roomTypeId,
+        roomTypeName: room.roomType.name,
+        roomType: updatedRoomType,
+      };
+
+      await this.clearRoomsCache();
+      this.logger.log(`🏨 Đã thêm 1 ảnh mới cho phòng ${room.roomNumber} (${roomId}) - Loại: "${room.roomType.name}"`);
+      return result;
+    }
+
+    // 2. Trường hợp truyền ID của loại phòng (RoomType ID)
     if (roomTypeId) {
       const roomType = await this.prisma.roomType.findUnique({
         where: { id: roomTypeId },
@@ -238,10 +296,14 @@ export class UploadService {
       const updated = await this.prisma.roomType.update({
         where: { id: roomTypeId },
         data: { images: updatedImages },
-        select: { id: true, name: true, code: true, images: true },
+        select: { id: true, name: true, code: true, images: true, basePrice: true },
       });
 
+      result.images = updatedImages;
+      result.image = updatedImages[0] || result.url;
       result.roomType = updated;
+
+      await this.clearRoomsCache();
       this.logger.log(`🏨 Đã thêm 1 ảnh mới vào loại phòng "${roomType.name}" (${roomTypeId})`);
     }
 
@@ -250,11 +312,12 @@ export class UploadService {
 
   /**
    * Chuyên biệt: Tải nhiều ảnh phòng cùng lúc (Album phòng)
-   * Có tuỳ chọn tự động thêm danh sách ảnh vào `RoomType.images`
+   * Hỗ trợ tự động thêm danh sách ảnh vào Room hoặc RoomType và trả về mảng ảnh đầy đủ
    */
   async uploadRoomImages(
     files: Express.Multer.File[],
     roomTypeId?: string,
+    roomId?: string,
   ): Promise<UploadMultipleFilesDto> {
     if (!files || files.length === 0) {
       throw new BadRequestException('Danh sách tệp tải lên không được để trống');
@@ -271,8 +334,51 @@ export class UploadService {
       folder: 'rooms',
       files: results,
       urls,
+      images: urls,
+      image: urls[0] || '',
     };
 
+    // 1. Trường hợp truyền ID của phòng cụ thể (Room ID)
+    if (roomId) {
+      const room = await this.prisma.room.findUnique({
+        where: { id: roomId },
+        include: { roomType: true },
+      });
+      if (!room) {
+        throw new NotFoundException(`Không tìm thấy phòng với ID: ${roomId}`);
+      }
+
+      const existingImages = room.roomType?.images || [];
+      const updatedImages = [...existingImages, ...urls];
+
+      const updatedRoomType = await this.prisma.roomType.update({
+        where: { id: room.roomTypeId },
+        data: { images: updatedImages },
+        select: { id: true, name: true, code: true, images: true, basePrice: true },
+      });
+
+      response.images = updatedImages;
+      response.image = updatedImages[0] || urls[0];
+      response.roomType = updatedRoomType;
+      response.room = {
+        id: room.id,
+        roomNumber: room.roomNumber,
+        floor: room.floor,
+        status: room.status,
+        image: updatedImages[0] || urls[0],
+        imageUrl: updatedImages[0] || urls[0],
+        images: updatedImages,
+        roomTypeId: room.roomTypeId,
+        roomTypeName: room.roomType.name,
+        roomType: updatedRoomType,
+      };
+
+      await this.clearRoomsCache();
+      this.logger.log(`🏨 Đã thêm ${urls.length} ảnh vào phòng ${room.roomNumber} (${roomId}) - Loại: "${room.roomType.name}"`);
+      return response;
+    }
+
+    // 2. Trường hợp truyền ID của loại phòng (RoomType ID)
     if (roomTypeId) {
       const roomType = await this.prisma.roomType.findUnique({
         where: { id: roomTypeId },
@@ -287,10 +393,14 @@ export class UploadService {
       const updated = await this.prisma.roomType.update({
         where: { id: roomTypeId },
         data: { images: updatedImages },
-        select: { id: true, name: true, code: true, images: true },
+        select: { id: true, name: true, code: true, images: true, basePrice: true },
       });
 
+      response.images = updatedImages;
+      response.image = updatedImages[0] || urls[0];
       response.roomType = updated;
+
+      await this.clearRoomsCache();
       this.logger.log(`🏨 Đã thêm ${urls.length} ảnh vào loại phòng "${roomType.name}" (${roomTypeId})`);
     }
 

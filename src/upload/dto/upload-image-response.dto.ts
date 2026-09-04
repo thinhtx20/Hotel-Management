@@ -52,6 +52,45 @@ export class UploadedFileDto {
   originalName: string;
 
   @ApiPropertyOptional({
+    description: 'Danh sách toàn bộ ảnh của phòng / loại phòng sau khi tải lên thành công',
+    example: [
+      'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1725432000-1.webp',
+      'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1725432000-2.webp',
+    ],
+  })
+  images?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Ảnh đại diện chính của phòng (ảnh đầu tiên trong danh sách)',
+    example: 'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1725432000-1.webp',
+  })
+  image?: string;
+
+  @ApiPropertyOptional({
+    description: 'Thông tin chi tiết của phòng được gán ảnh (kèm danh sách ảnh cập nhật)',
+    example: {
+      id: '3f6c8d20-41ab-4f27-96a8-208935cba48b',
+      roomNumber: '101',
+      floor: 1,
+      status: 'AVAILABLE',
+      image: 'https://res.cloudinary.com/...',
+      images: ['https://res.cloudinary.com/...'],
+    },
+  })
+  room?: {
+    id: string;
+    roomNumber: string;
+    floor: number;
+    status: string;
+    image?: string;
+    imageUrl?: string;
+    images: string[];
+    roomTypeId?: string;
+    roomTypeName?: string;
+    roomType?: any;
+  };
+
+  @ApiPropertyOptional({
     description: 'Thông tin tài khoản đã được tự động cập nhật avatar (nếu có)',
     example: {
       id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d',
@@ -110,6 +149,37 @@ export class UploadMultipleFilesDto {
     ],
   })
   urls: string[];
+
+  @ApiPropertyOptional({
+    description: 'Danh sách toàn bộ ảnh của phòng / loại phòng sau khi gán album mới',
+    example: [
+      'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1725432000-1.webp',
+      'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1725432000-2.webp',
+    ],
+  })
+  images?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Ảnh đại diện chính của phòng sau khi gán album mới',
+    example: 'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1725432000-1.webp',
+  })
+  image?: string;
+
+  @ApiPropertyOptional({
+    description: 'Thông tin chi tiết của phòng được gán album ảnh (kèm danh sách ảnh cập nhật)',
+  })
+  room?: {
+    id: string;
+    roomNumber: string;
+    floor: number;
+    status: string;
+    image?: string;
+    imageUrl?: string;
+    images: string[];
+    roomTypeId?: string;
+    roomTypeName?: string;
+    roomType?: any;
+  };
 
   @ApiPropertyOptional({
     description: 'Thông tin loại phòng đã được tự động gán thêm danh sách ảnh (nếu có)',

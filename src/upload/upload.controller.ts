@@ -135,14 +135,21 @@ export class UploadController {
   @ApiOperation({
     summary: '🏨 Tải lên 1 ảnh của phòng / loại phòng (Folder rooms)',
     description:
-      'Gửi multipart/form-data với field "file". Lưu tự động vào thư mục "rooms". Nếu truyền query param "roomTypeId", hệ thống sẽ tự động thêm URL ảnh vào mảng "images" của loại phòng đó.',
+      'Gửi multipart/form-data với field "file". Lưu tự động vào thư mục "rooms". Nếu truyền param "roomId" (ID phòng) hoặc "roomTypeId" (ID loại phòng), hệ thống sẽ tự động thêm URL ảnh vào mảng "images" của phòng và trả về đầy đủ thông tin phòng cùng danh sách ảnh mới nhất.',
   })
   @ApiConsumes('multipart/form-data')
+  @ApiQuery({
+    name: 'roomId',
+    required: false,
+    type: String,
+    description: 'ID của phòng cụ thể (Room) để gán ảnh trực tiếp và nhận thông tin phòng kèm ảnh',
+    example: '3f6c8d20-41ab-4f27-96a8-208935cba48b',
+  })
   @ApiQuery({
     name: 'roomTypeId',
     required: false,
     type: String,
-    description: 'ID của loại phòng (RoomType) để tự động thêm ảnh vào database',
+    description: 'ID của loại phòng (RoomType) để tự động thêm ảnh vào danh mục loại phòng',
     example: 'd9e03d76-e17f-4f05-896c-b3a167cf7564',
   })
   @ApiBody({
@@ -169,6 +176,23 @@ export class UploadController {
       size: 420000,
       mimetype: 'image/webp',
       originalName: 'deluxe.webp',
+      image: 'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1725432000-deluxe.webp',
+      images: [
+        'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1725432000-deluxe.webp',
+      ],
+      room: {
+        id: '3f6c8d20-41ab-4f27-96a8-208935cba48b',
+        roomNumber: '101',
+        floor: 1,
+        status: 'AVAILABLE',
+        image: 'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1725432000-deluxe.webp',
+        imageUrl: 'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1725432000-deluxe.webp',
+        images: [
+          'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1725432000-deluxe.webp',
+        ],
+        roomTypeId: 'd9e03d76-e17f-4f05-896c-b3a167cf7564',
+        roomTypeName: 'Phòng Deluxe Hướng Biển',
+      },
       roomType: {
         id: 'd9e03d76-e17f-4f05-896c-b3a167cf7564',
         name: 'Phòng Deluxe Hướng Biển',
@@ -187,12 +211,13 @@ export class UploadController {
   )
   async uploadRoomImage(
     @UploadedFile() file: Express.Multer.File,
+    @Query('roomId') roomId?: string,
     @Query('roomTypeId') roomTypeId?: string,
   ): Promise<UploadedFileDto> {
     if (!file) {
       throw new BadRequestException('Vui lòng chọn tệp hình ảnh phòng để tải lên (field: "file")');
     }
-    return this.uploadService.uploadRoomImage(file, roomTypeId);
+    return this.uploadService.uploadRoomImage(file, roomTypeId, roomId);
   }
 
   // =========================================================================
@@ -205,9 +230,16 @@ export class UploadController {
   @ApiOperation({
     summary: '🏨 Tải lên album nhiều ảnh phòng (Tối đa 10 ảnh, Folder rooms)',
     description:
-      'Gửi multipart/form-data với field "files" (mảng ảnh). Tự động lưu vào thư mục "rooms". Nếu truyền param "roomTypeId", hệ thống sẽ tự động nối danh sách URLs này vào "images" của loại phòng tương ứng.',
+      'Gửi multipart/form-data với field "files" (mảng ảnh). Tự động lưu vào thư mục "rooms". Hỗ trợ truyền "roomId" (ID phòng) hoặc "roomTypeId" (ID loại phòng) để tự động nối danh sách ảnh vào phòng và loại phòng tương ứng.',
   })
   @ApiConsumes('multipart/form-data')
+  @ApiQuery({
+    name: 'roomId',
+    required: false,
+    type: String,
+    description: 'ID của phòng cụ thể (Room) để tự động lưu album ảnh và nhận thông tin phòng cập nhật',
+    example: '3f6c8d20-41ab-4f27-96a8-208935cba48b',
+  })
   @ApiQuery({
     name: 'roomTypeId',
     required: false,
@@ -237,6 +269,11 @@ export class UploadController {
     exampleData: {
       type: 'room',
       folder: 'rooms',
+      image: 'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1.webp',
+      images: [
+        'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1.webp',
+        'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/2.webp',
+      ],
       files: [
         {
           url: 'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1.webp',
@@ -250,13 +287,29 @@ export class UploadController {
       ],
       urls: [
         'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1.webp',
+        'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/2.webp',
       ],
+      room: {
+        id: '3f6c8d20-41ab-4f27-96a8-208935cba48b',
+        roomNumber: '101',
+        floor: 1,
+        status: 'AVAILABLE',
+        image: 'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1.webp',
+        imageUrl: 'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1.webp',
+        images: [
+          'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1.webp',
+          'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/2.webp',
+        ],
+        roomTypeId: 'd9e03d76-e17f-4f05-896c-b3a167cf7564',
+        roomTypeName: 'Phòng Deluxe Hướng Biển',
+      },
       roomType: {
         id: 'd9e03d76-e17f-4f05-896c-b3a167cf7564',
         name: 'Phòng Deluxe Hướng Biển',
         code: 'DELUXE_OCEAN',
         images: [
           'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/1.webp',
+          'https://res.cloudinary.com/wsaxdisz/image/upload/v1725432000/hotel_management/rooms/2.webp',
         ],
       },
     },
@@ -269,12 +322,13 @@ export class UploadController {
   )
   async uploadRoomImages(
     @UploadedFiles() files: Express.Multer.File[],
+    @Query('roomId') roomId?: string,
     @Query('roomTypeId') roomTypeId?: string,
   ): Promise<UploadMultipleFilesDto> {
     if (!files || files.length === 0) {
       throw new BadRequestException('Vui lòng chọn ít nhất một tệp ảnh phòng để tải lên (field: "files")');
     }
-    return this.uploadService.uploadRoomImages(files, roomTypeId);
+    return this.uploadService.uploadRoomImages(files, roomTypeId, roomId);
   }
 
   // =========================================================================

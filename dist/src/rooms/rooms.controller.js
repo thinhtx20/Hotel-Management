@@ -37,6 +37,8 @@ const SAMPLE_ROOM = {
     roomTypeCode: 'DELUXE_OCEAN',
     description: 'Phòng cao cấp ngắm trọn bình minh trên biển',
     pricePerNight: 1200000,
+    image: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80',
+    imageUrl: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80',
     images: [
         'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80',
         'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=800&q=80',
