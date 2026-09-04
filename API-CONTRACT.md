@@ -359,3 +359,104 @@ Trả trực tiếp `invoiceId` ở cấp ngoài cùng để client chuyển th�
   2. **Access Token Blacklisting:** Nếu client gửi kèm Bearer Access Token, backend sẽ giải mã lấy `exp`, tính thời gian sống còn lại và lưu vào Redis key `auth:blacklist:<token>` với TTL tương ứng. Các request tiếp theo dùng token này sẽ bị từ chối `401 Unauthorized`.
   3. **Refresh Token Revocation:** Nếu client gửi kèm `refreshToken`, key `auth:refresh:<userId>:<jti>` sẽ bị xóa khỏi Redis, ngăn chặn việc tái sử dụng để làm mới token.
 
+---
+
+### J. Tải lên và Lưu trữ Hình ảnh (Supabase Storage)
+
+Hệ thống sử dụng **Supabase Storage** làm kho lưu trữ tệp tin đám mây. Backend NestJS hoạt động như proxy trung gian xác thực JWT, kiểm duyệt định dạng/kích thước ảnh và cấp Public URL.
+
+#### 1. Tải lên 1 ảnh đơn (Avatar / Tiện ích / Ảnh đại diện)
+- **Endpoint:** `POST /api/v1/upload/image`
+- **Headers:**
+  - `Authorization: Bearer <accessToken>`
+  - `Content-Type: multipart/form-data`
+- **Query Params:**
+  - `folder` *(tùy chọn)*: `avatars` | `rooms` | `services` | `general` (mặc định: `general`).
+- **Form Data:**
+  - `file`: Tệp hình ảnh binary (`JPG`, `JPEG`, `PNG`, `WEBP`, `GIF`), dung lượng <= 5MB.
+- **Response thành công (Status 201 Created):**
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Tải ảnh lên Supabase thành công",
+  "data": {
+    "url": "https://xyzcompany.supabase.co/storage/v1/object/public/hotel-images/avatars/1725432000-uuid.webp",
+    "path": "avatars/1725432000-uuid.webp",
+    "size": 245600,
+    "mimetype": "image/webp",
+    "originalName": "avatar.webp"
+  },
+  "timestamp": "2026-09-04T09:00:00.000Z"
+}
+```
+- **Luồng cập nhật Avatar trên Client:**
+  1. Gọi `POST /api/v1/upload/image?folder=avatars` với file ảnh chọn từ thư viện.
+  2. Lấy giá trị `data.url` từ kết quả.
+  3. Gọi `PATCH /api/v1/users/me` với payload: `{ "avatar": data.url }`.
+
+---
+
+#### 2. Tải lên nhiều ảnh (Album ảnh loại phòng / Tiện nghi)
+- **Endpoint:** `POST /api/v1/upload/images`
+- **Headers:**
+  - `Authorization: Bearer <accessToken>`
+  - `Content-Type: multipart/form-data`
+- **Query Params:**
+  - `folder` *(tùy chọn)*: `rooms` | `services` | `general` (mặc định: `rooms`).
+- **Form Data:**
+  - `files`: Danh sách tối đa 10 tệp hình ảnh binary (mỗi tệp <= 5MB).
+- **Response thành công (Status 201 Created):**
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Tải danh sách ảnh thành công",
+  "data": {
+    "files": [
+      {
+        "url": "https://xyzcompany.supabase.co/storage/v1/object/public/hotel-images/rooms/1725432000-1.webp",
+        "path": "rooms/1725432000-1.webp",
+        "size": 450120,
+        "mimetype": "image/webp",
+        "originalName": "deluxe-1.webp"
+      },
+      {
+        "url": "https://xyzcompany.supabase.co/storage/v1/object/public/hotel-images/rooms/1725432000-2.webp",
+        "path": "rooms/1725432000-2.webp",
+        "size": 380450,
+        "mimetype": "image/webp",
+        "originalName": "deluxe-2.webp"
+      }
+    ],
+    "urls": [
+      "https://xyzcompany.supabase.co/storage/v1/object/public/hotel-images/rooms/1725432000-1.webp",
+      "https://xyzcompany.supabase.co/storage/v1/object/public/hotel-images/rooms/1725432000-2.webp"
+    ]
+  },
+  "timestamp": "2026-09-04T09:00:00.000Z"
+}
+```
+- **Luồng cập nhật Loại phòng trên Client:**
+  1. Gọi `POST /api/v1/upload/images?folder=rooms` với danh sách ảnh phòng.
+  2. Lấy mảng `data.urls`.
+  3. Gán thẳng vào `images` của DTO tạo/sửa loại phòng: `POST /api/v1/room-types` hoặc `PATCH /api/v1/room-types/:id`.
+
+---
+
+#### 3. Xóa ảnh khỏi kho lưu trữ
+- **Endpoint:** `DELETE /api/v1/upload?path=avatars/1725432000-uuid.webp`
+- **Headers:** `Authorization: Bearer <accessToken>`
+- **Response thành công (Status 200 OK):**
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Đã xóa ảnh thành công khỏi bucket",
+  "data": {
+    "success": true,
+    "message": "Đã xóa ảnh \"avatars/1725432000-uuid.webp\" thành công khỏi bucket"
+  }
+}
+```
+

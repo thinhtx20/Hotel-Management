@@ -61,3 +61,6 @@ temp/
 # Prisma engine temporary binaries (Windows/Linux)
 *.tmp*
 query_engine*
+
+# User uploaded media
+uploads/
