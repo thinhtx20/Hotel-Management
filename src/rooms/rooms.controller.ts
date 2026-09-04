@@ -52,13 +52,13 @@ export class RoomsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CUSTOMER, Role.CASHIER)
   @Post()
   @ApiOperation({
-    summary: 'Tạo phòng mới (Admin tạo thẳng, Lễ tân tạo bản chờ duyệt)',
+    summary: 'Tạo phòng mới (Admin tạo duyệt thẳng, vai trò khác tạo bản chờ duyệt PENDING_APPROVAL)',
     description:
-      'ADMIN tạo phòng vào hoạt động ngay. RECEPTIONIST tạo ra bản ghi ở trạng thái ' +
-      'PENDING_APPROVAL, phải được duyệt qua PATCH /rooms/:id/approve mới dùng được.',
+      'ADMIN tạo phòng sẽ vào hoạt động ngay (AVAILABLE). RECEPTIONIST / CASHIER / CUSTOMER tạo ra bản ghi ở trạng thái ' +
+      'PENDING_APPROVAL, phải được duyệt qua PATCH /rooms/:id/approve mới hiển thị đón khách.',
   })
   @ApiSuccessResponse({
     status: 201,

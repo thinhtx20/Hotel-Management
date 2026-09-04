@@ -493,3 +493,217 @@ Hệ thống sử dụng **Supabase Storage** làm kho lưu trữ tệp tin đá
 }
 ```
 
+---
+
+### K. Chi tiết phòng (`GET /api/v1/rooms/:id`) — Phục vụ Màn chi tiết phòng trên Mobile/Web FE
+
+Endpoint công khai cho khách vãng lai và người dùng (`@Public()`), đồng thời hỗ trợ nạp quyền nội bộ nếu có Bearer token.
+Dữ liệu đã được **phẳng hóa (flattened)** kết hợp tự động từ `Room` và `RoomType`, đi kèm bộ sưu tập ảnh sắc nét, phân nhóm tiện ích, chính sách nhận trả phòng và đánh giá chi tiết của khách hàng để Frontend dựng giao diện chi tiết phòng chuẩn 5 sao.
+
+#### 1. Thông tin Endpoint
+- **URL:** `GET /api/v1/rooms/:id` (hoặc `GET /api/v1/rooms` cho danh sách phẳng)
+- **Quyền:** Mở cho tất cả mọi người (`PUBLIC`). Gửi kèm `Authorization: Bearer <token>` để nhận thêm trường nội bộ `notes` (dành cho `ADMIN` và `RECEPTIONIST`).
+
+#### 2. Payload mẫu trả về (Response Body 200 OK)
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "data": {
+    "id": "301-uuid-deluxe",
+    "roomNumber": "301",
+    "floor": 3,
+    "status": "AVAILABLE",
+    "roomTypeId": "type-uuid-dlx",
+    "roomTypeName": "Deluxe Ocean Panorama",
+    "roomTypeCode": "DLX-OV",
+    "description": "Tận hưởng kỳ nghỉ dưỡng thiên đường tại Deluxe Ocean Panorama với ban công riêng lộng gió mở ra tầm nhìn 180 độ ôm trọn biển xanh ngọc bích. Nổi bật với bồn tắm ngâm sâu đặt ngay cạnh cửa sổ lớn hướng biển để bạn vừa thưởng thức rượu vang vừa ngắm hoàng hôn rực rỡ. Đệm lò xo túi lông vũ siêu êm ái, máy pha cà phê Nespresso và loa Marshall đỉnh cao tạo nên kỳ nghỉ hoàn hảo.",
+    "pricePerNight": 1450000,
+    "image": "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80",
+    "imageUrl": "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80",
+    "images": [
+      "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1540518614846-7ede433c4ef7?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1507652313519-d4e9174996dd?auto=format&fit=crop&w=1200&q=80"
+    ],
+    "bedType": "1 Giường King đôi siêu lớn (2.0m x 2.2m) đệm lông vũ cao cấp",
+    "viewType": "Hướng trực diện biển 180 độ (Ocean Panorama)",
+    "sizeSqM": 45,
+    "area": 45,
+    "capacityAdults": 2,
+    "capacityChildren": 2,
+    "capacity": 4,
+    "rating": 4.95,
+    "reviewCount": 124,
+    "highlights": [
+      "Ban công riêng ngắm bình minh và hoàng hôn biển",
+      "Bồn tắm nằm ngắm biển thư giãn với muối khoáng",
+      "Máy pha cà phê Nespresso & Loa Bluetooth Marshall",
+      "Miễn phí Buffet sáng 5 sao & Trà chiều tại sảnh"
+    ],
+    "policies": {
+      "checkInTime": "14:00",
+      "checkOutTime": "12:00",
+      "cancellation": "Miễn phí hủy phòng trước 24 giờ trước thời điểm nhận phòng (hoàn tiền 100%)",
+      "smoking": "Phòng không hút thuốc (Có ban công hoặc khu vực dành riêng ngoài trời)",
+      "pet": "Không mang theo thú cưng vào khuôn viên phòng nghỉ",
+      "children": "Trẻ em dưới 6 tuổi được ở miễn phí khi ngủ chung giường với bố mẹ"
+    },
+    "ratingBreakdown": {
+      "cleanliness": 5.0,
+      "comfort": 5.0,
+      "location": 5.0,
+      "service": 4.9,
+      "value": 4.9
+    },
+    "amenities": [
+      "Ban công riêng 12m² view trực diện biển",
+      "Bồn tắm nằm ngắm biển thư giãn với muối khoáng",
+      "Giường ngủ King đôi siêu lớn đệm lông vũ",
+      "Máy pha cà phê Nespresso viên nén cao cấp",
+      "Loa Bluetooth Marshall Acton nghe nhạc sống động",
+      "Mỹ phẩm phòng tắm cao cấp L’Occitane (Pháp)",
+      "Smart TV 55 inch 4K HDR có sẵn Netflix",
+      "Bữa sáng buffet 5 sao phục vụ tại phòng ngủ",
+      "Rượu vang chào mừng và trái cây tươi theo mùa",
+      "Phòng tắm kính vòi sen trần Rain Shower",
+      "Áo choàng tắm dệt sợi waffle siêu mềm mịn",
+      "Điều hòa âm trần inverter lọc không khí Nanoe",
+      "Hệ thống đèn ngủ ambient light tùy chỉnh cảm xúc",
+      "Minibar miễn phí nước suối, trà & cà phê hảo hạng",
+      "Dịch vụ dọn phòng 2 lần/ngày kèm mở giường buổi tối"
+    ],
+    "amenityGroups": [
+      {
+        "groupName": "Phòng ngủ & Thư giãn",
+        "icon": "bed",
+        "items": ["Giường King siêu lớn nệm lông vũ", "Ban công riêng rộng rãi có ghế tắm nắng", "Rèm mở tự động thông minh", "Góc thư giãn lãng mạn"]
+      },
+      {
+        "groupName": "Phòng tắm & Vệ sinh",
+        "icon": "bathtub",
+        "items": ["Bồn tắm nằm ngắm biển trực diện", "Đồ vệ sinh cao cấp L’Occitane", "Áo choàng tắm waffle siêu êm", "Vòi sen trần Rain Shower"]
+      },
+      {
+        "groupName": "Công nghệ & Giải trí",
+        "icon": "tv",
+        "items": ["Smart TV 55 inch 4K HDR", "Loa Bluetooth Marshall Acton", "Hệ thống điều khiển ánh sáng cảm ứng", "Wifi 6 cực mạnh"]
+      },
+      {
+        "groupName": "Ẩm thực & Dịch vụ",
+        "icon": "restaurant",
+        "items": ["Máy pha cafe Nespresso kèm viên nén", "Rượu vang chào mừng tặng kèm", "Bữa sáng buffet tận phòng theo yêu cầu", "Dịch vụ dọn phòng 2 lần/ngày"]
+      }
+    ],
+    "reviews": [
+      {
+        "id": "rev-dlx-1",
+        "authorName": "Trần Phương Thảo",
+        "authorAvatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+        "rating": 5.0,
+        "date": "2026-09-01",
+        "comment": "Cảm giác ngâm bồn tắm ngắm hoàng hôn buông xuống biển thật sự đắt giá! 10/10 cho trải nghiệm tuyệt vời này.",
+        "stayDuration": "Lưu trú 3 đêm"
+      },
+      {
+        "id": "rev-dlx-2",
+        "authorName": "Nguyễn Quốc Hưng",
+        "authorAvatar": "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=200&q=80",
+        "rating": 5.0,
+        "date": "2026-08-26",
+        "comment": "Phòng đẹp hơn cả trong ảnh. Loa Marshall nghe nhạc cực chill. Dịch vụ đưa đón và phục vụ lễ tân chuyên nghiệp.",
+        "stayDuration": "Lưu trú 2 đêm"
+      }
+    ],
+    "currentBooking": null
+  }
+}
+```
+
+#### 3. Hướng dẫn sử dụng cho FE
+1. **Slider ảnh phòng**: Đọc trực tiếp mảng `data.images` (luôn có từ 4 đến 6 ảnh chất lượng cao). Sử dụng `data.image` làm ảnh đại diện chính.
+2. **Thẻ thông số nhanh**: Hiển thị `data.sizeSqM` (m²), `data.bedType` (loại giường), `data.viewType` (hướng nhìn), `data.capacity` (sức chứa khách).
+3. **Danh mục tiện ích dạng nhóm**: Render theo mảng `data.amenityGroups` để phân tách rõ ràng các nhóm: Phòng ngủ, Phòng tắm, Công nghệ & Giải trí, Ẩm thực & Dịch vụ.
+4. **Đánh giá & Review**:
+   - Khối tổng quan: Dùng `data.rating` (ví dụ 4.95) và `data.reviewCount` (ví dụ 124 đánh giá).
+   - Thanh điểm chi tiết: Dùng `data.ratingBreakdown` (5 tiêu chí 0.0 - 5.0).
+   - Danh sách nhận xét: Lặp qua `data.reviews` để vẽ card nhận xét của từng khách hàng.
+5. **Chính sách**: Render bảng giờ giấc và quy định từ `data.policies`.
+
+---
+
+### L. Tạo phòng mới (`POST /api/v1/rooms`) — Hỗ trợ Linh hoạt từ FE & Cơ chế Chờ duyệt
+
+Endpoint tạo phòng hỗ trợ cả Admin và nhân viên/khách hàng gửi yêu cầu tạo phòng mới.
+
+#### 1. Thông tin Endpoint
+- **URL:** `POST /api/v1/rooms`
+- **Quyền:** `ADMIN`, `RECEPTIONIST`, `CASHIER`, `CUSTOMER` (`Bearer <accessToken>` bắt buộc).
+- **Quy tắc phân quyền & Trạng thái:**
+  - `ADMIN`: Phòng tạo ra sẽ được duyệt ngay và có trạng thái `AVAILABLE` (hoặc trạng thái truyền trong `status`).
+  - `RECEPTIONIST` / `CASHIER` / `CUSTOMER`: Hệ thống **tự động ép** trạng thái về `PENDING_APPROVAL` (Chờ Admin duyệt), không thể tự kích hoạt phòng. Sau đó Admin sẽ duyệt qua `PATCH /api/v1/rooms/:id/approve` hoặc từ chối qua `PATCH /api/v1/rooms/:id/reject`.
+
+#### 2. Request Body Payload (JSON)
+Backend chấp nhận linh hoạt các trường (hỗ trợ cả các alias phổ biến bên FE):
+```json
+{
+  "roomNumber": "405",
+  "floor": 4,
+  "roomTypeId": "d9e03d76-e17f-4f05-896c-b3a167cf7564",
+  "notes": "Phòng góc thoáng mát nhìn ra vườn",
+  "pricePerNight": 1200000,
+  "imageUrl": "https://images.unsplash.com/photo-1590490360182-c33d57733427",
+  "images": [
+    "https://images.unsplash.com/photo-1590490360182-c33d57733427",
+    "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b"
+  ],
+  "amenities": ["Wifi tốc độ cao", "Ban công", "Bồn tắm nằm", "Smart TV"]
+}
+```
+
+*Ghi chú các trường:*
+- `roomNumber` *(bắt buộc, string)*: Số phòng duy nhất (VD: `"405"`).
+- `floor` *(bắt buộc, int)*: Tầng (>= 1).
+- `roomTypeId` *(tùy chọn nếu truyền `roomTypeCode` hoặc `roomTypeName`)*: ID loại phòng.
+- `roomTypeCode` / `roomTypeName` *(tùy chọn)*: Nếu FE chưa có UUID của loại phòng, có thể truyền mã (`STD-D`, `DLX-OV`...) hoặc tên loại phòng.
+- `price` / `pricePerNight` / `basePrice` *(tùy chọn, number)*: Giá phòng.
+- `image` / `imageUrl` / `images` *(tùy chọn)*: Ảnh đại diện hoặc album ảnh upload.
+- `amenities` *(tùy chọn, string[])*: Danh sách tiện ích.
+- `notes` *(tùy chọn, string)*: Ghi chú nội bộ.
+
+#### 3. Response thành công (Status 201 Created)
+Trả về dữ liệu phòng phẳng hóa đầy đủ (`RoomResponse`) sẵn sàng cho FE parse:
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "data": {
+    "id": "new-room-uuid",
+    "roomNumber": "405",
+    "floor": 4,
+    "status": "PENDING_APPROVAL",
+    "roomTypeId": "d9e03d76-e17f-4f05-896c-b3a167cf7564",
+    "roomTypeName": "Deluxe Ocean Panorama",
+    "roomTypeCode": "DLX-OV",
+    "description": "...",
+    "pricePerNight": 1450000,
+    "image": "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80",
+    "imageUrl": "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80",
+    "images": [ ... ],
+    "bedType": "1 Giường King đôi siêu lớn (2.0m x 2.2m) đệm lông vũ cao cấp",
+    "viewType": "Hướng trực diện biển 180 độ (Ocean Panorama)",
+    "sizeSqM": 45,
+    "rating": 4.95,
+    "reviewCount": 124,
+    "highlights": [ ... ],
+    "policies": { ... },
+    "amenityGroups": [ ... ]
+  }
+}
+```
+
+
+

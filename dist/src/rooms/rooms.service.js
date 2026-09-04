@@ -30,14 +30,77 @@ let RoomsService = class RoomsService {
         if (existing) {
             throw new common_1.ConflictException(`Số phòng ${dto.roomNumber} đã tồn tại`);
         }
+        let roomTypeId = dto.roomTypeId;
+        if (!roomTypeId) {
+            if (dto.roomTypeCode) {
+                const found = await this.prisma.roomType.findUnique({
+                    where: { code: dto.roomTypeCode },
+                });
+                if (found)
+                    roomTypeId = found.id;
+            }
+            else if (dto.roomTypeName) {
+                const found = await this.prisma.roomType.findUnique({
+                    where: { name: dto.roomTypeName },
+                });
+                if (found)
+                    roomTypeId = found.id;
+            }
+        }
+        if (!roomTypeId) {
+            const defaultType = await this.prisma.roomType.findFirst();
+            if (defaultType) {
+                roomTypeId = defaultType.id;
+            }
+            else {
+                throw new common_1.NotFoundException('Vui lòng chọn hoặc cung cấp loại phòng hợp lệ');
+            }
+        }
         const roomType = await this.prisma.roomType.findUnique({
-            where: { id: dto.roomTypeId },
+            where: { id: roomTypeId },
         });
         if (!roomType) {
-            throw new common_1.NotFoundException(`Loại phòng ID ${dto.roomTypeId} không tồn tại`);
+            throw new common_1.NotFoundException(`Loại phòng ID ${roomTypeId} không tồn tại`);
+        }
+        const incomingImages = dto.images || (dto.imageUrl ? [dto.imageUrl] : dto.image ? [dto.image] : []);
+        if (incomingImages.length > 0 ||
+            (dto.amenities && dto.amenities.length > 0) ||
+            dto.pricePerNight ||
+            dto.price ||
+            dto.basePrice ||
+            dto.description) {
+            const updateData = {};
+            if (incomingImages.length > 0) {
+                const combined = Array.from(new Set([...incomingImages, ...(roomType.images || [])]));
+                updateData.images = combined;
+            }
+            if (dto.amenities && dto.amenities.length > 0) {
+                const combined = Array.from(new Set([...dto.amenities, ...(roomType.amenities || [])]));
+                updateData.amenities = combined;
+            }
+            const newPrice = dto.pricePerNight || dto.price || dto.basePrice;
+            if (newPrice && newPrice > 0) {
+                updateData.basePrice = Number(newPrice);
+            }
+            if (dto.description) {
+                updateData.description = dto.description;
+            }
+            if (Object.keys(updateData).length > 0) {
+                await this.prisma.roomType.update({
+                    where: { id: roomTypeId },
+                    data: updateData,
+                });
+                Object.assign(roomType, updateData);
+            }
         }
         const room = await this.prisma.room.create({
-            data: dto,
+            data: {
+                roomNumber: dto.roomNumber,
+                floor: Number(dto.floor),
+                roomTypeId: roomTypeId,
+                status: dto.status || client_1.RoomStatus.AVAILABLE,
+                notes: dto.notes,
+            },
             include: { roomType: true },
         });
         await this.redis.delByPattern('cache:rooms:*');
