@@ -50,7 +50,7 @@ const SAMPLE_BOOKING = {
 };
 
 @ApiTags('Bookings (Đặt phòng & Lưu trú)')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('bookings')
 export class BookingsController {

@@ -42,7 +42,7 @@ const SAMPLE_ROOM_TYPE = {
 export class RoomTypesController {
   constructor(private readonly roomTypesService: RoomTypesService) {}
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Post()
@@ -64,7 +64,7 @@ export class RoomTypesController {
 
   @Public()
   @Get()
-  @ApiOperation({ summary: 'Lấy danh sách loại phòng và tiện nghi (Công khai)' })
+  @ApiOperation({ summary: 'Lấy danh sách loại phòng và tiện nghi (Công khai cho khách vãng lai)' })
   @ApiSuccessResponse({
     status: 200,
     description: 'Lấy danh sách loại phòng thành công',
@@ -76,7 +76,7 @@ export class RoomTypesController {
 
   @Public()
   @Get(':id')
-  @ApiOperation({ summary: 'Chi tiết một loại phòng (Công khai)' })
+  @ApiOperation({ summary: 'Chi tiết một loại phòng (Công khai cho khách vãng lai)' })
   @ApiSuccessResponse({
     status: 200,
     description: 'Lấy chi tiết loại phòng thành công',
@@ -92,7 +92,7 @@ export class RoomTypesController {
     return this.roomTypesService.findOne(id);
   }
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Patch(':id')
@@ -109,7 +109,7 @@ export class RoomTypesController {
     return this.roomTypesService.update(id, updateRoomTypeDto);
   }
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Delete(':id')

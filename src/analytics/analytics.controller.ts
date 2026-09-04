@@ -9,7 +9,7 @@ import { DEFAULT_REVENUE_RANGE, REVENUE_RANGES } from '../common/utils/revenue.u
 import { Role } from '@prisma/client';
 
 @ApiTags('Analytics & Dashboard (Báo cáo & Thống kê)')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.RECEPTIONIST)
 @Controller('analytics')

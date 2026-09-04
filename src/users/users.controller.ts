@@ -32,7 +32,7 @@ const SAMPLE_USER = {
 };
 
 @ApiTags('Users (Quản lý người dùng & Nhân sự)')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('users')
 export class UsersController {

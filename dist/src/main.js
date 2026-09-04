@@ -45,6 +45,14 @@ async function bootstrap() {
         description: 'Nhập JWT Token',
         in: 'header',
     }, 'JWT-auth')
+        .addBearerAuth({
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'JWT',
+        description: 'Nhập JWT Token',
+        in: 'header',
+    }, 'bearer')
         .build();
     const document = swagger_1.SwaggerModule.createDocument(app, config);
     swagger_1.SwaggerModule.setup('api/docs', app, document, {

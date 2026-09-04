@@ -63,7 +63,7 @@ let RoomTypesController = class RoomTypesController {
 };
 exports.RoomTypesController = RoomTypesController;
 __decorate([
-    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, common_1.Post)(),
@@ -87,7 +87,7 @@ __decorate([
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Get)(),
-    (0, swagger_1.ApiOperation)({ summary: 'Lấy danh sách loại phòng và tiện nghi (Công khai)' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Lấy danh sách loại phòng và tiện nghi (Công khai cho khách vãng lai)' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Lấy danh sách loại phòng thành công',
@@ -100,7 +100,7 @@ __decorate([
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Get)(':id'),
-    (0, swagger_1.ApiOperation)({ summary: 'Chi tiết một loại phòng (Công khai)' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Chi tiết một loại phòng (Công khai cho khách vãng lai)' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Lấy chi tiết loại phòng thành công',
@@ -118,7 +118,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], RoomTypesController.prototype, "findOne", null);
 __decorate([
-    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, common_1.Patch)(':id'),
@@ -135,7 +135,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], RoomTypesController.prototype, "update", null);
 __decorate([
-    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, common_1.Delete)(':id'),

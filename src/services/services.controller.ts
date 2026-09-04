@@ -11,7 +11,7 @@ export class ServicesController {
 
   @Public()
   @Get()
-  @ApiOperation({ summary: 'Danh mục dịch vụ gia tăng của khách sạn (giặt là, spa, ăn uống...)' })
+  @ApiOperation({ summary: 'Danh mục dịch vụ gia tăng của khách sạn (Công khai cho khách vãng lai)' })
   @ApiSuccessResponse({
     status: 200,
     description: 'Danh sách các dịch vụ khách sạn có sẵn',

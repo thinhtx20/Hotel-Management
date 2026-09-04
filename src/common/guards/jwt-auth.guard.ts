@@ -10,6 +10,15 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   canActivate(context: ExecutionContext) {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    const request = context.switchToHttp().getRequest();
+    // Nếu là public endpoint và không có header Authorization thì cho qua luôn
+    if (isPublic && !request.headers?.authorization) {
+      return true;
+    }
     return super.canActivate(context);
   }
 

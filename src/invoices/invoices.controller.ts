@@ -55,7 +55,7 @@ const SAMPLE_INVOICE = {
 };
 
 @ApiTags('Invoices (Hóa đơn & Thu ngân)')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('invoices')
 export class InvoicesController {

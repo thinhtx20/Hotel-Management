@@ -50,7 +50,7 @@ const SAMPLE_ROOM = {
 export class RoomsController {
   constructor(private readonly roomsService: RoomsService) {}
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Post()
@@ -78,11 +78,11 @@ export class RoomsController {
     return this.roomsService.create(createRoomDto);
   }
 
-  // @Public() + JwtAuthGuard = xác thực tùy chọn: khách vãng lai vẫn gọi được,
-  // nhưng nếu có Bearer token hợp lệ thì req.user được nạp để nhận diện nhân viên.
+  // @Public() + JwtAuthGuard = xác thực tùy chọn: khách vãng lai không cần đăng nhập vẫn gọi được,
+  // nhưng nếu có Bearer token thì req.user được nạp để nhận diện nhân viên.
   @Public()
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Get('search')
   @ApiOperation({ summary: 'Tìm kiếm phòng Full-Text siêu tốc bằng Elasticsearch (Fuzzy match, tiện ích, khoảng giá)' })
   @ApiSuccessResponse({
@@ -97,7 +97,7 @@ export class RoomsController {
 
   @Public()
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Get('available')
   @ApiOperation({ summary: 'Tìm kiếm danh sách phòng trống theo khoảng thời gian đặt phòng (Redis Caching)' })
   @ApiSuccessResponse({
@@ -112,10 +112,10 @@ export class RoomsController {
 
   @Public()
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Get()
   @ApiOperation({
-    summary: 'Lấy danh sách tất cả phòng kèm bộ lọc trạng thái/tầng',
+    summary: 'Lấy danh sách tất cả phòng kèm bộ lọc trạng thái/tầng (Công khai cho khách vãng lai)',
     description:
       'Khách vãng lai và khách hàng chỉ thấy phòng đang vận hành. Phòng ở trạng thái ' +
       'PENDING_APPROVAL / REJECTED chỉ hiện với ADMIN và RECEPTIONIST (gửi kèm Bearer token).',
@@ -140,9 +140,9 @@ export class RoomsController {
 
   @Public()
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Get(':id')
-  @ApiOperation({ summary: 'Xem chi tiết thông tin một phòng' })
+  @ApiOperation({ summary: 'Xem chi tiết thông tin một phòng (Công khai cho khách vãng lai)' })
   @ApiSuccessResponse({
     status: 200,
     description: 'Xem chi tiết thông tin phòng thành công',
@@ -159,7 +159,7 @@ export class RoomsController {
     return this.roomsService.findOne(id, isStaff);
   }
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Patch(':id/approve')
@@ -173,7 +173,7 @@ export class RoomsController {
     return this.roomsService.updateStatus(id, RoomStatus.AVAILABLE);
   }
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Patch(':id/reject')
@@ -187,7 +187,7 @@ export class RoomsController {
     return this.roomsService.updateStatus(id, RoomStatus.REJECTED);
   }
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Patch(':id/status')
@@ -204,7 +204,7 @@ export class RoomsController {
     return this.roomsService.updateStatus(id, dto.status);
   }
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Patch(':id')
@@ -218,7 +218,7 @@ export class RoomsController {
     return this.roomsService.update(id, updateRoomDto);
   }
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Delete(':id')
