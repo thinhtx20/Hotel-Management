@@ -118,20 +118,7 @@ export class RoomsService {
     await this.redis.delByPattern('cache:rooms:*');
 
     // Sync to Elasticsearch
-    await this.esService.indexRoom({
-      id: room.id,
-      roomNumber: room.roomNumber,
-      floor: room.floor,
-      status: room.status,
-      roomTypeId: room.roomTypeId,
-      roomTypeName: room.roomType.name,
-      code: room.roomType.code,
-      description: room.roomType.description || '',
-      basePrice: room.roomType.basePrice,
-      capacityAdults: room.roomType.capacityAdults,
-      capacityChildren: room.roomType.capacityChildren,
-      amenities: room.roomType.amenities,
-    });
+    await this.esService.indexRoomEntity(room);
 
     return toRoomResponse(room, true);
   }
@@ -328,20 +315,7 @@ export class RoomsService {
     await this.redis.delByPattern('cache:rooms:*');
 
     // Update Elasticsearch
-    await this.esService.indexRoom({
-      id: updated.id,
-      roomNumber: updated.roomNumber,
-      floor: updated.floor,
-      status: updated.status,
-      roomTypeId: updated.roomTypeId,
-      roomTypeName: updated.roomType.name,
-      code: updated.roomType.code,
-      description: updated.roomType.description || '',
-      basePrice: updated.roomType.basePrice,
-      capacityAdults: updated.roomType.capacityAdults,
-      capacityChildren: updated.roomType.capacityChildren,
-      amenities: updated.roomType.amenities,
-    });
+    await this.esService.indexRoomEntity(updated);
 
     return toRoomResponse(updated, true);
   }
@@ -355,6 +329,7 @@ export class RoomsService {
   async syncAllStatuses() {
     const rooms = await this.prisma.room.findMany({
       include: {
+        roomType: true,
         bookings: {
           where: { status: { in: [BookingStatus.CHECKED_IN, BookingStatus.CONFIRMED] } },
           select: { status: true, checkOutDate: true },
@@ -373,6 +348,7 @@ export class RoomsService {
           where: { id: room.id },
           data: { status: next },
         });
+        await this.esService.indexRoomEntity({ ...room, status: next });
         changes.push({ roomNumber: room.roomNumber, from: room.status, to: next });
       }
     }
@@ -401,6 +377,7 @@ export class RoomsService {
     });
 
     await this.redis.delByPattern('cache:rooms:*');
+    await this.esService.indexRoomEntity(updated);
     return toRoomResponse(updated, true);
   }
 

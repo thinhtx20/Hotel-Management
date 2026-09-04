@@ -1,5 +1,6 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { ElasticsearchService } from '../elasticsearch/elasticsearch.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { AddServiceOrderDto, CheckOutDto } from './dto/update-booking-status.dto';
 import { ApproveBookingDto, RejectBookingDto } from './dto/approve-booking.dto';
@@ -10,12 +11,14 @@ import { Role } from '@prisma/client';
 export declare class BookingsService {
     private prisma;
     private redis;
+    private esService;
     private readonly logger;
-    constructor(prisma: PrismaService, redis: RedisService);
+    constructor(prisma: PrismaService, redis: RedisService, esService: ElasticsearchService);
+    private reindexRoom;
     private syncRoomStatus;
     create(dto: CreateBookingDto, currentUserId: string, currentUserRole: Role): Promise<any>;
     private toBookingResponse;
-    findAll(query?: QueryBookingsDto): Promise<{
+    findAll(query?: QueryBookingsDto, viewerRole?: Role): Promise<{
         data: any[];
         meta: {
             total: number;

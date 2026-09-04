@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Client } from '@elastic/elasticsearch';
+import { Room, RoomType } from '@prisma/client';
 
 export interface RoomSearchDocument {
   id: string;
@@ -94,6 +95,28 @@ export class ElasticsearchService implements OnModuleInit {
     } catch (err: any) {
       this.logger.warn(`Lỗi khi index phòng ${roomDoc.id} lên Elasticsearch: ${err.message}`);
     }
+  }
+
+  /**
+   * Đồng bộ bản ghi phòng lấy thẳng từ Prisma (kèm roomType) lên index.
+   * Dùng chung cho mọi luồng làm đổi trạng thái phòng — đặt phòng, xác nhận, nhận/trả phòng,
+   * hủy đơn, đổi trạng thái thủ công — để kết quả tìm kiếm không còn lệch với database.
+   */
+  async indexRoomEntity(room: Room & { roomType: RoomType }) {
+    return this.indexRoom({
+      id: room.id,
+      roomNumber: room.roomNumber,
+      floor: room.floor,
+      status: room.status,
+      roomTypeId: room.roomTypeId,
+      roomTypeName: room.roomType.name,
+      code: room.roomType.code,
+      description: room.roomType.description || '',
+      basePrice: room.roomType.basePrice,
+      capacityAdults: room.roomType.capacityAdults,
+      capacityChildren: room.roomType.capacityChildren,
+      amenities: room.roomType.amenities,
+    });
   }
 
   /**

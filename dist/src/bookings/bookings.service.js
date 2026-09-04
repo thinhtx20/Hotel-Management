@@ -14,6 +14,7 @@ exports.BookingsService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const redis_service_1 = require("../redis/redis.service");
+const elasticsearch_service_1 = require("../elasticsearch/elasticsearch.service");
 const room_status_util_1 = require("../common/utils/room-status.util");
 const client_1 = require("@prisma/client");
 const BOOKING_INCLUDE = {
@@ -27,10 +28,20 @@ const BOOKING_INCLUDE = {
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
 const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
 let BookingsService = BookingsService_1 = class BookingsService {
-    constructor(prisma, redis) {
+    constructor(prisma, redis, esService) {
         this.prisma = prisma;
         this.redis = redis;
+        this.esService = esService;
         this.logger = new common_1.Logger(BookingsService_1.name);
+    }
+    async reindexRoom(roomId) {
+        const room = await this.prisma.room.findUnique({
+            where: { id: roomId },
+            include: { roomType: true },
+        });
+        if (room) {
+            await this.esService.indexRoomEntity(room);
+        }
     }
     async syncRoomStatus(roomId) {
         const room = await this.prisma.room.findUnique({
@@ -51,6 +62,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
             where: { id: roomId },
             data: { status: nextStatus },
         });
+        await this.reindexRoom(roomId);
         return nextStatus;
     }
     async create(dto, currentUserId, currentUserRole) {
@@ -118,20 +130,22 @@ let BookingsService = BookingsService_1 = class BookingsService {
             });
             await this.syncRoomStatus(dto.roomId);
             await this.redis.delByPattern('cache:rooms:*');
-            return this.toBookingResponse(booking);
+            return this.toBookingResponse(booking, currentUserRole);
         }
         finally {
             await this.redis.releaseLock(lockKey, lockToken);
         }
     }
-    toBookingResponse(b) {
+    toBookingResponse(b, viewerRole) {
         const checkIn = new Date(b.checkInDate);
         const checkOut = new Date(b.checkOutDate);
         const diff = Math.abs(checkOut.getTime() - checkIn.getTime());
         const nights = Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24)));
         const paymentStatus = b.invoice?.paymentStatus || (b.depositAmount > 0 ? 'PARTIAL' : 'UNPAID');
         const invoiceId = b.invoice?.id || null;
-        const canCancel = b.status === client_1.BookingStatus.PENDING || b.status === client_1.BookingStatus.CONFIRMED;
+        const canCancel = viewerRole === client_1.Role.CUSTOMER
+            ? b.status === client_1.BookingStatus.PENDING
+            : b.status === client_1.BookingStatus.PENDING || b.status === client_1.BookingStatus.CONFIRMED;
         let room = b.room;
         if (room) {
             const roomImages = (room.roomType?.images && room.roomType.images.length > 0)
@@ -161,7 +175,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
             confirmationNote: b.confirmationNote ?? null,
         };
     }
-    async findAll(query = {}) {
+    async findAll(query = {}, viewerRole) {
         const where = {};
         if (query.status && query.status.length > 0) {
             where.status =
@@ -206,7 +220,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 ...(isPaginated ? { skip: (page - 1) * limit, take: limit } : {}),
             }),
         ]);
-        const data = list.map((b) => this.toBookingResponse(b));
+        const data = list.map((b) => this.toBookingResponse(b, viewerRole));
         return {
             data,
             meta: {
@@ -231,7 +245,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
             throw new common_1.NotFoundException(`Không tìm thấy đơn đặt phòng ID: ${id}`);
         }
         this.assertOwnership(booking, currentUserId, currentUserRole);
-        return this.toBookingResponse(booking);
+        return this.toBookingResponse(booking, currentUserRole);
     }
     async approve(id, dto, currentUserId) {
         const booking = await this.prisma.booking.findUnique({
@@ -251,14 +265,14 @@ let BookingsService = BookingsService_1 = class BookingsService {
             throw new common_1.BadRequestException('Đơn đặt phòng đã hoặc đang được thực hiện, không thể duyệt lại');
         }
         const targetRoomId = dto?.assignedRoomId || booking.roomId;
+        const targetRoom = await this.prisma.room.findUnique({ where: { id: targetRoomId } });
+        if (!targetRoom) {
+            throw new common_1.NotFoundException(`Không tìm thấy phòng cần xếp với ID: ${targetRoomId}`);
+        }
+        if (targetRoom.status === client_1.RoomStatus.MAINTENANCE) {
+            throw new common_1.BadRequestException('Phòng được xếp đang bảo trì, không thể nhận khách');
+        }
         if (targetRoomId !== booking.roomId) {
-            const newRoom = await this.prisma.room.findUnique({ where: { id: targetRoomId } });
-            if (!newRoom) {
-                throw new common_1.NotFoundException(`Không tìm thấy phòng cần xếp với ID: ${targetRoomId}`);
-            }
-            if (newRoom.status === client_1.RoomStatus.MAINTENANCE) {
-                throw new common_1.BadRequestException('Phòng được xếp đang bảo trì, không thể nhận khách');
-            }
             const conflict = await this.prisma.booking.findFirst({
                 where: {
                     id: { not: id },
@@ -273,7 +287,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 },
             });
             if (conflict) {
-                throw new common_1.ConflictException(`Phòng ${newRoom.roomNumber} đã có đơn ${conflict.bookingCode} trùng lịch trong khoảng thời gian này`);
+                throw new common_1.ConflictException(`Phòng ${targetRoom.roomNumber} đã có đơn ${conflict.bookingCode} trùng lịch trong khoảng thời gian này`);
             }
         }
         const depositAmount = dto?.depositAmount !== undefined ? dto.depositAmount : (booking.depositAmount || 0);
@@ -290,10 +304,6 @@ let BookingsService = BookingsService_1 = class BookingsService {
                     confirmationNote: dto?.note ?? dto?.notes ?? null,
                 },
                 include: BOOKING_INCLUDE,
-            }),
-            this.prisma.room.update({
-                where: { id: targetRoomId },
-                data: { status: client_1.RoomStatus.RESERVED },
             }),
         ];
         if (depositAmount > 0) {
@@ -327,7 +337,8 @@ let BookingsService = BookingsService_1 = class BookingsService {
         }
         const results = await this.prisma.$transaction(ops);
         const updatedBooking = results[0];
-        const invoice = results[2] || updatedBooking.invoice;
+        const invoice = results[1] || updatedBooking.invoice;
+        const targetRoomStatus = (await this.syncRoomStatus(targetRoomId)) ?? targetRoom.status;
         if (targetRoomId !== booking.roomId) {
             await this.syncRoomStatus(booking.roomId);
         }
@@ -340,7 +351,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 invoice,
                 room: {
                     ...updatedBooking.room,
-                    status: client_1.RoomStatus.RESERVED,
+                    status: targetRoomStatus,
                 },
             }),
         };
@@ -412,6 +423,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 data: { status: client_1.RoomStatus.OCCUPIED },
             }),
         ]);
+        await this.reindexRoom(booking.roomId);
         await this.redis.delByPattern('cache:rooms:*');
         return this.toBookingResponse(updatedBooking);
     }
@@ -471,6 +483,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 },
             }),
         ]);
+        await this.reindexRoom(booking.roomId);
         await this.redis.delByPattern('cache:rooms:*');
         return {
             message: 'Check-out và thanh toán hóa đơn thành công',
@@ -494,6 +507,10 @@ let BookingsService = BookingsService_1 = class BookingsService {
         if (booking.status === client_1.BookingStatus.CANCELLED) {
             throw new common_1.BadRequestException('Đơn đặt phòng này đã bị hủy trước đó');
         }
+        if (currentUserRole === client_1.Role.CUSTOMER && booking.status !== client_1.BookingStatus.PENDING) {
+            throw new common_1.ForbiddenException('Đơn đặt phòng đã được lễ tân xác nhận nên không thể tự hủy. ' +
+                'Vui lòng liên hệ lễ tân để được hỗ trợ.');
+        }
         const updatedBooking = await this.prisma.booking.update({
             where: { id },
             data: {
@@ -506,7 +523,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
         });
         await this.syncRoomStatus(booking.roomId);
         await this.redis.delByPattern('cache:rooms:*');
-        return this.toBookingResponse(updatedBooking);
+        return this.toBookingResponse(updatedBooking, currentUserRole);
     }
     async addServiceOrder(id, dto) {
         const booking = await this.findOne(id);
@@ -530,6 +547,7 @@ exports.BookingsService = BookingsService;
 exports.BookingsService = BookingsService = BookingsService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        redis_service_1.RedisService])
+        redis_service_1.RedisService,
+        elasticsearch_service_1.ElasticsearchService])
 ], BookingsService);
 //# sourceMappingURL=bookings.service.js.map

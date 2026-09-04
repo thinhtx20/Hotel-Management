@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { ElasticsearchService } from '../elasticsearch/elasticsearch.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { AddServiceOrderDto, CheckOutDto } from './dto/update-booking-status.dto';
 import { ApproveBookingDto, RejectBookingDto } from './dto/approve-booking.dto';
@@ -40,7 +41,23 @@ export class BookingsService {
   constructor(
     private prisma: PrismaService,
     private redis: RedisService,
+    private esService: ElasticsearchService,
   ) {}
+
+  /**
+   * Đẩy trạng thái phòng mới nhất lên Elasticsearch.
+   * Bắt buộc sau mọi lần vòng đời đơn làm đổi trạng thái phòng, nếu không
+   * `GET /rooms/search?status=...` sẽ vẫn trả về trạng thái cũ đã lưu trong index.
+   */
+  private async reindexRoom(roomId: string) {
+    const room = await this.prisma.room.findUnique({
+      where: { id: roomId },
+      include: { roomType: true },
+    });
+    if (room) {
+      await this.esService.indexRoomEntity(room);
+    }
+  }
 
   /**
    * Đồng bộ trạng thái phòng theo đúng lịch đặt phòng hiện tại.
@@ -67,6 +84,7 @@ export class BookingsService {
       where: { id: roomId },
       data: { status: nextStatus },
     });
+    await this.reindexRoom(roomId);
 
     return nextStatus;
   }
@@ -173,21 +191,30 @@ export class BookingsService {
       // Xóa cache danh sách phòng trống trong Redis
       await this.redis.delByPattern('cache:rooms:*');
 
-      return this.toBookingResponse(booking);
+      return this.toBookingResponse(booking, currentUserRole);
     } finally {
       // 2. Luôn giải phóng khóa phân tán an toàn bằng Lua script
       await this.redis.releaseLock(lockKey, lockToken);
     }
   }
 
-  private toBookingResponse(b: any) {
+  /**
+   * `canCancel` phụ thuộc vào người đang xem đơn:
+   * - Khách hàng chỉ được tự hủy khi đơn còn PENDING (chưa qua tay lễ tân).
+   * - Lễ tân/Admin (hoặc lời gọi nội bộ, không truyền role) hủy hộ được cả đơn đã CONFIRMED,
+   *   nhưng vẫn không hủy được đơn đã nhận phòng / đã trả phòng.
+   */
+  private toBookingResponse(b: any, viewerRole?: Role) {
     const checkIn = new Date(b.checkInDate);
     const checkOut = new Date(b.checkOutDate);
     const diff = Math.abs(checkOut.getTime() - checkIn.getTime());
     const nights = Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24)));
     const paymentStatus = b.invoice?.paymentStatus || (b.depositAmount > 0 ? 'PARTIAL' : 'UNPAID');
     const invoiceId = b.invoice?.id || null;
-    const canCancel = b.status === BookingStatus.PENDING || b.status === BookingStatus.CONFIRMED;
+    const canCancel =
+      viewerRole === Role.CUSTOMER
+        ? b.status === BookingStatus.PENDING
+        : b.status === BookingStatus.PENDING || b.status === BookingStatus.CONFIRMED;
 
     let room = b.room;
     if (room) {
@@ -225,7 +252,7 @@ export class BookingsService {
    * Danh sách đơn đặt phòng với đầy đủ bộ lọc phía máy chủ:
    * trạng thái (nhiều giá trị), khoảng ngày nhận/trả phòng, tìm kiếm và phân trang.
    */
-  async findAll(query: QueryBookingsDto = {}) {
+  async findAll(query: QueryBookingsDto = {}, viewerRole?: Role) {
     const where: Prisma.BookingWhereInput = {};
 
     if (query.status && query.status.length > 0) {
@@ -278,7 +305,7 @@ export class BookingsService {
       }),
     ]);
 
-    const data = list.map((b) => this.toBookingResponse(b));
+    const data = list.map((b) => this.toBookingResponse(b, viewerRole));
 
     return {
       data,
@@ -316,7 +343,7 @@ export class BookingsService {
 
     this.assertOwnership(booking, currentUserId, currentUserRole);
 
-    return this.toBookingResponse(booking);
+    return this.toBookingResponse(booking, currentUserRole);
   }
 
   /**
@@ -351,15 +378,18 @@ export class BookingsService {
 
     // Xếp phòng khi duyệt: mặc định giữ nguyên phòng khách đã chọn.
     const targetRoomId = dto?.assignedRoomId || booking.roomId;
-    if (targetRoomId !== booking.roomId) {
-      const newRoom = await this.prisma.room.findUnique({ where: { id: targetRoomId } });
-      if (!newRoom) {
-        throw new NotFoundException(`Không tìm thấy phòng cần xếp với ID: ${targetRoomId}`);
-      }
-      if (newRoom.status === RoomStatus.MAINTENANCE) {
-        throw new BadRequestException('Phòng được xếp đang bảo trì, không thể nhận khách');
-      }
 
+    const targetRoom = await this.prisma.room.findUnique({ where: { id: targetRoomId } });
+    if (!targetRoom) {
+      throw new NotFoundException(`Không tìm thấy phòng cần xếp với ID: ${targetRoomId}`);
+    }
+    // Kiểm tra bảo trì cho cả trường hợp giữ nguyên phòng khách đã chọn: nếu bỏ qua,
+    // đơn sẽ chuyển CONFIRMED trong khi phòng vẫn nằm ở MAINTENANCE và không giữ chỗ được.
+    if (targetRoom.status === RoomStatus.MAINTENANCE) {
+      throw new BadRequestException('Phòng được xếp đang bảo trì, không thể nhận khách');
+    }
+
+    if (targetRoomId !== booking.roomId) {
       const conflict = await this.prisma.booking.findFirst({
         where: {
           id: { not: id },
@@ -376,7 +406,7 @@ export class BookingsService {
 
       if (conflict) {
         throw new ConflictException(
-          `Phòng ${newRoom.roomNumber} đã có đơn ${conflict.bookingCode} trùng lịch trong khoảng thời gian này`,
+          `Phòng ${targetRoom.roomNumber} đã có đơn ${conflict.bookingCode} trùng lịch trong khoảng thời gian này`,
         );
       }
     }
@@ -399,10 +429,6 @@ export class BookingsService {
           confirmationNote: dto?.note ?? dto?.notes ?? null,
         },
         include: BOOKING_INCLUDE,
-      }),
-      this.prisma.room.update({
-        where: { id: targetRoomId },
-        data: { status: RoomStatus.RESERVED },
       }),
     ];
 
@@ -440,7 +466,12 @@ export class BookingsService {
 
     const results = await this.prisma.$transaction(ops);
     const updatedBooking = results[0];
-    const invoice = results[2] || updatedBooking.invoice;
+    const invoice = results[1] || updatedBooking.invoice;
+
+    // Đơn đã xác nhận thì phòng phải đổi trạng thái theo: giữ chỗ RESERVED cho khách sắp tới.
+    // Suy ra qua deriveRoomStatus thay vì ép cứng RESERVED, để không ghi đè phòng đang có
+    // khách khác lưu trú (OCCUPIED) khi lễ tân xác nhận một đơn cho kỳ nghỉ sau đó.
+    const targetRoomStatus = (await this.syncRoomStatus(targetRoomId)) ?? targetRoom.status;
 
     // Đổi phòng khi duyệt: phòng khách chọn ban đầu phải được trả về đúng trạng thái
     if (targetRoomId !== booking.roomId) {
@@ -457,7 +488,7 @@ export class BookingsService {
         invoice,
         room: {
           ...updatedBooking.room,
-          status: RoomStatus.RESERVED,
+          status: targetRoomStatus,
         },
       }),
     };
@@ -552,6 +583,9 @@ export class BookingsService {
       }),
     ]);
 
+    // Khách đã vào phòng: phòng chuyển OCCUPIED trong cùng transaction, chỉ cần
+    // làm mới cache và index tìm kiếm để sơ đồ phòng và bộ lọc trạng thái khớp ngay.
+    await this.reindexRoom(booking.roomId);
     await this.redis.delByPattern('cache:rooms:*');
     return this.toBookingResponse(updatedBooking);
   }
@@ -621,6 +655,9 @@ export class BookingsService {
       }),
     ]);
 
+    // Khách đã trả phòng: phòng sang CLEANING chờ buồng phòng dọn xong
+    // (không suy diễn lại từ lịch đặt, tránh nhảy thẳng sang RESERVED khi còn đơn đặt sau đó).
+    await this.reindexRoom(booking.roomId);
     await this.redis.delByPattern('cache:rooms:*');
 
     return {
@@ -654,6 +691,16 @@ export class BookingsService {
       throw new BadRequestException('Đơn đặt phòng này đã bị hủy trước đó');
     }
 
+    // Lễ tân đã xác nhận đơn (CONFIRMED) là phòng đã bị giữ chỗ và tiền cọc đã ghi nhận,
+    // nên khách không được tự hủy nữa — phải qua lễ tân để xử lý cọc/hoàn tiền.
+    // Đơn đã nhận phòng thì mọi vai trò đều bị chặn ở các kiểm tra phía trên.
+    if (currentUserRole === Role.CUSTOMER && booking.status !== BookingStatus.PENDING) {
+      throw new ForbiddenException(
+        'Đơn đặt phòng đã được lễ tân xác nhận nên không thể tự hủy. ' +
+          'Vui lòng liên hệ lễ tân để được hỗ trợ.',
+      );
+    }
+
     const updatedBooking = await this.prisma.booking.update({
       where: { id },
       data: {
@@ -669,7 +716,7 @@ export class BookingsService {
     await this.syncRoomStatus(booking.roomId);
     await this.redis.delByPattern('cache:rooms:*');
 
-    return this.toBookingResponse(updatedBooking);
+    return this.toBookingResponse(updatedBooking, currentUserRole);
   }
 
   async addServiceOrder(id: string, dto: AddServiceOrderDto) {

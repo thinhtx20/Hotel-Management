@@ -1,4 +1,5 @@
 import { OnModuleInit } from '@nestjs/common';
+import { Room, RoomType } from '@prisma/client';
 export interface RoomSearchDocument {
     id: string;
     roomNumber: string;
@@ -22,6 +23,9 @@ export declare class ElasticsearchService implements OnModuleInit {
     get isReady(): boolean;
     private initIndex;
     indexRoom(roomDoc: RoomSearchDocument): Promise<void>;
+    indexRoomEntity(room: Room & {
+        roomType: RoomType;
+    }): Promise<void>;
     removeRoom(roomId: string): Promise<void>;
     searchRooms(query?: string, minPrice?: number, maxPrice?: number, amenities?: string[], floor?: number, status?: string, sort?: string): Promise<string[]>;
 }

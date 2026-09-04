@@ -85,7 +85,7 @@ let BookingsController = class BookingsController {
         return this.bookingsService.findAll({
             ...query,
             ...(userRole === client_1.Role.CUSTOMER ? { customerId: userId } : {}),
-        });
+        }, userRole);
     }
     findOne(id, userId, userRole) {
         return this.bookingsService.findOne(id, userId, userRole);
@@ -415,12 +415,27 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'Hủy đơn đặt phòng kèm lý do và giải phóng trạng thái phòng',
         description: 'Nhận body { cancellationReason }. Lý do được lưu lại và trả về trong mọi response của đơn ' +
-            'kèm cancelledAt và cancelledBy, để khách thấy được vì sao đơn bị hủy.',
+            'kèm cancelledAt và cancelledBy, để khách thấy được vì sao đơn bị hủy. ' +
+            'KHÁCH HÀNG chỉ được tự hủy khi đơn còn PENDING; lễ tân đã xác nhận (CONFIRMED) thì khách ' +
+            'phải liên hệ lễ tân. ADMIN/RECEPTIONIST hủy hộ được cả đơn CONFIRMED, nhưng đơn đã ' +
+            'CHECKED_IN / CHECKED_OUT thì không vai trò nào hủy được.',
     }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Hủy đơn đặt phòng thành công',
         exampleData: CANCELLED_BOOKING_SAMPLE,
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 403,
+        message: 'Đơn đặt phòng đã được lễ tân xác nhận nên không thể tự hủy. Vui lòng liên hệ lễ tân để được hỗ trợ.',
+        error: 'Forbidden',
+        path: '/api/v1/bookings/:id/cancel',
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 400,
+        message: 'Khách đang ở phòng, không thể hủy đơn đặt',
+        error: 'Bad Request',
+        path: '/api/v1/bookings/:id/cancel',
     }),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
@@ -432,11 +447,21 @@ __decorate([
 ], BookingsController.prototype, "cancel", null);
 __decorate([
     (0, common_1.Patch)(':id/cancel'),
-    (0, swagger_1.ApiOperation)({ summary: 'Hủy đơn đặt phòng kèm lý do (PATCH alias cho client Flutter)' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Hủy đơn đặt phòng kèm lý do (PATCH alias cho client Flutter)',
+        description: 'Cùng quy tắc với POST :id/cancel — khách chỉ tự hủy được đơn PENDING, đơn đã xác nhận ' +
+            'hoặc đã nhận phòng thì không.',
+    }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Hủy đơn đặt phòng thành công',
         exampleData: CANCELLED_BOOKING_SAMPLE,
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 403,
+        message: 'Đơn đặt phòng đã được lễ tân xác nhận nên không thể tự hủy. Vui lòng liên hệ lễ tân để được hỗ trợ.',
+        error: 'Forbidden',
+        path: '/api/v1/bookings/:id/cancel',
     }),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),

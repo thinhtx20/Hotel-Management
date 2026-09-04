@@ -105,20 +105,7 @@ let RoomsService = class RoomsService {
             include: { roomType: true },
         });
         await this.redis.delByPattern('cache:rooms:*');
-        await this.esService.indexRoom({
-            id: room.id,
-            roomNumber: room.roomNumber,
-            floor: room.floor,
-            status: room.status,
-            roomTypeId: room.roomTypeId,
-            roomTypeName: room.roomType.name,
-            code: room.roomType.code,
-            description: room.roomType.description || '',
-            basePrice: room.roomType.basePrice,
-            capacityAdults: room.roomType.capacityAdults,
-            capacityChildren: room.roomType.capacityChildren,
-            amenities: room.roomType.amenities,
-        });
+        await this.esService.indexRoomEntity(room);
         return (0, room_response_dto_1.toRoomResponse)(room, true);
     }
     async findAll(status, floor, roomTypeId, isStaff = false) {
@@ -268,25 +255,13 @@ let RoomsService = class RoomsService {
             include: { roomType: true },
         });
         await this.redis.delByPattern('cache:rooms:*');
-        await this.esService.indexRoom({
-            id: updated.id,
-            roomNumber: updated.roomNumber,
-            floor: updated.floor,
-            status: updated.status,
-            roomTypeId: updated.roomTypeId,
-            roomTypeName: updated.roomType.name,
-            code: updated.roomType.code,
-            description: updated.roomType.description || '',
-            basePrice: updated.roomType.basePrice,
-            capacityAdults: updated.roomType.capacityAdults,
-            capacityChildren: updated.roomType.capacityChildren,
-            amenities: updated.roomType.amenities,
-        });
+        await this.esService.indexRoomEntity(updated);
         return (0, room_response_dto_1.toRoomResponse)(updated, true);
     }
     async syncAllStatuses() {
         const rooms = await this.prisma.room.findMany({
             include: {
+                roomType: true,
                 bookings: {
                     where: { status: { in: [client_1.BookingStatus.CHECKED_IN, client_1.BookingStatus.CONFIRMED] } },
                     select: { status: true, checkOutDate: true },
@@ -303,6 +278,7 @@ let RoomsService = class RoomsService {
                     where: { id: room.id },
                     data: { status: next },
                 });
+                await this.esService.indexRoomEntity({ ...room, status: next });
                 changes.push({ roomNumber: room.roomNumber, from: room.status, to: next });
             }
         }
@@ -326,6 +302,7 @@ let RoomsService = class RoomsService {
             include: { roomType: true },
         });
         await this.redis.delByPattern('cache:rooms:*');
+        await this.esService.indexRoomEntity(updated);
         return (0, room_response_dto_1.toRoomResponse)(updated, true);
     }
     async remove(id) {

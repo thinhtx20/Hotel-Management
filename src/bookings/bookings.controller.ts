@@ -152,10 +152,13 @@ export class BookingsController {
     query: QueryBookingsDto,
   ) {
     // Khách hàng luôn bị khóa về đơn của chính mình, bất kể customerId gửi lên.
-    return this.bookingsService.findAll({
-      ...query,
-      ...(userRole === Role.CUSTOMER ? { customerId: userId } : {}),
-    });
+    return this.bookingsService.findAll(
+      {
+        ...query,
+        ...(userRole === Role.CUSTOMER ? { customerId: userId } : {}),
+      },
+      userRole,
+    );
   }
 
   @Get(':id')
@@ -378,12 +381,28 @@ export class BookingsController {
     summary: 'Hủy đơn đặt phòng kèm lý do và giải phóng trạng thái phòng',
     description:
       'Nhận body { cancellationReason }. Lý do được lưu lại và trả về trong mọi response của đơn ' +
-      'kèm cancelledAt và cancelledBy, để khách thấy được vì sao đơn bị hủy.',
+      'kèm cancelledAt và cancelledBy, để khách thấy được vì sao đơn bị hủy. ' +
+      'KHÁCH HÀNG chỉ được tự hủy khi đơn còn PENDING; lễ tân đã xác nhận (CONFIRMED) thì khách ' +
+      'phải liên hệ lễ tân. ADMIN/RECEPTIONIST hủy hộ được cả đơn CONFIRMED, nhưng đơn đã ' +
+      'CHECKED_IN / CHECKED_OUT thì không vai trò nào hủy được.',
   })
   @ApiSuccessResponse({
     status: 200,
     description: 'Hủy đơn đặt phòng thành công',
     exampleData: CANCELLED_BOOKING_SAMPLE,
+  })
+  @ApiErrorResponse({
+    status: 403,
+    message:
+      'Đơn đặt phòng đã được lễ tân xác nhận nên không thể tự hủy. Vui lòng liên hệ lễ tân để được hỗ trợ.',
+    error: 'Forbidden',
+    path: '/api/v1/bookings/:id/cancel',
+  })
+  @ApiErrorResponse({
+    status: 400,
+    message: 'Khách đang ở phòng, không thể hủy đơn đặt',
+    error: 'Bad Request',
+    path: '/api/v1/bookings/:id/cancel',
   })
   cancel(
     @Param('id') id: string,
@@ -395,11 +414,23 @@ export class BookingsController {
   }
 
   @Patch(':id/cancel')
-  @ApiOperation({ summary: 'Hủy đơn đặt phòng kèm lý do (PATCH alias cho client Flutter)' })
+  @ApiOperation({
+    summary: 'Hủy đơn đặt phòng kèm lý do (PATCH alias cho client Flutter)',
+    description:
+      'Cùng quy tắc với POST :id/cancel — khách chỉ tự hủy được đơn PENDING, đơn đã xác nhận ' +
+      'hoặc đã nhận phòng thì không.',
+  })
   @ApiSuccessResponse({
     status: 200,
     description: 'Hủy đơn đặt phòng thành công',
     exampleData: CANCELLED_BOOKING_SAMPLE,
+  })
+  @ApiErrorResponse({
+    status: 403,
+    message:
+      'Đơn đặt phòng đã được lễ tân xác nhận nên không thể tự hủy. Vui lòng liên hệ lễ tân để được hỗ trợ.',
+    error: 'Forbidden',
+    path: '/api/v1/bookings/:id/cancel',
   })
   cancelPatch(
     @Param('id') id: string,

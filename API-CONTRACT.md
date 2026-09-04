@@ -829,6 +829,19 @@ Trước đây endpoint này không nhận body nên lý do hủy do FE thu th�
 ```
 
   `reason` được chấp nhận như alias để client cũ không vỡ.
+- **Quyền hủy theo vai trò và trạng thái đơn:**
+
+| Trạng thái đơn | `CUSTOMER` tự hủy | `ADMIN` / `RECEPTIONIST` hủy hộ |
+|---|---|---|
+| `PENDING` (chờ lễ tân xác nhận) | ✅ | ✅ |
+| `CONFIRMED` (lễ tân đã xác nhận) | ❌ `403 Forbidden` | ✅ |
+| `CHECKED_IN` (đã nhận phòng) | ❌ `400 Bad Request` | ❌ `400 Bad Request` |
+| `CHECKED_OUT` / `CANCELLED` | ❌ `400 Bad Request` | ❌ `400 Bad Request` |
+
+  Khách tự hủy đơn đã được xác nhận nhận `403` với message:
+  `"Đơn đặt phòng đã được lễ tân xác nhận nên không thể tự hủy. Vui lòng liên hệ lễ tân để được hỗ trợ."`
+  Lý do: phòng đã bị giữ chỗ và tiền cọc đã ghi nhận, việc hủy phải qua lễ tân để xử lý cọc/hoàn tiền.
+- **`canCancel` trong response phụ thuộc vai trò người gọi** — token `CUSTOMER` chỉ thấy `canCancel: true` khi đơn còn `PENDING`; token lễ tân/admin thấy `true` với cả `PENDING` và `CONFIRMED`. FE dùng thẳng cờ này để ẩn/hiện nút "Hủy đơn", không cần tự suy luận theo status.
 - `PATCH|POST /bookings/:id/reject` (lễ tân từ chối đơn) cũng ghi lý do vào **cùng một trường** `cancellationReason`.
 - **Mọi response đơn đặt phòng** (list, chi tiết, cancel, reject) nay luôn có các trường sau, giá trị `null` khi chưa dùng tới:
 
@@ -886,6 +899,18 @@ Chữa dữ liệu lệch (phòng `OCCUPIED` mà không có đơn `CHECKED_IN` n
   - Đơn **`PENDING` không giữ phòng** — khách mới gửi yêu cầu, lễ tân chưa xác nhận.
   - `MAINTENANCE` / `PENDING_APPROVAL` / `REJECTED` giữ nguyên vì do người vận hành đặt tay.
 - Quy tắc này cũng chạy tự động sau mọi thao tác tạo đơn / xác nhận / hủy / từ chối, nên dữ liệu không lệch lại lần nữa.
+- **Trạng thái phòng đổi theo từng bước của đơn:**
+
+| Thao tác | Trạng thái phòng sau đó |
+|---|---|
+| Khách đặt phòng → `PENDING` | Không đổi (đơn chờ duyệt không giữ phòng) |
+| Lễ tân xác nhận (`:id/confirm`, `:id/approve`) | `RESERVED` — suy ra từ lịch đặt, nên phòng đang có khách khác lưu trú vẫn giữ `OCCUPIED` thay vì bị ghi đè |
+| Check-in (`:id/check-in`) | `OCCUPIED` |
+| Check-out (`:id/check-out`) | `CLEANING` (chờ buồng phòng, không nhảy thẳng sang `RESERVED` dù còn đơn đặt sau đó) |
+| Hủy / từ chối đơn | Suy diễn lại: `OCCUPIED` / `RESERVED` / `CLEANING` / `AVAILABLE` tùy các đơn còn hiệu lực |
+
+- Xác nhận đơn trên phòng đang `MAINTENANCE` bị chặn bằng `400 Bad Request` (`"Phòng được xếp đang bảo trì, không thể nhận khách"`), kể cả khi lễ tân giữ nguyên phòng khách đã chọn — trước đây chỉ kiểm tra khi đổi sang phòng khác.
+- Mọi lần đổi trạng thái phòng (theo đơn hoặc đổi tay qua `PATCH /rooms/:id/status`) đều xóa cache Redis **và** đẩy lại document lên Elasticsearch, nên `GET /rooms/search?status=...` không còn trả về trạng thái cũ.
 
 ### Q. Admin tạo tài khoản nhân viên (`POST /api/v1/users`)
 Thay cho việc mượn `POST /auth/register`.

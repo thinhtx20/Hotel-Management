@@ -86,6 +86,22 @@ let ElasticsearchService = ElasticsearchService_1 = class ElasticsearchService {
             this.logger.warn(`Lỗi khi index phòng ${roomDoc.id} lên Elasticsearch: ${err.message}`);
         }
     }
+    async indexRoomEntity(room) {
+        return this.indexRoom({
+            id: room.id,
+            roomNumber: room.roomNumber,
+            floor: room.floor,
+            status: room.status,
+            roomTypeId: room.roomTypeId,
+            roomTypeName: room.roomType.name,
+            code: room.roomType.code,
+            description: room.roomType.description || '',
+            basePrice: room.roomType.basePrice,
+            capacityAdults: room.roomType.capacityAdults,
+            capacityChildren: room.roomType.capacityChildren,
+            amenities: room.roomType.amenities,
+        });
+    }
     async removeRoom(roomId) {
         if (!this.isReady || !this.client)
             return;
