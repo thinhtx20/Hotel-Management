@@ -1,9 +1,11 @@
-import { Controller, Post, Body, Get, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { LogoutDto } from './dto/logout.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -234,10 +236,15 @@ export class AuthController {
     return this.authService.changePassword(userId, dto);
   }
 
+  @Public()
   @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard)
   @Post('logout')
-  @ApiOperation({ summary: 'Đăng xuất tài khoản và thu hồi token' })
+  @ApiOperation({
+    summary: 'Đăng xuất tài khoản và thu hồi token (Hỗ trợ Bearer Token hoặc Refresh Token)',
+    description:
+      'Thu hồi Refresh Token trong Redis và đưa Access Token vào Blacklist. Hỗ trợ gọi khi còn Access Token hoặc đã hết hạn (chỉ cần truyền Refresh Token trong body).',
+  })
   @ApiSuccessResponse({
     status: 200,
     description: 'Đăng xuất thành công',
@@ -247,10 +254,22 @@ export class AuthController {
       message: 'Đăng xuất thành công',
     },
   })
+  @ApiErrorResponse({
+    status: 400,
+    message: 'Vui lòng cung cấp Access Token (Bearer) hoặc Refresh Token để đăng xuất',
+    error: 'Bad Request',
+    path: '/api/v1/auth/logout',
+  })
   logout(
-    @CurrentUser('id') userId: string,
-    @Body() body?: Partial<RefreshTokenDto>,
+    @CurrentUser('id') userId?: string,
+    @Body() dto?: LogoutDto,
+    @Req() req?: Request,
   ) {
-    return this.authService.logout(userId, body?.refreshToken);
+    const authHeader = req?.headers?.authorization;
+    let accessToken: string | undefined;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      accessToken = authHeader.substring(7).trim();
+    }
+    return this.authService.logout(userId, dto?.refreshToken, accessToken);
   }
 }

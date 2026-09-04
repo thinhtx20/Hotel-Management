@@ -1,7 +1,9 @@
+import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { LogoutDto } from './dto/logout.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -93,7 +95,7 @@ export declare class AuthController {
         success: boolean;
         message: string;
     }>;
-    logout(userId: string, body?: Partial<RefreshTokenDto>): Promise<{
+    logout(userId?: string, dto?: LogoutDto, req?: Request): Promise<{
         success: boolean;
         message: string;
     }>;

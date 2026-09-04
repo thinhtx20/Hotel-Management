@@ -328,3 +328,34 @@ Trả trực tiếp `invoiceId` ở cấp ngoài cùng để client chuyển th�
   }
 }
 ```
+
+### I. Đăng xuất tài khoản (`POST /api/v1/auth/logout`)
+- **Mục đích:** Hủy phiên làm việc của người dùng, đưa Access Token vào Blacklist (Redis) và thu hồi Refresh Token tương ứng để tránh bị tấn công phát lại.
+- **Headers:** `Authorization: Bearer <accessToken>` *(Khuyến nghị; tùy chọn nếu gửi kèm refreshToken trong body)*
+- **Request Body:**
+```json
+{
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+*(Ghi chú: Trường `refreshToken` là tùy chọn. Nếu truyền kèm, hệ thống chỉ thu hồi phiên đăng nhập tương ứng trên thiết bị đó. Nếu bỏ trống nhưng có Bearer token, hệ thống sẽ thu hồi toàn bộ các phiên của tài khoản).*
+
+- **Response thành công (Status 200 OK):**
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Đăng xuất thành công",
+  "data": {
+    "success": true,
+    "message": "Đăng xuất thành công"
+  },
+  "timestamp": "2026-09-04T08:00:00.000Z"
+}
+```
+
+- **Quy tắc xử lý:**
+  1. **Hỗ trợ khi Access Token hết hạn:** Endpoint được cấu hình mở (`@Public()`), cho phép người dùng vẫn đăng xuất dọn dẹp phiên thành công ngay cả khi Access Token đã hết hạn (chỉ cần gửi `refreshToken`).
+  2. **Access Token Blacklisting:** Nếu client gửi kèm Bearer Access Token, backend sẽ giải mã lấy `exp`, tính thời gian sống còn lại và lưu vào Redis key `auth:blacklist:<token>` với TTL tương ứng. Các request tiếp theo dùng token này sẽ bị từ chối `401 Unauthorized`.
+  3. **Refresh Token Revocation:** Nếu client gửi kèm `refreshToken`, key `auth:refresh:<userId>:<jti>` sẽ bị xóa khỏi Redis, ngăn chặn việc tái sử dụng để làm mới token.
+

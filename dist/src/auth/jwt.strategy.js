@@ -14,16 +14,26 @@ const common_1 = require("@nestjs/common");
 const passport_1 = require("@nestjs/passport");
 const passport_jwt_1 = require("passport-jwt");
 const prisma_service_1 = require("../prisma/prisma.service");
+const redis_service_1 = require("../redis/redis.service");
 let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(passport_jwt_1.Strategy, 'jwt') {
-    constructor(prisma) {
+    constructor(prisma, redisService) {
         super({
             jwtFromRequest: passport_jwt_1.ExtractJwt.fromAuthHeaderAsBearerToken(),
+            passReqToCallback: true,
             ignoreExpiration: false,
             secretOrKey: process.env.JWT_SECRET || 'super-secret-hotel-jwt-key-2026-change-in-production',
         });
         this.prisma = prisma;
+        this.redisService = redisService;
     }
-    async validate(payload) {
+    async validate(req, payload) {
+        const token = passport_jwt_1.ExtractJwt.fromAuthHeaderAsBearerToken()(req);
+        if (token && this.redisService?.isReady) {
+            const isBlacklisted = await this.redisService.get(`auth:blacklist:${token}`);
+            if (isBlacklisted) {
+                throw new common_1.UnauthorizedException('Phiên làm việc đã kết thúc do đăng xuất. Vui lòng đăng nhập lại');
+            }
+        }
         const user = await this.prisma.user.findUnique({
             where: { id: payload.sub },
             select: {
@@ -44,6 +54,7 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
 exports.JwtStrategy = JwtStrategy;
 exports.JwtStrategy = JwtStrategy = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        redis_service_1.RedisService])
 ], JwtStrategy);
 //# sourceMappingURL=jwt.strategy.js.map

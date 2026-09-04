@@ -19,6 +19,7 @@ const auth_service_1 = require("./auth.service");
 const login_dto_1 = require("./dto/login.dto");
 const register_dto_1 = require("./dto/register.dto");
 const refresh_token_dto_1 = require("./dto/refresh-token.dto");
+const logout_dto_1 = require("./dto/logout.dto");
 const forgot_password_dto_1 = require("./dto/forgot-password.dto");
 const verify_otp_dto_1 = require("./dto/verify-otp.dto");
 const reset_password_dto_1 = require("./dto/reset-password.dto");
@@ -55,8 +56,13 @@ let AuthController = class AuthController {
     changePassword(userId, dto) {
         return this.authService.changePassword(userId, dto);
     }
-    logout(userId, body) {
-        return this.authService.logout(userId, body?.refreshToken);
+    logout(userId, dto, req) {
+        const authHeader = req?.headers?.authorization;
+        let accessToken;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            accessToken = authHeader.substring(7).trim();
+        }
+        return this.authService.logout(userId, dto?.refreshToken, accessToken);
     }
 };
 exports.AuthController = AuthController;
@@ -291,10 +297,14 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "changePassword", null);
 __decorate([
+    (0, public_decorator_1.Public)(),
     (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('logout'),
-    (0, swagger_1.ApiOperation)({ summary: 'Đăng xuất tài khoản và thu hồi token' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Đăng xuất tài khoản và thu hồi token (Hỗ trợ Bearer Token hoặc Refresh Token)',
+        description: 'Thu hồi Refresh Token trong Redis và đưa Access Token vào Blacklist. Hỗ trợ gọi khi còn Access Token hoặc đã hết hạn (chỉ cần truyền Refresh Token trong body).',
+    }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Đăng xuất thành công',
@@ -304,10 +314,17 @@ __decorate([
             message: 'Đăng xuất thành công',
         },
     }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 400,
+        message: 'Vui lòng cung cấp Access Token (Bearer) hoặc Refresh Token để đăng xuất',
+        error: 'Bad Request',
+        path: '/api/v1/auth/logout',
+    }),
     __param(0, (0, current_user_decorator_1.CurrentUser)('id')),
     __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:paramtypes", [String, logout_dto_1.LogoutDto, Object]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "logout", null);
 exports.AuthController = AuthController = __decorate([

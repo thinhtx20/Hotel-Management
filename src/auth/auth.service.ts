@@ -548,21 +548,62 @@ export class AuthService {
   }
 
   /**
-   * Đăng xuất & thu hồi Refresh Token trong Redis
+   * Đăng xuất, thu hồi Refresh Token và đưa Access Token vào Blacklist (Redis)
    */
-  async logout(userId: string, refreshToken?: string) {
+  async logout(userId?: string, refreshToken?: string, accessToken?: string) {
+    let targetUserId = userId;
+
+    // 1. Trích xuất targetUserId từ refreshToken nếu userId chưa có (khi access token đã hết hạn)
+    let refreshPayload: any = null;
+    if (refreshToken) {
+      try {
+        refreshPayload = this.jwtService.decode(refreshToken);
+        if (refreshPayload?.sub && !targetUserId) {
+          targetUserId = refreshPayload.sub;
+        }
+      } catch {
+        // Bỏ qua lỗi decode token
+      }
+    }
+
+    // Nếu không có cả userId lẫn refreshToken/accessToken
+    if (!targetUserId && !accessToken) {
+      throw new BadRequestException(
+        'Vui lòng cung cấp Access Token (Bearer) hoặc Refresh Token để đăng xuất',
+      );
+    }
+
     if (this.redisService?.isReady) {
-      if (refreshToken) {
+      // 2. Thu hồi Refresh Token trong Redis
+      if (targetUserId) {
+        if (refreshToken && refreshPayload?.jti) {
+          await this.redisService.del(
+            `auth:refresh:${targetUserId}:${refreshPayload.jti}`,
+          );
+        } else if (!refreshToken) {
+          // Nếu không chỉ định refresh token cụ thể, thu hồi toàn bộ session của user
+          await this.redisService.delByPattern(`auth:refresh:${targetUserId}:*`);
+        }
+      }
+
+      // 3. Đưa Access Token vào Blacklist trong Redis nếu có
+      if (accessToken) {
         try {
-          const payload: any = this.jwtService.decode(refreshToken);
-          if (payload?.jti) {
-            await this.redisService.del(`auth:refresh:${userId}:${payload.jti}`);
+          const accessPayload: any = this.jwtService.decode(accessToken);
+          if (accessPayload?.exp) {
+            const currentTime = Math.floor(Date.now() / 1000);
+            const remainingTtl = accessPayload.exp - currentTime;
+            if (remainingTtl > 0) {
+              await this.redisService.set(
+                `auth:blacklist:${accessToken}`,
+                '1',
+                remainingTtl,
+              );
+            }
           }
         } catch {
-          // Bỏ qua lỗi decode token
+          // Bỏ qua lỗi decode access token
         }
-      } else {
-        await this.redisService.delByPattern(`auth:refresh:${userId}:*`);
       }
     }
 

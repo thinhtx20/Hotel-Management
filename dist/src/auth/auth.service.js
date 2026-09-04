@@ -437,20 +437,44 @@ let AuthService = AuthService_1 = class AuthService {
             },
         };
     }
-    async logout(userId, refreshToken) {
+    async logout(userId, refreshToken, accessToken) {
+        let targetUserId = userId;
+        let refreshPayload = null;
+        if (refreshToken) {
+            try {
+                refreshPayload = this.jwtService.decode(refreshToken);
+                if (refreshPayload?.sub && !targetUserId) {
+                    targetUserId = refreshPayload.sub;
+                }
+            }
+            catch {
+            }
+        }
+        if (!targetUserId && !accessToken) {
+            throw new common_1.BadRequestException('Vui lòng cung cấp Access Token (Bearer) hoặc Refresh Token để đăng xuất');
+        }
         if (this.redisService?.isReady) {
-            if (refreshToken) {
+            if (targetUserId) {
+                if (refreshToken && refreshPayload?.jti) {
+                    await this.redisService.del(`auth:refresh:${targetUserId}:${refreshPayload.jti}`);
+                }
+                else if (!refreshToken) {
+                    await this.redisService.delByPattern(`auth:refresh:${targetUserId}:*`);
+                }
+            }
+            if (accessToken) {
                 try {
-                    const payload = this.jwtService.decode(refreshToken);
-                    if (payload?.jti) {
-                        await this.redisService.del(`auth:refresh:${userId}:${payload.jti}`);
+                    const accessPayload = this.jwtService.decode(accessToken);
+                    if (accessPayload?.exp) {
+                        const currentTime = Math.floor(Date.now() / 1000);
+                        const remainingTtl = accessPayload.exp - currentTime;
+                        if (remainingTtl > 0) {
+                            await this.redisService.set(`auth:blacklist:${accessToken}`, '1', remainingTtl);
+                        }
                     }
                 }
                 catch {
                 }
-            }
-            else {
-                await this.redisService.delByPattern(`auth:refresh:${userId}:*`);
             }
         }
         return {

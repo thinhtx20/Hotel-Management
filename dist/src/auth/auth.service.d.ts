@@ -100,7 +100,7 @@ export declare class AuthService {
         tokenType: string;
         expiresIn: number;
     }>;
-    logout(userId: string, refreshToken?: string): Promise<{
+    logout(userId?: string, refreshToken?: string, accessToken?: string): Promise<{
         success: boolean;
         message: string;
     }>;
