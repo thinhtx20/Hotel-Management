@@ -81,6 +81,27 @@ export class InvoicesController {
     return this.invoicesService.getSummary(date);
   }
 
+  @Get('my')
+  @ApiOperation({
+    summary: 'Hóa đơn của chính tôi (màn "Hóa đơn của tôi" bên app khách hàng)',
+    description:
+      'Chỉ trả về hóa đơn thuộc các đơn đặt phòng của tài khoản đang đăng nhập. ' +
+      'Nhân viên gọi endpoint này cũng chỉ thấy hóa đơn gắn với tài khoản của chính họ — ' +
+      'muốn xem toàn bộ hóa đơn khách sạn thì dùng GET /invoices.',
+  })
+  @ApiQuery({ name: 'status', enum: PaymentStatus, required: false })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Lấy danh sách hóa đơn của tài khoản hiện tại thành công',
+    exampleData: [SAMPLE_INVOICE],
+  })
+  findMine(
+    @CurrentUser('id') userId: string,
+    @Query('status') status?: PaymentStatus,
+  ) {
+    return this.invoicesService.findMyInvoices(userId, status);
+  }
+
   @Post()
   @Roles(Role.ADMIN, Role.CASHIER)
   @ApiOperation({ summary: 'Tạo hóa đơn thủ công cho đơn đặt phòng' })
@@ -110,8 +131,13 @@ export class InvoicesController {
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
-  @ApiOperation({ summary: 'Xem chi tiết hóa đơn, tiền phòng và bảng kê dịch vụ phụ trợ' })
+  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER, Role.CUSTOMER)
+  @ApiOperation({
+    summary: 'Xem chi tiết hóa đơn, tiền phòng và bảng kê dịch vụ phụ trợ',
+    description:
+      'Nhân viên xem được mọi hóa đơn. Khách hàng chỉ mở được hóa đơn thuộc đơn đặt phòng ' +
+      'của chính mình, sai chủ sở hữu sẽ nhận 403.',
+  })
   @ApiSuccessResponse({
     status: 200,
     description: 'Xem chi tiết hóa đơn thành công',
@@ -123,8 +149,18 @@ export class InvoicesController {
     error: 'Not Found',
     path: '/api/v1/invoices/:id',
   })
-  findOne(@Param('id') id: string) {
-    return this.invoicesService.findOne(id);
+  @ApiErrorResponse({
+    status: 403,
+    message: 'Bạn chỉ có thể xem hóa đơn thuộc đơn đặt phòng của chính mình',
+    error: 'Forbidden',
+    path: '/api/v1/invoices/:id',
+  })
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') userRole: Role,
+  ) {
+    return this.invoicesService.findOne(id, userId, userRole);
   }
 
   @Post(':id/pay')

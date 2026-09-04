@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -169,7 +170,20 @@ export class BookingsService {
     return list.map((b) => this.toBookingResponse(b));
   }
 
-  async findOne(id: string) {
+  /**
+   * Khách hàng chỉ được thao tác trên đơn của chính mình.
+   * Nhân viên (ADMIN / RECEPTIONIST / CASHIER) và lời gọi nội bộ (không truyền role)
+   * đi qua không bị chặn.
+   */
+  private assertOwnership(booking: any, userId?: string, userRole?: Role) {
+    if (userRole === Role.CUSTOMER && booking.customerId !== userId) {
+      throw new ForbiddenException(
+        'Bạn chỉ có thể xem và thao tác trên đơn đặt phòng của chính mình',
+      );
+    }
+  }
+
+  async findOne(id: string, currentUserId?: string, currentUserRole?: Role) {
     const booking = await this.prisma.booking.findUnique({
       where: { id },
       include: {
@@ -183,6 +197,8 @@ export class BookingsService {
     if (!booking) {
       throw new NotFoundException(`Không tìm thấy đơn đặt phòng ID: ${id}`);
     }
+
+    this.assertOwnership(booking, currentUserId, currentUserRole);
 
     return this.toBookingResponse(booking);
   }
@@ -293,8 +309,8 @@ export class BookingsService {
     };
   }
 
-  async cancel(id: string) {
-    const booking = await this.findOne(id);
+  async cancel(id: string, currentUserId?: string, currentUserRole?: Role) {
+    const booking = await this.findOne(id, currentUserId, currentUserRole);
 
     if (booking.status === BookingStatus.CHECKED_IN) {
       throw new BadRequestException('Khách đang ở phòng, không thể hủy đơn đặt');

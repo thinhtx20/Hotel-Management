@@ -111,8 +111,18 @@ export class BookingsController {
     error: 'Not Found',
     path: '/api/v1/bookings/:id',
   })
-  findOne(@Param('id') id: string) {
-    return this.bookingsService.findOne(id);
+  @ApiErrorResponse({
+    status: 403,
+    message: 'Bạn chỉ có thể xem và thao tác trên đơn đặt phòng của chính mình',
+    error: 'Forbidden',
+    path: '/api/v1/bookings/:id',
+  })
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') userRole: Role,
+  ) {
+    return this.bookingsService.findOne(id, userId, userRole);
   }
 
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
@@ -161,8 +171,12 @@ export class BookingsController {
     description: 'Hủy đơn đặt phòng thành công',
     exampleData: { ...SAMPLE_BOOKING, status: 'CANCELLED' },
   })
-  cancel(@Param('id') id: string) {
-    return this.bookingsService.cancel(id);
+  cancel(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') userRole: Role,
+  ) {
+    return this.bookingsService.cancel(id, userId, userRole);
   }
 
   @Patch(':id/cancel')
@@ -172,8 +186,12 @@ export class BookingsController {
     description: 'Hủy đơn đặt phòng thành công',
     exampleData: { ...SAMPLE_BOOKING, status: 'CANCELLED' },
   })
-  cancelPatch(@Param('id') id: string) {
-    return this.bookingsService.cancel(id);
+  cancelPatch(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') userRole: Role,
+  ) {
+    return this.bookingsService.cancel(id, userId, userRole);
   }
 
   @Roles(Role.ADMIN, Role.RECEPTIONIST)

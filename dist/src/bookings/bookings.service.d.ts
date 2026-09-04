@@ -11,7 +11,8 @@ export declare class BookingsService {
     create(dto: CreateBookingDto, currentUserId: string, currentUserRole: Role): Promise<any>;
     private toBookingResponse;
     findAll(status?: BookingStatus, customerId?: string, roomId?: string): Promise<any[]>;
-    findOne(id: string): Promise<any>;
+    private assertOwnership;
+    findOne(id: string, currentUserId?: string, currentUserRole?: Role): Promise<any>;
     checkIn(id: string): Promise<{
         room: {
             id: string;
@@ -71,7 +72,7 @@ export declare class BookingsService {
             roomTypeId: string;
         };
     }>;
-    cancel(id: string): Promise<{
+    cancel(id: string, currentUserId?: string, currentUserRole?: Role): Promise<{
         id: string;
         createdAt: Date;
         updatedAt: Date;

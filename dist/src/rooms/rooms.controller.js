@@ -94,9 +94,13 @@ exports.RoomsController = RoomsController;
 __decorate([
     (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CUSTOMER),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, common_1.Post)(),
-    (0, swagger_1.ApiOperation)({ summary: 'Tạo phòng mới (Chỉ Admin)' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Tạo phòng mới (Admin tạo thẳng, Lễ tân tạo bản chờ duyệt)',
+        description: 'ADMIN tạo phòng vào hoạt động ngay. RECEPTIONIST tạo ra bản ghi ở trạng thái ' +
+            'PENDING_APPROVAL, phải được duyệt qua PATCH /rooms/:id/approve mới dùng được.',
+    }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 201,
         description: 'Tạo phòng mới thành công',
@@ -116,6 +120,8 @@ __decorate([
 ], RoomsController.prototype, "create", null);
 __decorate([
     (0, public_decorator_1.Public)(),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.Get)('search'),
     (0, swagger_1.ApiOperation)({ summary: 'Tìm kiếm phòng Full-Text siêu tốc bằng Elasticsearch (Fuzzy match, tiện ích, khoảng giá)' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
@@ -131,6 +137,8 @@ __decorate([
 ], RoomsController.prototype, "search", null);
 __decorate([
     (0, public_decorator_1.Public)(),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.Get)('available'),
     (0, swagger_1.ApiOperation)({ summary: 'Tìm kiếm danh sách phòng trống theo khoảng thời gian đặt phòng (Redis Caching)' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
@@ -146,8 +154,14 @@ __decorate([
 ], RoomsController.prototype, "findAvailable", null);
 __decorate([
     (0, public_decorator_1.Public)(),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.Get)(),
-    (0, swagger_1.ApiOperation)({ summary: 'Lấy danh sách tất cả phòng kèm bộ lọc trạng thái/tầng' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Lấy danh sách tất cả phòng kèm bộ lọc trạng thái/tầng',
+        description: 'Khách vãng lai và khách hàng chỉ thấy phòng đang vận hành. Phòng ở trạng thái ' +
+            'PENDING_APPROVAL / REJECTED chỉ hiện với ADMIN và RECEPTIONIST (gửi kèm Bearer token).',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'status', enum: client_1.RoomStatus, required: false }),
     (0, swagger_1.ApiQuery)({ name: 'floor', type: Number, required: false }),
     (0, swagger_1.ApiQuery)({ name: 'roomTypeId', type: String, required: false }),
@@ -166,6 +180,8 @@ __decorate([
 ], RoomsController.prototype, "findAll", null);
 __decorate([
     (0, public_decorator_1.Public)(),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.Get)(':id'),
     (0, swagger_1.ApiOperation)({ summary: 'Xem chi tiết thông tin một phòng' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
@@ -186,9 +202,6 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], RoomsController.prototype, "findOne", null);
 __decorate([
-    (0, swagger_1.ApiBearerAuth)(),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
@@ -221,6 +234,9 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], RoomsController.prototype, "reject", null);
 __decorate([
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, common_1.Patch)(':id/status'),
     (0, swagger_1.ApiOperation)({ summary: 'Cập nhật nhanh trạng thái phòng (Trống, Đang ở, Dọn dẹp, Bảo trì)' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({

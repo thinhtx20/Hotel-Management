@@ -7,7 +7,7 @@ export declare class BookingsController {
     constructor(bookingsService: BookingsService);
     create(createBookingDto: CreateBookingDto, userId: string, userRole: Role): Promise<any>;
     findAll(userId: string, userRole: Role, status?: BookingStatus, customerId?: string, roomId?: string): Promise<any[]>;
-    findOne(id: string): Promise<any>;
+    findOne(id: string, userId: string, userRole: Role): Promise<any>;
     checkIn(id: string): Promise<{
         room: {
             id: string;
@@ -67,7 +67,7 @@ export declare class BookingsController {
             roomTypeId: string;
         };
     }>;
-    cancel(id: string): Promise<{
+    cancel(id: string, userId: string, userRole: Role): Promise<{
         id: string;
         createdAt: Date;
         updatedAt: Date;
@@ -84,7 +84,7 @@ export declare class BookingsController {
         customerId: string;
         roomId: string;
     }>;
-    cancelPatch(id: string): Promise<{
+    cancelPatch(id: string, userId: string, userRole: Role): Promise<{
         id: string;
         createdAt: Date;
         updatedAt: Date;

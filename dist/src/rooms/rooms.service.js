@@ -57,10 +57,19 @@ let RoomsService = class RoomsService {
         });
         return (0, room_response_dto_1.toRoomResponse)(room, true);
     }
-    async findAll(status, floor, roomTypeId, includeNotes = false) {
+    async findAll(status, floor, roomTypeId, isStaff = false) {
+        const internalStatuses = [
+            client_1.RoomStatus.PENDING_APPROVAL,
+            client_1.RoomStatus.REJECTED,
+        ];
+        const isInternalStatus = status ? internalStatuses.includes(status) : false;
+        if (!isStaff && isInternalStatus) {
+            return [];
+        }
         const rooms = await this.prisma.room.findMany({
             where: {
                 ...(status ? { status } : {}),
+                ...(!isStaff && !status ? { status: { notIn: internalStatuses } } : {}),
                 ...(floor ? { floor } : {}),
                 ...(roomTypeId ? { roomTypeId } : {}),
             },
@@ -74,7 +83,7 @@ let RoomsService = class RoomsService {
             },
             orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
         });
-        return rooms.map((r) => (0, room_response_dto_1.toRoomResponse)(r, includeNotes));
+        return rooms.map((r) => (0, room_response_dto_1.toRoomResponse)(r, isStaff));
     }
     async findOne(id, includeNotes = false) {
         const room = await this.prisma.room.findUnique({

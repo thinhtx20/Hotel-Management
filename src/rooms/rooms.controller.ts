@@ -52,9 +52,14 @@ export class RoomsController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CUSTOMER)
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Post()
-  @ApiOperation({ summary: 'Tạo phòng mới (Chỉ Admin)' })
+  @ApiOperation({
+    summary: 'Tạo phòng mới (Admin tạo thẳng, Lễ tân tạo bản chờ duyệt)',
+    description:
+      'ADMIN tạo phòng vào hoạt động ngay. RECEPTIONIST tạo ra bản ghi ở trạng thái ' +
+      'PENDING_APPROVAL, phải được duyệt qua PATCH /rooms/:id/approve mới dùng được.',
+  })
   @ApiSuccessResponse({
     status: 201,
     description: 'Tạo phòng mới thành công',
@@ -73,7 +78,11 @@ export class RoomsController {
     return this.roomsService.create(createRoomDto);
   }
 
+  // @Public() + JwtAuthGuard = xác thực tùy chọn: khách vãng lai vẫn gọi được,
+  // nhưng nếu có Bearer token hợp lệ thì req.user được nạp để nhận diện nhân viên.
   @Public()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Get('search')
   @ApiOperation({ summary: 'Tìm kiếm phòng Full-Text siêu tốc bằng Elasticsearch (Fuzzy match, tiện ích, khoảng giá)' })
   @ApiSuccessResponse({
@@ -87,6 +96,8 @@ export class RoomsController {
   }
 
   @Public()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Get('available')
   @ApiOperation({ summary: 'Tìm kiếm danh sách phòng trống theo khoảng thời gian đặt phòng (Redis Caching)' })
   @ApiSuccessResponse({
@@ -100,8 +111,15 @@ export class RoomsController {
   }
 
   @Public()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Get()
-  @ApiOperation({ summary: 'Lấy danh sách tất cả phòng kèm bộ lọc trạng thái/tầng' })
+  @ApiOperation({
+    summary: 'Lấy danh sách tất cả phòng kèm bộ lọc trạng thái/tầng',
+    description:
+      'Khách vãng lai và khách hàng chỉ thấy phòng đang vận hành. Phòng ở trạng thái ' +
+      'PENDING_APPROVAL / REJECTED chỉ hiện với ADMIN và RECEPTIONIST (gửi kèm Bearer token).',
+  })
   @ApiQuery({ name: 'status', enum: RoomStatus, required: false })
   @ApiQuery({ name: 'floor', type: Number, required: false })
   @ApiQuery({ name: 'roomTypeId', type: String, required: false })
@@ -121,6 +139,8 @@ export class RoomsController {
   }
 
   @Public()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Get(':id')
   @ApiOperation({ summary: 'Xem chi tiết thông tin một phòng' })
   @ApiSuccessResponse({
@@ -139,9 +159,6 @@ export class RoomsController {
     return this.roomsService.findOne(id, isStaff);
   }
 
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
@@ -170,6 +187,9 @@ export class RoomsController {
     return this.roomsService.updateStatus(id, RoomStatus.REJECTED);
   }
 
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Patch(':id/status')
   @ApiOperation({ summary: 'Cập nhật nhanh trạng thái phòng (Trống, Đang ở, Dọn dẹp, Bảo trì)' })
   @ApiSuccessResponse({

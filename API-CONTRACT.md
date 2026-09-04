@@ -2,6 +2,8 @@
 
 Tài liệu này giải đáp chi tiết 10 câu hỏi quy ước (Mục 07) và tổng hợp tất cả các endpoint đã được hoàn thiện trên backend NestJS theo tài liệu rà soát [Khoảng Trống API Luxe Grand](https://claude.ai/code/artifact/a9723aad-ae9e-4d6a-b702-970e9b965190).
 
+> **Ai được gọi endpoint nào?** Tài liệu này chỉ mô tả payload. Ma trận phân quyền theo từng vai trò (`ADMIN` / `RECEPTIONIST` / `CASHIER` / `CUSTOMER`), kèm hướng dẫn dựng menu và bảng tra lỗi `403` cho FE, nằm ở [docs/FE-ROLE-MATRIX.md](docs/FE-ROLE-MATRIX.md).
+
 ---
 
 ## 1. Giải đáp 10 câu hỏi chốt hợp đồng (Mục 07)
@@ -245,6 +247,37 @@ FE **không tự cộng `paidAmount` client-side nữa** — con số đó sai n
   }
 }
 ```
+
+### C2. Hóa đơn của chính khách hàng (`GET /api/v1/invoices/my?status=`)
+
+Endpoint dành cho màn "Hóa đơn của tôi" bên app khách hàng. Không cần truyền tham số nào — backend lọc theo tài khoản trong access token, chỉ trả hóa đơn gắn với đơn đặt phòng của người đó. Cấu trúc mỗi phần tử giống hệt `GET /invoices/:id` (có `items`, `payments`, `roomNumber`, `customerName`).
+
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "data": [
+    {
+      "id": "inv-uuid-789",
+      "invoiceCode": "INV-2026-0089",
+      "bookingId": "b1e4c7a2-9d3f-4e8b-8a21-72948e9102c1",
+      "roomNumber": "101",
+      "customerName": "Nguyễn Anh Tuấn",
+      "roomAmount": 3600000,
+      "servicesAmount": 200000,
+      "finalAmount": 3800000,
+      "paidAmount": 3800000,
+      "paymentStatus": "PAID",
+      "items": [{ "name": "Tiền thuê phòng P.101", "quantity": 1, "unitPrice": 3600000, "amount": 3600000 }],
+      "payments": [{ "amount": 3800000, "paymentMethod": "CASH", "paidAt": "2026-09-08T11:50:00.000Z", "cashierName": "Trần Văn Minh (Thu Ngân)" }]
+    }
+  ]
+}
+```
+
+Lọc tùy chọn: `?status=UNPAID | PARTIAL | PAID | REFUNDED`.
+
+`GET /invoices/:id` cũng đã mở cho `CUSTOMER`, nhưng **chỉ với hóa đơn thuộc đơn đặt phòng của chính khách** — sai chủ sở hữu trả `403`. Xem [ma trận phân quyền](docs/FE-ROLE-MATRIX.md) để biết đầy đủ.
 
 ### D. Thông tin cá nhân (`GET /api/v1/auth/me`)
 ```json

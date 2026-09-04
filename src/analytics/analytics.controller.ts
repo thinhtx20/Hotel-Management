@@ -16,8 +16,14 @@ import { Role } from '@prisma/client';
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
+  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
   @Get('dashboard')
-  @ApiOperation({ summary: 'Tổng quan chỉ số phòng, khách hôm nay và tỷ lệ lấp đầy' })
+  @ApiOperation({
+    summary: 'Tổng quan chỉ số phòng, khách hôm nay và tỷ lệ lấp đầy',
+    description:
+      'Dùng chung cho cả ba vai trò nhân viên. Thu ngân cần khối doanh thu và ' +
+      'số hóa đơn chưa thu trong cùng một lần gọi nên cũng được cấp quyền ở đây.',
+  })
   @ApiSuccessResponse({
     status: 200,
     description: 'Lấy dữ liệu tổng quan Dashboard thành công',

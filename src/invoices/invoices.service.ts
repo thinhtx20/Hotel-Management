@@ -1,8 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
-import { PaymentMethod, PaymentStatus } from '@prisma/client';
+import { PaymentMethod, PaymentStatus, Role } from '@prisma/client';
 import {
   collectedRevenueWhere,
   endOfDay,
@@ -95,7 +100,33 @@ export class InvoicesService {
     return list.map((inv) => this.toInvoiceResponse(inv));
   }
 
-  async findOne(id: string) {
+  /**
+   * Hóa đơn của chính khách hàng đang đăng nhập (màn "Hóa đơn của tôi").
+   * Lọc theo chủ đơn đặt phòng, khách không bao giờ thấy hóa đơn của người khác.
+   */
+  async findMyInvoices(customerId: string, status?: PaymentStatus) {
+    const list = await this.prisma.invoice.findMany({
+      where: {
+        booking: { customerId },
+        ...(status ? { paymentStatus: status } : {}),
+      },
+      include: {
+        booking: {
+          include: {
+            customer: { select: { fullName: true, phone: true, email: true } },
+            room: { select: { roomNumber: true } },
+            serviceOrders: true,
+          },
+        },
+        issuedBy: { select: { fullName: true, role: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return list.map((inv) => this.toInvoiceResponse(inv));
+  }
+
+  async findOne(id: string, currentUserId?: string, currentUserRole?: Role) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
       include: {
@@ -112,6 +143,16 @@ export class InvoicesService {
 
     if (!invoice) {
       throw new NotFoundException(`Không tìm thấy hóa đơn ID: ${id}`);
+    }
+
+    // Khách hàng chỉ mở được hóa đơn thuộc đơn đặt phòng của chính mình.
+    if (
+      currentUserRole === Role.CUSTOMER &&
+      invoice.booking?.customerId !== currentUserId
+    ) {
+      throw new ForbiddenException(
+        'Bạn chỉ có thể xem hóa đơn thuộc đơn đặt phòng của chính mình',
+      );
     }
 
     return this.toInvoiceResponse(invoice);

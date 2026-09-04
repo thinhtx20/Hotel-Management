@@ -135,7 +135,12 @@ let BookingsService = BookingsService_1 = class BookingsService {
         });
         return list.map((b) => this.toBookingResponse(b));
     }
-    async findOne(id) {
+    assertOwnership(booking, userId, userRole) {
+        if (userRole === client_1.Role.CUSTOMER && booking.customerId !== userId) {
+            throw new common_1.ForbiddenException('Bạn chỉ có thể xem và thao tác trên đơn đặt phòng của chính mình');
+        }
+    }
+    async findOne(id, currentUserId, currentUserRole) {
         const booking = await this.prisma.booking.findUnique({
             where: { id },
             include: {
@@ -148,6 +153,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
         if (!booking) {
             throw new common_1.NotFoundException(`Không tìm thấy đơn đặt phòng ID: ${id}`);
         }
+        this.assertOwnership(booking, currentUserId, currentUserRole);
         return this.toBookingResponse(booking);
     }
     async checkIn(id) {
@@ -241,8 +247,8 @@ let BookingsService = BookingsService_1 = class BookingsService {
             invoice,
         };
     }
-    async cancel(id) {
-        const booking = await this.findOne(id);
+    async cancel(id, currentUserId, currentUserRole) {
+        const booking = await this.findOne(id, currentUserId, currentUserRole);
         if (booking.status === client_1.BookingStatus.CHECKED_IN) {
             throw new common_1.BadRequestException('Khách đang ở phòng, không thể hủy đơn đặt');
         }

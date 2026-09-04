@@ -64,8 +64,8 @@ let BookingsController = class BookingsController {
         const finalCustomerId = userRole === client_1.Role.CUSTOMER ? userId : customerId;
         return this.bookingsService.findAll(status, finalCustomerId, roomId);
     }
-    findOne(id) {
-        return this.bookingsService.findOne(id);
+    findOne(id, userId, userRole) {
+        return this.bookingsService.findOne(id, userId, userRole);
     }
     checkIn(id) {
         return this.bookingsService.checkIn(id);
@@ -73,11 +73,11 @@ let BookingsController = class BookingsController {
     checkOut(id, checkOutDto, cashierId) {
         return this.bookingsService.checkOut(id, checkOutDto, cashierId);
     }
-    cancel(id) {
-        return this.bookingsService.cancel(id);
+    cancel(id, userId, userRole) {
+        return this.bookingsService.cancel(id, userId, userRole);
     }
-    cancelPatch(id) {
-        return this.bookingsService.cancel(id);
+    cancelPatch(id, userId, userRole) {
+        return this.bookingsService.cancel(id, userId, userRole);
     }
     addServiceOrder(id, dto) {
         return this.bookingsService.addServiceOrder(id, dto);
@@ -139,9 +139,17 @@ __decorate([
         error: 'Not Found',
         path: '/api/v1/bookings/:id',
     }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 403,
+        message: 'Bạn chỉ có thể xem và thao tác trên đơn đặt phòng của chính mình',
+        error: 'Forbidden',
+        path: '/api/v1/bookings/:id',
+    }),
     __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)('id')),
+    __param(2, (0, current_user_decorator_1.CurrentUser)('role')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String, String]),
     __metadata("design:returntype", void 0)
 ], BookingsController.prototype, "findOne", null);
 __decorate([
@@ -194,8 +202,10 @@ __decorate([
         exampleData: { ...SAMPLE_BOOKING, status: 'CANCELLED' },
     }),
     __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)('id')),
+    __param(2, (0, current_user_decorator_1.CurrentUser)('role')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String, String]),
     __metadata("design:returntype", void 0)
 ], BookingsController.prototype, "cancel", null);
 __decorate([
@@ -207,8 +217,10 @@ __decorate([
         exampleData: { ...SAMPLE_BOOKING, status: 'CANCELLED' },
     }),
     __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)('id')),
+    __param(2, (0, current_user_decorator_1.CurrentUser)('role')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String, String]),
     __metadata("design:returntype", void 0)
 ], BookingsController.prototype, "cancelPatch", null);
 __decorate([

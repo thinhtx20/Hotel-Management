@@ -26,7 +26,7 @@ Dự án Backend Quản lý Khách sạn được xây dựng theo chuẩn kiế
      - `POST /api/v1/auth/forgot-password`: Nhập email, hệ thống sinh mã OTP 6 chữ số ngẫu nhiên an toàn, gửi email thông báo (hoặc log dev) kèm hạn dùng 15 phút.
      - `POST /api/v1/auth/verify-reset-otp`: Xác thực mã OTP và nhận `resetToken`.
      - `POST /api/v1/auth/reset-password`: Đặt mật khẩu mới bằng `resetToken` hoặc cặp `email + otp`, băm bảo mật bằng bcrypt, cơ chế chống replay attack.
-   - Phân quyền 4 vai trò: `ADMIN`, `RECEPTIONIST`, `CASHIER`, `CUSTOMER`.
+   - Phân quyền 4 vai trò: `ADMIN`, `RECEPTIONIST`, `CASHIER`, `CUSTOMER` — ma trận quyền chi tiết cho FE: [docs/FE-ROLE-MATRIX.md](docs/FE-ROLE-MATRIX.md).
 
 5. **Quy trình Lưu trú & Hóa đơn**:
    - Check-in, Check-out tự động xuất hóa đơn.

@@ -74,7 +74,27 @@ let InvoicesService = class InvoicesService {
         });
         return list.map((inv) => this.toInvoiceResponse(inv));
     }
-    async findOne(id) {
+    async findMyInvoices(customerId, status) {
+        const list = await this.prisma.invoice.findMany({
+            where: {
+                booking: { customerId },
+                ...(status ? { paymentStatus: status } : {}),
+            },
+            include: {
+                booking: {
+                    include: {
+                        customer: { select: { fullName: true, phone: true, email: true } },
+                        room: { select: { roomNumber: true } },
+                        serviceOrders: true,
+                    },
+                },
+                issuedBy: { select: { fullName: true, role: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+        return list.map((inv) => this.toInvoiceResponse(inv));
+    }
+    async findOne(id, currentUserId, currentUserRole) {
         const invoice = await this.prisma.invoice.findUnique({
             where: { id },
             include: {
@@ -90,6 +110,10 @@ let InvoicesService = class InvoicesService {
         });
         if (!invoice) {
             throw new common_1.NotFoundException(`Không tìm thấy hóa đơn ID: ${id}`);
+        }
+        if (currentUserRole === client_1.Role.CUSTOMER &&
+            invoice.booking?.customerId !== currentUserId) {
+            throw new common_1.ForbiddenException('Bạn chỉ có thể xem hóa đơn thuộc đơn đặt phòng của chính mình');
         }
         return this.toInvoiceResponse(invoice);
     }

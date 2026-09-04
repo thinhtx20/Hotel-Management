@@ -12,7 +12,7 @@ export declare class RoomsService {
     private esService;
     constructor(prisma: PrismaService, redis: RedisService, esService: ElasticsearchService);
     create(dto: CreateRoomDto): Promise<import("./dto/room-response.dto").RoomResponse>;
-    findAll(status?: RoomStatus, floor?: number, roomTypeId?: string, includeNotes?: boolean): Promise<import("./dto/room-response.dto").RoomResponse[]>;
+    findAll(status?: RoomStatus, floor?: number, roomTypeId?: string, isStaff?: boolean): Promise<import("./dto/room-response.dto").RoomResponse[]>;
     findOne(id: string, includeNotes?: boolean): Promise<import("./dto/room-response.dto").RoomResponse>;
     findAvailable(query: QueryAvailableRoomsDto, includeNotes?: boolean): Promise<any[]>;
     search(dto: SearchRoomDto, includeNotes?: boolean): Promise<import("./dto/room-response.dto").RoomResponse[]>;

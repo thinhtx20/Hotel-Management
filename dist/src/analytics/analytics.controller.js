@@ -42,8 +42,13 @@ let AnalyticsController = class AnalyticsController {
 };
 exports.AnalyticsController = AnalyticsController;
 __decorate([
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER),
     (0, common_1.Get)('dashboard'),
-    (0, swagger_1.ApiOperation)({ summary: 'Tổng quan chỉ số phòng, khách hôm nay và tỷ lệ lấp đầy' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Tổng quan chỉ số phòng, khách hôm nay và tỷ lệ lấp đầy',
+        description: 'Dùng chung cho cả ba vai trò nhân viên. Thu ngân cần khối doanh thu và ' +
+            'số hóa đơn chưa thu trong cùng một lần gọi nên cũng được cấp quyền ở đây.',
+    }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Lấy dữ liệu tổng quan Dashboard thành công',

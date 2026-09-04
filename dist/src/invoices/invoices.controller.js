@@ -66,14 +66,17 @@ let InvoicesController = class InvoicesController {
     getSummary(date) {
         return this.invoicesService.getSummary(date);
     }
+    findMine(userId, status) {
+        return this.invoicesService.findMyInvoices(userId, status);
+    }
     create(dto, cashierId) {
         return this.invoicesService.create(dto, cashierId);
     }
     findAll(status) {
         return this.invoicesService.findAll(status);
     }
-    findOne(id) {
-        return this.invoicesService.findOne(id);
+    findOne(id, userId, userRole) {
+        return this.invoicesService.findOne(id, userId, userRole);
     }
     recordPayment(id, dto, cashierId) {
         return this.invoicesService.recordPayment(id, dto, cashierId);
@@ -102,6 +105,26 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], InvoicesController.prototype, "getSummary", null);
+__decorate([
+    (0, common_1.Get)('my'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Hóa đơn của chính tôi (màn "Hóa đơn của tôi" bên app khách hàng)',
+        description: 'Chỉ trả về hóa đơn thuộc các đơn đặt phòng của tài khoản đang đăng nhập. ' +
+            'Nhân viên gọi endpoint này cũng chỉ thấy hóa đơn gắn với tài khoản của chính họ — ' +
+            'muốn xem toàn bộ hóa đơn khách sạn thì dùng GET /invoices.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'status', enum: client_1.PaymentStatus, required: false }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Lấy danh sách hóa đơn của tài khoản hiện tại thành công',
+        exampleData: [SAMPLE_INVOICE],
+    }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)('id')),
+    __param(1, (0, common_1.Query)('status')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "findMine", null);
 __decorate([
     (0, common_1.Post)(),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.CASHIER),
@@ -134,8 +157,12 @@ __decorate([
 ], InvoicesController.prototype, "findAll", null);
 __decorate([
     (0, common_1.Get)(':id'),
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER),
-    (0, swagger_1.ApiOperation)({ summary: 'Xem chi tiết hóa đơn, tiền phòng và bảng kê dịch vụ phụ trợ' }),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER, client_1.Role.CUSTOMER),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Xem chi tiết hóa đơn, tiền phòng và bảng kê dịch vụ phụ trợ',
+        description: 'Nhân viên xem được mọi hóa đơn. Khách hàng chỉ mở được hóa đơn thuộc đơn đặt phòng ' +
+            'của chính mình, sai chủ sở hữu sẽ nhận 403.',
+    }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Xem chi tiết hóa đơn thành công',
@@ -147,9 +174,17 @@ __decorate([
         error: 'Not Found',
         path: '/api/v1/invoices/:id',
     }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 403,
+        message: 'Bạn chỉ có thể xem hóa đơn thuộc đơn đặt phòng của chính mình',
+        error: 'Forbidden',
+        path: '/api/v1/invoices/:id',
+    }),
     __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)('id')),
+    __param(2, (0, current_user_decorator_1.CurrentUser)('role')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String, String]),
     __metadata("design:returntype", void 0)
 ], InvoicesController.prototype, "findOne", null);
 __decorate([

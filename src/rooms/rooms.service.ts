@@ -64,10 +64,23 @@ export class RoomsService {
     return toRoomResponse(room, true);
   }
 
-  async findAll(status?: RoomStatus, floor?: number, roomTypeId?: string, includeNotes = false) {
+  async findAll(status?: RoomStatus, floor?: number, roomTypeId?: string, isStaff = false) {
+    // Phòng chờ duyệt / bị từ chối là dữ liệu vận hành nội bộ:
+    // khách hàng và khách vãng lai không được thấy trên sơ đồ phòng.
+    const internalStatuses: RoomStatus[] = [
+      RoomStatus.PENDING_APPROVAL,
+      RoomStatus.REJECTED,
+    ];
+    const isInternalStatus = status ? internalStatuses.includes(status) : false;
+
+    if (!isStaff && isInternalStatus) {
+      return [];
+    }
+
     const rooms = await this.prisma.room.findMany({
       where: {
         ...(status ? { status } : {}),
+        ...(!isStaff && !status ? { status: { notIn: internalStatuses } } : {}),
         ...(floor ? { floor } : {}),
         ...(roomTypeId ? { roomTypeId } : {}),
       },
@@ -82,7 +95,7 @@ export class RoomsService {
       orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
     });
 
-    return rooms.map((r) => toRoomResponse(r, includeNotes));
+    return rooms.map((r) => toRoomResponse(r, isStaff));
   }
 
   async findOne(id: string, includeNotes = false) {
