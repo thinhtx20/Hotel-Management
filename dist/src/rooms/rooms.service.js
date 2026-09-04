@@ -16,6 +16,7 @@ const redis_service_1 = require("../redis/redis.service");
 const elasticsearch_service_1 = require("../elasticsearch/elasticsearch.service");
 const search_room_dto_1 = require("./dto/search-room.dto");
 const room_response_dto_1 = require("./dto/room-response.dto");
+const room_status_util_1 = require("../common/utils/room-status.util");
 const client_1 = require("@prisma/client");
 let RoomsService = class RoomsService {
     constructor(prisma, redis, esService) {
@@ -282,6 +283,40 @@ let RoomsService = class RoomsService {
             amenities: updated.roomType.amenities,
         });
         return (0, room_response_dto_1.toRoomResponse)(updated, true);
+    }
+    async syncAllStatuses() {
+        const rooms = await this.prisma.room.findMany({
+            include: {
+                bookings: {
+                    where: { status: { in: [client_1.BookingStatus.CHECKED_IN, client_1.BookingStatus.CONFIRMED] } },
+                    select: { status: true, checkOutDate: true },
+                },
+            },
+            orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
+        });
+        const now = new Date();
+        const changes = [];
+        for (const room of rooms) {
+            const next = (0, room_status_util_1.deriveRoomStatus)(room.status, room.bookings, now);
+            if (next !== room.status) {
+                await this.prisma.room.update({
+                    where: { id: room.id },
+                    data: { status: next },
+                });
+                changes.push({ roomNumber: room.roomNumber, from: room.status, to: next });
+            }
+        }
+        if (changes.length > 0) {
+            await this.redis.delByPattern('cache:rooms:*');
+        }
+        return {
+            message: changes.length > 0
+                ? `Đã đồng bộ lại trạng thái cho ${changes.length}/${rooms.length} phòng`
+                : `Toàn bộ ${rooms.length} phòng đã khớp với lịch đặt phòng, không cần thay đổi`,
+            totalRooms: rooms.length,
+            updatedCount: changes.length,
+            changes,
+        };
     }
     async updateStatus(id, status) {
         await this.findOne(id, true);

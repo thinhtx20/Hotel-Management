@@ -56,7 +56,8 @@ Client gửi payload:
 
 ### 8. Bảo mật `POST /auth/register`
 - Backend **bỏ qua** trường `role` nếu client gửi lên và **ép cứng** quyền `CUSTOMER` tại server.
-- Việc cấp quyền `ADMIN`, `RECEPTIONIST`, `CASHIER` chỉ thực hiện qua tài khoản quản trị viên tại `PATCH /api/v1/users/:id`.
+- `role` đã được gỡ khỏi enum trong Swagger (chỉ còn là trường `deprecated`, kiểu chuỗi, được chấp nhận nhưng bỏ qua) để hợp đồng API không còn gợi ý rằng người dùng công khai có thể tự cấp quyền `ADMIN`.
+- Việc cấp quyền `ADMIN`, `RECEPTIONIST`, `CASHIER` thực hiện qua tài khoản quản trị viên tại **`POST /api/v1/users`** (tạo mới) hoặc `PATCH /api/v1/users/:id` (đổi quyền tài khoản đã có).
 
 ### 9. Cơ chế xoay vòng Refresh Token (Token Rotation)
 - Mỗi lần gọi `POST /auth/refresh-token`, backend sẽ thu hồi refresh token cũ trong Redis và cấp lại **cặp token mới** (`accessToken` + `refreshToken`).
@@ -793,6 +794,109 @@ Nhằm phục vụ quy trình nghiệp vụ khách đặt trước qua app hoặ
   - Trường `status` mặc định luôn là **`PENDING`** (Chờ duyệt).
   - Có thể truyền số tiền cọc muốn cọc trước: `"depositAmount": 500000`.
   - Hệ thống tự động khóa lịch chống trùng phòng (Overlap conflict check bao gồm cả đơn `PENDING`).
+
+---
+
+## 3. Bổ sung theo phản hồi tích hợp FE (2026-09-04)
+
+### M. Xác nhận đơn `PENDING → CONFIRMED` (`PATCH|POST /api/v1/bookings/:id/confirm`)
+Đường đi chính thức cho màn **"Chờ xác nhận"** của Admin/Lễ tân. Tương đương nghiệp vụ với `:id/approve` (vẫn giữ để không vỡ client cũ) nhưng đúng tên gọi trên giao diện và có thêm khả năng xếp phòng.
+
+- **Quyền:** `ADMIN`, `RECEPTIONIST`.
+- **Request body (tất cả đều không bắt buộc, gửi `{}` vẫn xác nhận được):**
+
+```json
+{
+  "assignedRoomId": "3f6c8d20-41ab-4f27-96a8-208935cba48b",
+  "note": "Khách đã chuyển khoản cọc, xếp phòng tầng cao theo yêu cầu",
+  "depositAmount": 500000,
+  "paymentMethod": "BANK_TRANSFER"
+}
+```
+
+- `assignedRoomId` — bỏ trống thì giữ nguyên phòng khách đã chọn. Nếu truyền phòng khác, hệ thống kiểm tra trùng lịch trước; trùng thì trả `409 Conflict`, phòng cũ được tự động trả về đúng trạng thái.
+- `note` — lưu vào `booking.confirmationNote`.
+- `depositAmount > 0` — tạo/cập nhật hóa đơn cọc như `:id/approve`.
+- **Kết quả:** đơn chuyển `CONFIRMED` kèm `confirmedAt`, `confirmedBy`, `confirmationNote`; phòng được xếp chuyển `RESERVED`.
+
+### N. Hủy đơn có lý do (`POST|PATCH /api/v1/bookings/:id/cancel`)
+Trước đây endpoint này không nhận body nên lý do hủy do FE thu thập bị vứt bỏ.
+
+- **Request body:**
+
+```json
+{ "cancellationReason": "Khách báo bận công tác đột xuất, xin hủy phòng" }
+```
+
+  `reason` được chấp nhận như alias để client cũ không vỡ.
+- `PATCH|POST /bookings/:id/reject` (lễ tân từ chối đơn) cũng ghi lý do vào **cùng một trường** `cancellationReason`.
+- **Mọi response đơn đặt phòng** (list, chi tiết, cancel, reject) nay luôn có các trường sau, giá trị `null` khi chưa dùng tới:
+
+```json
+{
+  "cancellationReason": "Khách báo bận công tác đột xuất, xin hủy phòng",
+  "cancelledAt": "2026-09-04T03:20:00.000Z",
+  "cancelledBy": { "id": "...", "fullName": "Nguyễn Anh Tuấn", "role": "CUSTOMER" },
+  "confirmedAt": null,
+  "confirmedBy": null,
+  "confirmationNote": null
+}
+```
+
+### O. Lọc / tìm kiếm / phân trang đơn đặt phòng (`GET /api/v1/bookings`)
+Toàn bộ việc lọc đã chuyển về phía máy chủ, FE không cần tải hết rồi lọc trong máy nữa.
+
+| Query param | Kiểu | Ghi chú |
+|---|---|---|
+| `status` | enum, **nhiều giá trị** | `?status=PENDING,CONFIRMED` hoặc lặp `?status=PENDING&status=CONFIRMED` |
+| `customerId` | string | Khách hàng luôn bị khóa về đơn của chính mình, bất kể giá trị gửi lên |
+| `roomId` | string | |
+| `checkInFrom` / `checkInTo` | date | Bao trọn ngày (00:00:00 → 23:59:59 giờ máy chủ) |
+| `checkOutFrom` / `checkOutTo` | date | Bao trọn ngày |
+| `search` | string | Không phân biệt hoa thường, khớp tên khách / SĐT / email / `bookingCode` / số phòng |
+| `page` | number | Bắt đầu từ 1 |
+| `limit` | number | Mặc định 20, tối đa 100 |
+
+- Ví dụ **"Nhận phòng hôm nay"** (lấy cả đơn `PENDING` đến hạn, không chỉ `CONFIRMED`):
+  `GET /api/v1/bookings?status=PENDING,CONFIRMED&checkInFrom=2026-09-04&checkInTo=2026-09-04`
+
+- ⚠️ **Thay đổi phá vỡ tương thích:** `data` của response nay là **object bọc**, không còn là mảng trần:
+
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "data": {
+    "data": [ /* danh sách đơn */ ],
+    "meta": { "total": 42, "page": 1, "limit": 20, "totalPages": 3 }
+  }
+}
+```
+
+  Không truyền `page`/`limit` thì `data.data` chứa toàn bộ kết quả và `meta.limit = meta.total`.
+
+### P. Đồng bộ trạng thái phòng ↔ đơn đặt phòng (`POST /api/v1/rooms/sync-status`)
+Chữa dữ liệu lệch (phòng `OCCUPIED` mà không có đơn `CHECKED_IN` nào, phòng `RESERVED` mà đơn giữ chỗ đã bị hủy).
+
+- **Quyền:** `ADMIN`, `RECEPTIONIST`.
+- **Quy tắc suy diễn (nguồn sự thật duy nhất, dùng chung cho mọi thao tác booking):**
+  - Có đơn `CHECKED_IN` → `OCCUPIED`
+  - Có đơn `CONFIRMED` chưa tới ngày trả phòng → `RESERVED`
+  - Còn lại → `AVAILABLE` (giữ nguyên nếu đang `CLEANING`)
+  - Đơn **`PENDING` không giữ phòng** — khách mới gửi yêu cầu, lễ tân chưa xác nhận.
+  - `MAINTENANCE` / `PENDING_APPROVAL` / `REJECTED` giữ nguyên vì do người vận hành đặt tay.
+- Quy tắc này cũng chạy tự động sau mọi thao tác tạo đơn / xác nhận / hủy / từ chối, nên dữ liệu không lệch lại lần nữa.
+
+### Q. Admin tạo tài khoản nhân viên (`POST /api/v1/users`)
+Thay cho việc mượn `POST /auth/register`.
+
+- **Quyền:** `ADMIN`.
+- **Request body:** `{ email, password, fullName, role, phone?, avatar?, isActive? }` với `role` ∈ `ADMIN | RECEPTIONIST | CASHIER | CUSTOMER`.
+- Trùng email trả `409 Conflict`.
+
+### R. Sửa `totalInvoices` ở `GET /api/v1/invoices/summary`
+`totalInvoices` trước đây chỉ đếm theo `createdAt` trong ngày, nên hóa đơn phát hành hôm trước và thu tiền hôm nay vẫn vào `paidInvoices` khiến `totalInvoices: 0` mà `paidInvoices: 1`.
+Nay `totalInvoices` đếm hóa đơn **phát hành trong ngày HOẶC có thu tiền trong ngày**. `unpaidInvoices` / `partialInvoices` vẫn là tồn đọng toàn hệ thống (không giới hạn theo ngày).
 
 
 

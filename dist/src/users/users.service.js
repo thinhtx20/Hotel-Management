@@ -11,10 +11,40 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersService = void 0;
 const common_1 = require("@nestjs/common");
+const bcrypt = require("bcrypt");
 const prisma_service_1 = require("../prisma/prisma.service");
 let UsersService = class UsersService {
     constructor(prisma) {
         this.prisma = prisma;
+    }
+    async create(dto) {
+        const email = dto.email.trim().toLowerCase();
+        const existing = await this.prisma.user.findUnique({ where: { email } });
+        if (existing) {
+            throw new common_1.ConflictException('Email này đã được đăng ký trong hệ thống');
+        }
+        const hashedPassword = await bcrypt.hash(dto.password, await bcrypt.genSalt(10));
+        return this.prisma.user.create({
+            data: {
+                email,
+                password: hashedPassword,
+                fullName: dto.fullName,
+                phone: dto.phone,
+                avatar: dto.avatar,
+                role: dto.role,
+                isActive: dto.isActive ?? true,
+            },
+            select: {
+                id: true,
+                email: true,
+                fullName: true,
+                phone: true,
+                avatar: true,
+                role: true,
+                isActive: true,
+                createdAt: true,
+            },
+        });
     }
     async findAll(role) {
         return this.prisma.user.findMany({

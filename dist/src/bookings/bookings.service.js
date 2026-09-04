@@ -14,12 +14,44 @@ exports.BookingsService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const redis_service_1 = require("../redis/redis.service");
+const room_status_util_1 = require("../common/utils/room-status.util");
 const client_1 = require("@prisma/client");
+const BOOKING_INCLUDE = {
+    customer: { select: { id: true, fullName: true, email: true, phone: true } },
+    room: { include: { roomType: true } },
+    invoice: true,
+    serviceOrders: true,
+    confirmedBy: { select: { id: true, fullName: true, role: true } },
+    cancelledBy: { select: { id: true, fullName: true, role: true } },
+};
+const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
 let BookingsService = BookingsService_1 = class BookingsService {
     constructor(prisma, redis) {
         this.prisma = prisma;
         this.redis = redis;
         this.logger = new common_1.Logger(BookingsService_1.name);
+    }
+    async syncRoomStatus(roomId) {
+        const room = await this.prisma.room.findUnique({
+            where: { id: roomId },
+            include: {
+                bookings: {
+                    where: { status: { in: [client_1.BookingStatus.CHECKED_IN, client_1.BookingStatus.CONFIRMED] } },
+                    select: { status: true, checkOutDate: true },
+                },
+            },
+        });
+        if (!room)
+            return null;
+        const nextStatus = (0, room_status_util_1.deriveRoomStatus)(room.status, room.bookings);
+        if (nextStatus === room.status)
+            return room.status;
+        await this.prisma.room.update({
+            where: { id: roomId },
+            data: { status: nextStatus },
+        });
+        return nextStatus;
     }
     async create(dto, currentUserId, currentUserRole) {
         const checkIn = new Date(dto.checkInDate);
@@ -78,18 +110,13 @@ let BookingsService = BookingsService_1 = class BookingsService {
                     depositAmount: dto.depositAmount || 0,
                     status: initialStatus,
                     specialRequests: dto.specialRequests,
+                    ...(initialStatus === client_1.BookingStatus.CONFIRMED
+                        ? { confirmedAt: new Date(), confirmedById: currentUserId }
+                        : {}),
                 },
-                include: {
-                    room: { include: { roomType: true } },
-                    customer: { select: { id: true, fullName: true, email: true, phone: true } },
-                },
+                include: BOOKING_INCLUDE,
             });
-            if (initialStatus === client_1.BookingStatus.CONFIRMED) {
-                await this.prisma.room.update({
-                    where: { id: dto.roomId },
-                    data: { status: client_1.RoomStatus.RESERVED },
-                });
-            }
+            await this.syncRoomStatus(dto.roomId);
             await this.redis.delByPattern('cache:rooms:*');
             return this.toBookingResponse(booking);
         }
@@ -126,24 +153,69 @@ let BookingsService = BookingsService_1 = class BookingsService {
             paymentStatus,
             invoiceId,
             canCancel,
+            cancellationReason: b.cancellationReason ?? null,
+            cancelledAt: b.cancelledAt ?? null,
+            cancelledBy: b.cancelledBy ?? null,
+            confirmedAt: b.confirmedAt ?? null,
+            confirmedBy: b.confirmedBy ?? null,
+            confirmationNote: b.confirmationNote ?? null,
         };
     }
-    async findAll(status, customerId, roomId) {
-        const list = await this.prisma.booking.findMany({
-            where: {
-                ...(status ? { status } : {}),
-                ...(customerId ? { customerId } : {}),
-                ...(roomId ? { roomId } : {}),
+    async findAll(query = {}) {
+        const where = {};
+        if (query.status && query.status.length > 0) {
+            where.status =
+                query.status.length === 1 ? query.status[0] : { in: query.status };
+        }
+        if (query.customerId)
+            where.customerId = query.customerId;
+        if (query.roomId)
+            where.roomId = query.roomId;
+        if (query.checkInFrom || query.checkInTo) {
+            where.checkInDate = {
+                ...(query.checkInFrom ? { gte: startOfDay(new Date(query.checkInFrom)) } : {}),
+                ...(query.checkInTo ? { lte: endOfDay(new Date(query.checkInTo)) } : {}),
+            };
+        }
+        if (query.checkOutFrom || query.checkOutTo) {
+            where.checkOutDate = {
+                ...(query.checkOutFrom ? { gte: startOfDay(new Date(query.checkOutFrom)) } : {}),
+                ...(query.checkOutTo ? { lte: endOfDay(new Date(query.checkOutTo)) } : {}),
+            };
+        }
+        const search = query.search?.trim();
+        if (search) {
+            const insensitive = client_1.Prisma.QueryMode.insensitive;
+            where.OR = [
+                { bookingCode: { contains: search, mode: insensitive } },
+                { customer: { fullName: { contains: search, mode: insensitive } } },
+                { customer: { phone: { contains: search, mode: insensitive } } },
+                { customer: { email: { contains: search, mode: insensitive } } },
+                { room: { roomNumber: { contains: search, mode: insensitive } } },
+            ];
+        }
+        const isPaginated = query.page !== undefined || query.limit !== undefined;
+        const page = Math.max(1, query.page ?? 1);
+        const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+        const [total, list] = await this.prisma.$transaction([
+            this.prisma.booking.count({ where }),
+            this.prisma.booking.findMany({
+                where,
+                include: BOOKING_INCLUDE,
+                orderBy: { createdAt: 'desc' },
+                ...(isPaginated ? { skip: (page - 1) * limit, take: limit } : {}),
+            }),
+        ]);
+        const data = list.map((b) => this.toBookingResponse(b));
+        return {
+            data,
+            meta: {
+                total,
+                page: isPaginated ? page : 1,
+                limit: isPaginated ? limit : total,
+                totalPages: isPaginated ? Math.max(1, Math.ceil(total / limit)) : 1,
             },
-            include: {
-                customer: { select: { id: true, fullName: true, email: true, phone: true } },
-                room: { include: { roomType: true } },
-                invoice: true,
-                serviceOrders: true,
-            },
-            orderBy: { createdAt: 'desc' },
-        });
-        return list.map((b) => this.toBookingResponse(b));
+        };
     }
     assertOwnership(booking, userId, userRole) {
         if (userRole === client_1.Role.CUSTOMER && booking.customerId !== userId) {
@@ -153,12 +225,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
     async findOne(id, currentUserId, currentUserRole) {
         const booking = await this.prisma.booking.findUnique({
             where: { id },
-            include: {
-                customer: { select: { id: true, fullName: true, email: true, phone: true } },
-                room: { include: { roomType: true } },
-                invoice: true,
-                serviceOrders: true,
-            },
+            include: BOOKING_INCLUDE,
         });
         if (!booking) {
             throw new common_1.NotFoundException(`Không tìm thấy đơn đặt phòng ID: ${id}`);
@@ -169,12 +236,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
     async approve(id, dto, currentUserId) {
         const booking = await this.prisma.booking.findUnique({
             where: { id },
-            include: {
-                customer: { select: { id: true, fullName: true, email: true, phone: true } },
-                room: { include: { roomType: true } },
-                invoice: true,
-                serviceOrders: true,
-            },
+            include: BOOKING_INCLUDE,
         });
         if (!booking) {
             throw new common_1.NotFoundException(`Không tìm thấy đơn đặt phòng ID: ${id}`);
@@ -188,6 +250,32 @@ let BookingsService = BookingsService_1 = class BookingsService {
         if (booking.status === client_1.BookingStatus.CHECKED_IN || booking.status === client_1.BookingStatus.CHECKED_OUT) {
             throw new common_1.BadRequestException('Đơn đặt phòng đã hoặc đang được thực hiện, không thể duyệt lại');
         }
+        const targetRoomId = dto?.assignedRoomId || booking.roomId;
+        if (targetRoomId !== booking.roomId) {
+            const newRoom = await this.prisma.room.findUnique({ where: { id: targetRoomId } });
+            if (!newRoom) {
+                throw new common_1.NotFoundException(`Không tìm thấy phòng cần xếp với ID: ${targetRoomId}`);
+            }
+            if (newRoom.status === client_1.RoomStatus.MAINTENANCE) {
+                throw new common_1.BadRequestException('Phòng được xếp đang bảo trì, không thể nhận khách');
+            }
+            const conflict = await this.prisma.booking.findFirst({
+                where: {
+                    id: { not: id },
+                    roomId: targetRoomId,
+                    status: {
+                        in: [client_1.BookingStatus.PENDING, client_1.BookingStatus.CONFIRMED, client_1.BookingStatus.CHECKED_IN],
+                    },
+                    AND: [
+                        { checkInDate: { lt: booking.checkOutDate } },
+                        { checkOutDate: { gt: booking.checkInDate } },
+                    ],
+                },
+            });
+            if (conflict) {
+                throw new common_1.ConflictException(`Phòng ${newRoom.roomNumber} đã có đơn ${conflict.bookingCode} trùng lịch trong khoảng thời gian này`);
+            }
+        }
         const depositAmount = dto?.depositAmount !== undefined ? dto.depositAmount : (booking.depositAmount || 0);
         const invoiceCode = `INV-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
         const ops = [
@@ -196,16 +284,15 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 data: {
                     status: client_1.BookingStatus.CONFIRMED,
                     depositAmount,
+                    roomId: targetRoomId,
+                    confirmedAt: new Date(),
+                    confirmedById: currentUserId,
+                    confirmationNote: dto?.note ?? dto?.notes ?? null,
                 },
-                include: {
-                    customer: { select: { id: true, fullName: true, email: true, phone: true } },
-                    room: { include: { roomType: true } },
-                    invoice: true,
-                    serviceOrders: true,
-                },
+                include: BOOKING_INCLUDE,
             }),
             this.prisma.room.update({
-                where: { id: booking.roomId },
+                where: { id: targetRoomId },
                 data: { status: client_1.RoomStatus.RESERVED },
             }),
         ];
@@ -241,6 +328,9 @@ let BookingsService = BookingsService_1 = class BookingsService {
         const results = await this.prisma.$transaction(ops);
         const updatedBooking = results[0];
         const invoice = results[2] || updatedBooking.invoice;
+        if (targetRoomId !== booking.roomId) {
+            await this.syncRoomStatus(booking.roomId);
+        }
         await this.redis.delByPattern('cache:rooms:*');
         return {
             message: 'Phê duyệt đơn đặt phòng và xác nhận tiền cọc thành công',
@@ -255,13 +345,17 @@ let BookingsService = BookingsService_1 = class BookingsService {
             }),
         };
     }
+    async confirm(id, dto, currentUserId) {
+        const result = await this.approve(id, dto, currentUserId);
+        return {
+            ...result,
+            message: 'Xác nhận đơn đặt phòng thành công',
+        };
+    }
     async reject(id, dto, currentUserId) {
         const booking = await this.prisma.booking.findUnique({
             where: { id },
-            include: {
-                customer: { select: { id: true, fullName: true, email: true, phone: true } },
-                room: { include: { roomType: true } },
-            },
+            include: BOOKING_INCLUDE,
         });
         if (!booking) {
             throw new common_1.NotFoundException(`Không tìm thấy đơn đặt phòng ID: ${id}`);
@@ -272,27 +366,18 @@ let BookingsService = BookingsService_1 = class BookingsService {
         if (booking.status === client_1.BookingStatus.CHECKED_IN || booking.status === client_1.BookingStatus.CHECKED_OUT) {
             throw new common_1.BadRequestException('Không thể từ chối đơn đặt phòng đã hoặc đang lưu trú');
         }
-        const [updatedBooking] = await this.prisma.$transaction([
-            this.prisma.booking.update({
-                where: { id },
-                data: {
-                    status: client_1.BookingStatus.CANCELLED,
-                    specialRequests: dto?.reason
-                        ? `${booking.specialRequests || ''}\n[Lý do từ chối: ${dto.reason}]`.trim()
-                        : booking.specialRequests,
-                },
-                include: {
-                    customer: { select: { id: true, fullName: true, email: true, phone: true } },
-                    room: { include: { roomType: true } },
-                    invoice: true,
-                    serviceOrders: true,
-                },
-            }),
-            this.prisma.room.update({
-                where: { id: booking.roomId },
-                data: { status: client_1.RoomStatus.AVAILABLE },
-            }),
-        ]);
+        const reason = dto?.cancellationReason || dto?.reason || null;
+        const updatedBooking = await this.prisma.booking.update({
+            where: { id },
+            data: {
+                status: client_1.BookingStatus.CANCELLED,
+                cancellationReason: reason,
+                cancelledAt: new Date(),
+                cancelledById: currentUserId ?? null,
+            },
+            include: BOOKING_INCLUDE,
+        });
+        await this.syncRoomStatus(booking.roomId);
         await this.redis.delByPattern('cache:rooms:*');
         return {
             message: 'Từ chối đơn đặt phòng thành công',
@@ -320,7 +405,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                     status: client_1.BookingStatus.CHECKED_IN,
                     actualCheckIn: new Date(),
                 },
-                include: { room: true },
+                include: BOOKING_INCLUDE,
             }),
             this.prisma.room.update({
                 where: { id: booking.roomId },
@@ -328,7 +413,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
             }),
         ]);
         await this.redis.delByPattern('cache:rooms:*');
-        return updatedBooking;
+        return this.toBookingResponse(updatedBooking);
     }
     async checkOut(id, dto, cashierId) {
         const booking = await this.findOne(id);
@@ -350,6 +435,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                     status: client_1.BookingStatus.CHECKED_OUT,
                     actualCheckOut: new Date(),
                 },
+                include: BOOKING_INCLUDE,
             }),
             this.prisma.room.update({
                 where: { id: booking.roomId },
@@ -389,11 +475,15 @@ let BookingsService = BookingsService_1 = class BookingsService {
         return {
             message: 'Check-out và thanh toán hóa đơn thành công',
             invoiceId: invoice.id,
-            booking: updatedBooking,
+            booking: this.toBookingResponse({
+                ...updatedBooking,
+                invoice,
+                room: { ...updatedBooking.room, status: client_1.RoomStatus.CLEANING },
+            }),
             invoice,
         };
     }
-    async cancel(id, currentUserId, currentUserRole) {
+    async cancel(id, dto, currentUserId, currentUserRole) {
         const booking = await this.findOne(id, currentUserId, currentUserRole);
         if (booking.status === client_1.BookingStatus.CHECKED_IN) {
             throw new common_1.BadRequestException('Khách đang ở phòng, không thể hủy đơn đặt');
@@ -401,18 +491,22 @@ let BookingsService = BookingsService_1 = class BookingsService {
         if (booking.status === client_1.BookingStatus.CHECKED_OUT) {
             throw new common_1.BadRequestException('Đơn đặt phòng đã hoàn tất, không thể hủy');
         }
-        const [updatedBooking] = await this.prisma.$transaction([
-            this.prisma.booking.update({
-                where: { id },
-                data: { status: client_1.BookingStatus.CANCELLED },
-            }),
-            this.prisma.room.update({
-                where: { id: booking.roomId },
-                data: { status: client_1.RoomStatus.AVAILABLE },
-            }),
-        ]);
+        if (booking.status === client_1.BookingStatus.CANCELLED) {
+            throw new common_1.BadRequestException('Đơn đặt phòng này đã bị hủy trước đó');
+        }
+        const updatedBooking = await this.prisma.booking.update({
+            where: { id },
+            data: {
+                status: client_1.BookingStatus.CANCELLED,
+                cancellationReason: dto?.cancellationReason || dto?.reason || null,
+                cancelledAt: new Date(),
+                cancelledById: currentUserId ?? null,
+            },
+            include: BOOKING_INCLUDE,
+        });
+        await this.syncRoomStatus(booking.roomId);
         await this.redis.delByPattern('cache:rooms:*');
-        return updatedBooking;
+        return this.toBookingResponse(updatedBooking);
     }
     async addServiceOrder(id, dto) {
         const booking = await this.findOne(id);

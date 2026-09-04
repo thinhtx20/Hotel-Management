@@ -225,7 +225,10 @@ let InvoicesService = class InvoicesService {
             }),
             this.prisma.invoice.count({
                 where: {
-                    createdAt: { gte: dayStart, lte: dayEnd },
+                    OR: [
+                        { createdAt: { gte: dayStart, lte: dayEnd } },
+                        { paidAt: { gte: dayStart, lte: dayEnd } },
+                    ],
                 },
             }),
             this.prisma.invoice.count({

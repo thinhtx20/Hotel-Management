@@ -18,6 +18,7 @@ const swagger_1 = require("@nestjs/swagger");
 const users_service_1 = require("./users.service");
 const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
 const update_user_dto_1 = require("./dto/update-user.dto");
+const create_user_dto_1 = require("./dto/create-user.dto");
 const update_me_dto_1 = require("./dto/update-me.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
@@ -41,6 +42,9 @@ let UsersController = class UsersController {
     }
     updateMe(userId, dto) {
         return this.usersService.updateMe(userId, dto);
+    }
+    create(dto) {
+        return this.usersService.create(dto);
     }
     findAll(role) {
         return this.usersService.findAll(role);
@@ -70,6 +74,30 @@ __decorate([
     __metadata("design:paramtypes", [String, update_me_dto_1.UpdateMeDto]),
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "updateMe", null);
+__decorate([
+    (0, common_1.Post)(),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Admin tạo tài khoản nhân viên (Lễ tân / Thu ngân / Admin)',
+        description: 'Đường chính thức để cấp tài khoản nội bộ, thay cho việc mượn POST /auth/register ' +
+            '(đăng ký công khai luôn ép vai trò CUSTOMER).',
+    }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 201,
+        description: 'Tạo tài khoản nhân viên thành công',
+        exampleData: SAMPLE_USER,
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 409,
+        message: 'Email này đã được đăng ký trong hệ thống',
+        error: 'Conflict',
+        path: '/api/v1/users',
+    }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [create_user_dto_1.CreateUserDto]),
+    __metadata("design:returntype", void 0)
+], UsersController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)(),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),

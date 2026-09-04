@@ -33,9 +33,18 @@ export class ApproveBookingDto {
 export class RejectBookingDto {
   @ApiPropertyOptional({
     example: 'Khách không chuyển tiền cọc đúng hạn theo quy định',
-    description: 'Lý do từ chối đơn đặt phòng',
+    description:
+      'Lý do từ chối đơn đặt phòng. Được lưu vào cancellationReason và trả về trong mọi response của đơn.',
   })
   @IsOptional()
   @IsString()
   reason?: string;
+
+  @ApiPropertyOptional({
+    example: 'Khách không chuyển tiền cọc đúng hạn theo quy định',
+    description: 'Alias của reason (dùng chung tên trường với API hủy đơn)',
+  })
+  @IsOptional()
+  @IsString()
+  cancellationReason?: string;
 }

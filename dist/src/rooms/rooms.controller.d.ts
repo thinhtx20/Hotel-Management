@@ -14,6 +14,16 @@ export declare class RoomsController {
     findOne(id: string, user?: any): Promise<import("./dto/room-response.dto").RoomResponse>;
     approve(id: string): Promise<import("./dto/room-response.dto").RoomResponse>;
     reject(id: string): Promise<import("./dto/room-response.dto").RoomResponse>;
+    syncStatus(): Promise<{
+        message: string;
+        totalRooms: number;
+        updatedCount: number;
+        changes: {
+            roomNumber: string;
+            from: RoomStatus;
+            to: RoomStatus;
+        }[];
+    }>;
     updateStatus(id: string, dto: UpdateRoomStatusDto): Promise<import("./dto/room-response.dto").RoomResponse>;
     update(id: string, updateRoomDto: UpdateRoomDto): Promise<import("./dto/room-response.dto").RoomResponse>;
     remove(id: string): Promise<{

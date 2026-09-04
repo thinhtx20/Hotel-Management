@@ -80,6 +80,9 @@ let RoomsController = class RoomsController {
     reject(id) {
         return this.roomsService.updateStatus(id, client_1.RoomStatus.REJECTED);
     }
+    syncStatus() {
+        return this.roomsService.syncAllStatuses();
+    }
     updateStatus(id, dto) {
         return this.roomsService.updateStatus(id, dto.status);
     }
@@ -233,6 +236,35 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], RoomsController.prototype, "reject", null);
+__decorate([
+    (0, swagger_1.ApiBearerAuth)('JWT-auth'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, common_1.Post)('sync-status'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Rà soát & đồng bộ trạng thái toàn bộ phòng theo lịch đặt phòng thực tế',
+        description: 'Chữa dữ liệu lệch giữa room.status và booking: phòng OCCUPIED nhưng không có đơn CHECKED_IN, ' +
+            'hoặc phòng RESERVED nhưng đơn giữ chỗ đã bị hủy. Quy tắc suy diễn: có đơn CHECKED_IN -> OCCUPIED; ' +
+            'có đơn CONFIRMED chưa tới ngày trả -> RESERVED; còn lại -> AVAILABLE. ' +
+            'Phòng MAINTENANCE / PENDING_APPROVAL / REJECTED được giữ nguyên vì do người vận hành đặt tay.',
+    }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Đồng bộ trạng thái phòng thành công',
+        exampleData: {
+            message: 'Đã đồng bộ lại trạng thái cho 5/20 phòng',
+            totalRooms: 20,
+            updatedCount: 5,
+            changes: [
+                { roomNumber: '103', from: 'OCCUPIED', to: 'AVAILABLE' },
+                { roomNumber: '201', from: 'OCCUPIED', to: 'AVAILABLE' },
+            ],
+        },
+    }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], RoomsController.prototype, "syncStatus", null);
 __decorate([
     (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),

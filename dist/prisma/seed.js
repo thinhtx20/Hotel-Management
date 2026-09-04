@@ -371,7 +371,7 @@ async function main() {
         { roomNumber: '102', floor: 1, roomTypeId: stdSingle.id, status: client_1.RoomStatus.AVAILABLE },
         { roomNumber: '103', floor: 1, roomTypeId: stdDouble.id, status: client_1.RoomStatus.OCCUPIED },
         { roomNumber: '104', floor: 1, roomTypeId: stdDouble.id, status: client_1.RoomStatus.CLEANING, notes: 'Đang dọn dẹp vệ sinh phòng sau khi trả phòng' },
-        { roomNumber: '201', floor: 2, roomTypeId: supCity.id, status: client_1.RoomStatus.OCCUPIED },
+        { roomNumber: '201', floor: 2, roomTypeId: supCity.id, status: client_1.RoomStatus.AVAILABLE },
         { roomNumber: '202', floor: 2, roomTypeId: supCity.id, status: client_1.RoomStatus.AVAILABLE },
         { roomNumber: '203', floor: 2, roomTypeId: supCity.id, status: client_1.RoomStatus.RESERVED, notes: 'Khách VIP đã cọc, nhận phòng chiều nay' },
         { roomNumber: '204', floor: 2, roomTypeId: supCity.id, status: client_1.RoomStatus.MAINTENANCE, notes: 'Bảo trì thay vòi nước sen nóng lạnh' },
@@ -384,7 +384,7 @@ async function main() {
         { roomNumber: '403', floor: 4, roomTypeId: execSuite.id, status: client_1.RoomStatus.RESERVED, notes: 'Đoàn công tác đối tác quốc tế' },
         { roomNumber: '404', floor: 4, roomTypeId: execSuite.id, status: client_1.RoomStatus.AVAILABLE },
         { roomNumber: '501', floor: 5, roomTypeId: presPenthouse.id, status: client_1.RoomStatus.AVAILABLE },
-        { roomNumber: '502', floor: 5, roomTypeId: presPenthouse.id, status: client_1.RoomStatus.RESERVED, notes: 'Đặt tiệc sinh nhật cuối tuần' },
+        { roomNumber: '502', floor: 5, roomTypeId: presPenthouse.id, status: client_1.RoomStatus.AVAILABLE },
     ];
     const createdRooms = {};
     for (const r of roomData) {
@@ -452,6 +452,9 @@ async function main() {
             totalAmount: 2850000,
             depositAmount: 1000000,
             status: client_1.BookingStatus.CONFIRMED,
+            confirmedAt: dAgo(1),
+            confirmedById: reception1.id,
+            confirmationNote: 'Khách đã chuyển khoản cọc 1.000.000đ, giữ phòng 203',
             specialRequests: 'Gia đình có bé nhỏ 3 tuổi, cần nôi em bé và phòng không mùi thuốc lá',
         },
     });
@@ -480,10 +483,75 @@ async function main() {
             totalAmount: 900000,
             depositAmount: 0,
             status: client_1.BookingStatus.CANCELLED,
+            cancellationReason: 'Khách bận chuyến bay công tác đột xuất nên xin phép hủy phòng',
+            cancelledAt: dAgo(11),
+            cancelledById: customer2.id,
             specialRequests: 'Bận chuyến bay đột xuất nên xin phép hủy phòng',
         },
     });
-    console.log('   -> Đã tạo 6 đơn đặt phòng với đầy đủ các trạng thái vận hành thực tế.');
+    await prisma.booking.create({
+        data: {
+            bookingCode: 'BK-2026-007',
+            customerId: customerOld1.id,
+            roomId: createdRooms['103'].id,
+            checkInDate: dAgo(1),
+            checkOutDate: dAhead(1),
+            actualCheckIn: dAgo(1),
+            guestCount: 2,
+            totalAmount: 1300000,
+            depositAmount: 500000,
+            status: client_1.BookingStatus.CHECKED_IN,
+            confirmedAt: dAgo(3),
+            confirmedById: reception2.id,
+            specialRequests: 'Xin thêm một gối ôm và nước suối miễn phí',
+        },
+    });
+    await prisma.booking.create({
+        data: {
+            bookingCode: 'BK-2026-008',
+            customerId: customer3.id,
+            roomId: createdRooms['402'].id,
+            checkInDate: dAhead(2),
+            checkOutDate: dAhead(5),
+            guestCount: 2,
+            totalAmount: 8400000,
+            depositAmount: 0,
+            status: client_1.BookingStatus.PENDING,
+            specialRequests: 'Cần hóa đơn VAT xuất cho công ty và đưa đón sân bay chiều đến',
+        },
+    });
+    await prisma.booking.create({
+        data: {
+            bookingCode: 'BK-2026-009',
+            customerId: customer2.id,
+            roomId: createdRooms['302'].id,
+            checkInDate: dAhead(1),
+            checkOutDate: dAhead(3),
+            guestCount: 2,
+            totalAmount: 2900000,
+            depositAmount: 0,
+            status: client_1.BookingStatus.PENDING,
+            specialRequests: 'Kỷ niệm ngày cưới, mong được xếp phòng có ban công hướng biển',
+        },
+    });
+    await prisma.booking.create({
+        data: {
+            bookingCode: 'BK-2026-010',
+            customerId: customer4.id,
+            roomId: createdRooms['403'].id,
+            checkInDate: dAhead(3),
+            checkOutDate: dAhead(6),
+            guestCount: 3,
+            totalAmount: 8400000,
+            depositAmount: 3000000,
+            status: client_1.BookingStatus.CONFIRMED,
+            confirmedAt: dAgo(2),
+            confirmedById: reception3.id,
+            confirmationNote: 'Đoàn công tác đối tác quốc tế, đã cọc 3.000.000đ',
+            specialRequests: 'Đoàn công tác 3 người, cần phòng họp nhỏ vào buổi sáng',
+        },
+    });
+    console.log('   -> Đã tạo 10 đơn đặt phòng: 3 PENDING (chờ xác nhận), 2 CONFIRMED, 3 CHECKED_IN, 1 CHECKED_OUT, 1 CANCELLED có lý do hủy.');
     console.log('\n🍷 6. Đang thêm các dịch vụ phát sinh (Minibar, Nhà hàng, Đưa đón sân bay, Spa)...');
     await prisma.extraServiceOrder.createMany({
         data: [

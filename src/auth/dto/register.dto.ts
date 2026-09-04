@@ -1,7 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 
+/**
+ * Đăng ký công khai: KHÔNG nhận `role`.
+ * Server luôn ép vai trò CUSTOMER, nếu không bất kỳ ai cũng có thể tự đăng ký làm ADMIN.
+ * Admin tạo tài khoản nhân viên (RECEPTIONIST / CASHIER / ADMIN) qua POST /users.
+ */
 export class RegisterDto {
   @ApiProperty({ example: 'customer@hotel.com', description: 'Email tài khoản' })
   @IsEmail({}, { message: 'Email không đúng định dạng' })
@@ -23,8 +27,18 @@ export class RegisterDto {
   @IsString()
   phone?: string;
 
-  @ApiPropertyOptional({ enum: Role, default: Role.CUSTOMER, description: 'Vai trò (Chỉ Admin mới được cấp quyền đặc biệt)' })
+  /**
+   * Vẫn được chấp nhận để client cũ không bị lỗi 400 (ValidationPipe đang bật
+   * forbidNonWhitelisted), nhưng giá trị gửi lên bị BỎ QUA hoàn toàn.
+   */
+  @ApiPropertyOptional({
+    deprecated: true,
+    example: 'CUSTOMER',
+    description:
+      'ĐÃ BỊ BỎ QUA. Tài khoản đăng ký công khai luôn là CUSTOMER. ' +
+      'Để tạo tài khoản nhân viên, Admin dùng POST /users.',
+  })
   @IsOptional()
-  @IsEnum(Role, { message: 'Vai trò không hợp lệ' })
-  role?: Role;
+  @IsString()
+  role?: string;
 }

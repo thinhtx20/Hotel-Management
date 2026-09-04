@@ -300,9 +300,15 @@ export class InvoicesService {
         _sum: { paidAmount: true },
         where: collectedRevenueWhere(dayStart, dayEnd),
       }),
+      // Hóa đơn "thuộc về ngày" = phát hành trong ngày HOẶC có thu tiền trong ngày.
+      // Trước đây chỉ đếm theo createdAt nên hóa đơn của hôm trước được thanh toán
+      // hôm nay vẫn vào paidInvoices, dẫn tới totalInvoices = 0 mà paidInvoices = 1.
       this.prisma.invoice.count({
         where: {
-          createdAt: { gte: dayStart, lte: dayEnd },
+          OR: [
+            { createdAt: { gte: dayStart, lte: dayEnd } },
+            { paidAt: { gte: dayStart, lte: dayEnd } },
+          ],
         },
       }),
       this.prisma.invoice.count({
@@ -328,8 +334,10 @@ export class InvoicesService {
     return {
       date: formatLocalDate(dayStart),
       todayRevenue,
+      // Theo ngày được hỏi
       totalInvoices,
       paidInvoices,
+      // Tồn đọng toàn hệ thống (không giới hạn theo ngày)
       unpaidInvoices,
       partialInvoices,
     };

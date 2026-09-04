@@ -190,6 +190,35 @@ export class RoomsController {
   @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @Post('sync-status')
+  @ApiOperation({
+    summary: 'Rà soát & đồng bộ trạng thái toàn bộ phòng theo lịch đặt phòng thực tế',
+    description:
+      'Chữa dữ liệu lệch giữa room.status và booking: phòng OCCUPIED nhưng không có đơn CHECKED_IN, ' +
+      'hoặc phòng RESERVED nhưng đơn giữ chỗ đã bị hủy. Quy tắc suy diễn: có đơn CHECKED_IN -> OCCUPIED; ' +
+      'có đơn CONFIRMED chưa tới ngày trả -> RESERVED; còn lại -> AVAILABLE. ' +
+      'Phòng MAINTENANCE / PENDING_APPROVAL / REJECTED được giữ nguyên vì do người vận hành đặt tay.',
+  })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Đồng bộ trạng thái phòng thành công',
+    exampleData: {
+      message: 'Đã đồng bộ lại trạng thái cho 5/20 phòng',
+      totalRooms: 20,
+      updatedCount: 5,
+      changes: [
+        { roomNumber: '103', from: 'OCCUPIED', to: 'AVAILABLE' },
+        { roomNumber: '201', from: 'OCCUPIED', to: 'AVAILABLE' },
+      ],
+    },
+  })
+  syncStatus() {
+    return this.roomsService.syncAllStatuses();
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Patch(':id/status')
   @ApiOperation({ summary: 'Cập nhật nhanh trạng thái phòng (Trống, Đang ở, Dọn dẹp, Bảo trì)' })
   @ApiSuccessResponse({

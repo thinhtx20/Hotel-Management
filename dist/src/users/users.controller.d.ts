@@ -1,5 +1,6 @@
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { Role } from '@prisma/client';
 export declare class UsersController {
@@ -16,6 +17,16 @@ export declare class UsersController {
         isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+    }>;
+    create(dto: CreateUserDto): Promise<{
+        id: string;
+        email: string;
+        fullName: string;
+        phone: string;
+        avatar: string;
+        role: import(".prisma/client").$Enums.Role;
+        isActive: boolean;
+        createdAt: Date;
     }>;
     findAll(role?: Role): Promise<{
         id: string;
@@ -79,8 +90,14 @@ export declare class UsersController {
             totalAmount: number;
             depositAmount: number;
             specialRequests: string | null;
+            confirmedAt: Date | null;
+            confirmationNote: string | null;
+            cancellationReason: string | null;
+            cancelledAt: Date | null;
             customerId: string;
             roomId: string;
+            confirmedById: string | null;
+            cancelledById: string | null;
         })[];
     }>;
     update(id: string, updateUserDto: UpdateUserDto): Promise<{

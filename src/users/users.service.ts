@@ -1,11 +1,50 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateUserDto } from './dto/create-user.dto';
 import { Role } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * Admin tạo tài khoản nhân viên với vai trò chỉ định.
+   * Khác /auth/register (luôn ép CUSTOMER và không trả về vai trò tùy chọn).
+   */
+  async create(dto: CreateUserDto) {
+    const email = dto.email.trim().toLowerCase();
+
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      throw new ConflictException('Email này đã được đăng ký trong hệ thống');
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.password, await bcrypt.genSalt(10));
+
+    return this.prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        fullName: dto.fullName,
+        phone: dto.phone,
+        avatar: dto.avatar,
+        role: dto.role,
+        isActive: dto.isActive ?? true,
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        avatar: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
+  }
 
   async findAll(role?: Role) {
     return this.prisma.user.findMany({

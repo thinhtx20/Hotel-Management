@@ -61,8 +61,10 @@ model User {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  bookings       Booking[]
-  issuedInvoices Invoice[]
+  bookings          Booking[]
+  issuedInvoices    Invoice[]
+  confirmedBookings Booking[] @relation("BookingConfirmedBy")
+  cancelledBookings Booking[] @relation("BookingCancelledBy")
 
   @@map("users")
 }
@@ -118,12 +120,28 @@ model Booking {
   depositAmount   Float              @default(0)
   status          BookingStatus      @default(PENDING)
   specialRequests String?
+
+  // Dấu vết xác nhận đơn (PENDING -> CONFIRMED)
+  confirmedAt        DateTime?
+  confirmedById      String?
+  confirmedBy        User?           @relation("BookingConfirmedBy", fields: [confirmedById], references: [id])
+  confirmationNote   String?
+
+  // Dấu vết hủy / từ chối đơn (-> CANCELLED)
+  cancellationReason String?
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelledBy        User?           @relation("BookingCancelledBy", fields: [cancelledById], references: [id])
+
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
   invoice         Invoice?
   serviceOrders   ExtraServiceOrder[]
 
+  @@index([status])
+  @@index([checkInDate])
+  @@index([checkOutDate])
   @@map("bookings")
 }
 

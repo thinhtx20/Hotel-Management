@@ -12,6 +12,7 @@ import { UpdateRoomDto } from './dto/update-room.dto';
 import { QueryAvailableRoomsDto } from './dto/query-available-rooms.dto';
 import { RoomSortOption, SearchRoomDto } from './dto/search-room.dto';
 import { toRoomResponse } from './dto/room-response.dto';
+import { deriveRoomStatus } from '../common/utils/room-status.util';
 import { BookingStatus, RoomStatus } from '@prisma/client';
 
 @Injectable()
@@ -343,6 +344,52 @@ export class RoomsService {
     });
 
     return toRoomResponse(updated, true);
+  }
+
+  /**
+   * Rà soát và đồng bộ lại trạng thái của toàn bộ phòng theo lịch đặt phòng thực tế.
+   * Dùng để chữa dữ liệu đã lệch (phòng OCCUPIED nhưng không có đơn CHECKED_IN nào)
+   * khiến ma trận phòng của lễ tân hiện "Có khách" mà không có khách.
+   * Phòng đang MAINTENANCE / PENDING_APPROVAL / REJECTED được giữ nguyên.
+   */
+  async syncAllStatuses() {
+    const rooms = await this.prisma.room.findMany({
+      include: {
+        bookings: {
+          where: { status: { in: [BookingStatus.CHECKED_IN, BookingStatus.CONFIRMED] } },
+          select: { status: true, checkOutDate: true },
+        },
+      },
+      orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
+    });
+
+    const now = new Date();
+    const changes: Array<{ roomNumber: string; from: RoomStatus; to: RoomStatus }> = [];
+
+    for (const room of rooms) {
+      const next = deriveRoomStatus(room.status, room.bookings, now);
+      if (next !== room.status) {
+        await this.prisma.room.update({
+          where: { id: room.id },
+          data: { status: next },
+        });
+        changes.push({ roomNumber: room.roomNumber, from: room.status, to: next });
+      }
+    }
+
+    if (changes.length > 0) {
+      await this.redis.delByPattern('cache:rooms:*');
+    }
+
+    return {
+      message:
+        changes.length > 0
+          ? `Đã đồng bộ lại trạng thái cho ${changes.length}/${rooms.length} phòng`
+          : `Toàn bộ ${rooms.length} phòng đã khớp với lịch đặt phòng, không cần thay đổi`,
+      totalRooms: rooms.length,
+      updatedCount: changes.length,
+      changes,
+    };
   }
 
   async updateStatus(id: string, status: RoomStatus) {

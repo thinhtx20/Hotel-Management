@@ -17,6 +17,16 @@ export declare class RoomsService {
     findAvailable(query: QueryAvailableRoomsDto, includeNotes?: boolean): Promise<any[]>;
     search(dto: SearchRoomDto, includeNotes?: boolean): Promise<import("./dto/room-response.dto").RoomResponse[]>;
     update(id: string, dto: UpdateRoomDto): Promise<import("./dto/room-response.dto").RoomResponse>;
+    syncAllStatuses(): Promise<{
+        message: string;
+        totalRooms: number;
+        updatedCount: number;
+        changes: {
+            roomNumber: string;
+            from: RoomStatus;
+            to: RoomStatus;
+        }[];
+    }>;
     updateStatus(id: string, status: RoomStatus): Promise<import("./dto/room-response.dto").RoomResponse>;
     remove(id: string): Promise<{
         id: string;

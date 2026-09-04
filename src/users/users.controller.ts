@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Body,
   Patch,
   Param,
@@ -12,6 +13,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { UsersService } from './users.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -50,6 +52,29 @@ export class UsersController {
     @Body() dto: UpdateMeDto,
   ) {
     return this.usersService.updateMe(userId, dto);
+  }
+
+  @Post()
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'Admin tạo tài khoản nhân viên (Lễ tân / Thu ngân / Admin)',
+    description:
+      'Đường chính thức để cấp tài khoản nội bộ, thay cho việc mượn POST /auth/register ' +
+      '(đăng ký công khai luôn ép vai trò CUSTOMER).',
+  })
+  @ApiSuccessResponse({
+    status: 201,
+    description: 'Tạo tài khoản nhân viên thành công',
+    exampleData: SAMPLE_USER,
+  })
+  @ApiErrorResponse({
+    status: 409,
+    message: 'Email này đã được đăng ký trong hệ thống',
+    error: 'Conflict',
+    path: '/api/v1/users',
+  })
+  create(@Body() dto: CreateUserDto) {
+    return this.usersService.create(dto);
   }
 
   @Get()
