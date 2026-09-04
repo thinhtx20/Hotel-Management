@@ -1,4 +1,5 @@
 import { PrismaService } from '../prisma/prisma.service';
+import { DailyRevenuePoint } from '../common/utils/revenue.util';
 export declare class AnalyticsService {
     private prisma;
     constructor(prisma: PrismaService);
@@ -29,13 +30,23 @@ export declare class AnalyticsService {
             CLEANING: number;
             MAINTENANCE: number;
         };
-        revenue7Days: {
-            date: string;
-            label: string;
-            amount: number;
-            revenue: number;
+        revenue7Days: DailyRevenuePoint[];
+        revenueRanges: Record<string, {
+            range: number;
+            from: string;
+            to: string;
+            series: DailyRevenuePoint[];
+            total: number;
+            average: number;
+            peak: {
+                date: string;
+                revenue: number;
+            };
+            previousTotal: number;
+            changePercent: number;
             invoiceCount: number;
-        }[];
+        }>;
+        availableRanges: number[];
         rooms: {
             total: number;
             available: number;
@@ -54,19 +65,37 @@ export declare class AnalyticsService {
     }>;
     getDailyRevenue(days?: number): Promise<{
         days: number;
-        series: {
-            date: string;
-            label: string;
-            revenue: number;
+        availableRanges: number[];
+        ranges: Record<string, {
+            range: number;
+            from: string;
+            to: string;
+            series: DailyRevenuePoint[];
+            total: number;
+            average: number;
+            peak: {
+                date: string;
+                revenue: number;
+            };
+            previousTotal: number;
+            changePercent: number;
             invoiceCount: number;
-        }[];
+        }>;
+        range: number;
+        from: string;
+        to: string;
+        series: DailyRevenuePoint[];
         total: number;
         average: number;
         peak: {
             date: string;
             revenue: number;
         };
+        previousTotal: number;
+        changePercent: number;
+        invoiceCount: number;
     }>;
+    private summarizeRange;
     getRevenueAnalytics(year?: number): Promise<{
         year: number;
         summary: {

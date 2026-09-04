@@ -20,6 +20,7 @@ const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
 const api_success_response_decorator_1 = require("../common/decorators/api-success-response.decorator");
+const revenue_util_1 = require("../common/utils/revenue.util");
 const client_1 = require("@prisma/client");
 let AnalyticsController = class AnalyticsController {
     constructor(analyticsService) {
@@ -31,8 +32,9 @@ let AnalyticsController = class AnalyticsController {
     getRevenue(year) {
         return this.analyticsService.getRevenueAnalytics(year ? Number(year) : undefined);
     }
-    getDailyRevenue(days) {
-        return this.analyticsService.getDailyRevenue(days ? Number(days) : 7);
+    getDailyRevenue(range, days) {
+        const selected = range ?? days;
+        return this.analyticsService.getDailyRevenue(selected !== undefined ? Number(selected) : revenue_util_1.DEFAULT_REVENUE_RANGE);
     }
     getOccupancyByType() {
         return this.analyticsService.getOccupancyByRoomType();
@@ -110,31 +112,53 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], AnalyticsController.prototype, "getRevenue", null);
 __decorate([
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER),
     (0, common_1.Get)('revenue/daily'),
-    (0, swagger_1.ApiOperation)({ summary: 'Báo cáo doanh thu theo chuỗi ngày gần nhất (mặc định 7 ngày)' }),
-    (0, swagger_1.ApiQuery)({ name: 'days', type: Number, required: false, example: 7 }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Doanh thu theo ngày, chia sẵn 4 khoảng 1 / 7 / 14 / 30 ngày (mặc định 7)',
+        description: 'Trả về cùng lúc cả 4 khoảng chuẩn trong `ranges` để FE bấm chip lọc là đổi ngay, ' +
+            'không phải gọi lại API. `series` / `total` / `average` / `peak` ở cấp ngoài ứng với ' +
+            'khoảng đang chọn qua `?range=`. Doanh thu là **tiền thực thu** (`paidAmount`) ghi nhận ' +
+            'theo ngày thanh toán, tính cả hóa đơn thu một phần (PARTIAL).',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'range', type: Number, required: false, enum: revenue_util_1.REVENUE_RANGES, example: 7 }),
+    (0, swagger_1.ApiQuery)({ name: 'days', type: Number, required: false, example: 7, description: 'Alias cũ của range' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Lấy báo cáo doanh thu theo ngày thành công',
         exampleData: {
+            range: 7,
             days: 7,
+            availableRanges: [1, 7, 14, 30],
+            from: '2026-08-28',
+            to: '2026-09-03',
             series: [
-                { date: '2026-08-28', label: 'T6', revenue: 96200000, invoiceCount: 4 },
-                { date: '2026-08-29', label: 'T7', revenue: 112400000, invoiceCount: 6 },
-                { date: '2026-08-30', label: 'CN', revenue: 125000000, invoiceCount: 7 },
-                { date: '2026-08-31', label: 'T2', revenue: 84000000, invoiceCount: 3 },
-                { date: '2026-09-01', label: 'T3', revenue: 91500000, invoiceCount: 4 },
-                { date: '2026-09-02', label: 'T4', revenue: 141900000, invoiceCount: 8 },
-                { date: '2026-09-03', label: 'T5', revenue: 105000000, invoiceCount: 5 },
+                { date: '2026-08-28', label: 'T6', dateLabel: '28/08', revenue: 96200000, amount: 96200000, invoiceCount: 4 },
+                { date: '2026-08-29', label: 'T7', dateLabel: '29/08', revenue: 112400000, amount: 112400000, invoiceCount: 6 },
+                { date: '2026-08-30', label: 'CN', dateLabel: '30/08', revenue: 125000000, amount: 125000000, invoiceCount: 7 },
+                { date: '2026-08-31', label: 'T2', dateLabel: '31/08', revenue: 84000000, amount: 84000000, invoiceCount: 3 },
+                { date: '2026-09-01', label: 'T3', dateLabel: '01/09', revenue: 91500000, amount: 91500000, invoiceCount: 4 },
+                { date: '2026-09-02', label: 'T4', dateLabel: '02/09', revenue: 141900000, amount: 141900000, invoiceCount: 8 },
+                { date: '2026-09-03', label: 'T5', dateLabel: '03/09', revenue: 105000000, amount: 105000000, invoiceCount: 5 },
             ],
             total: 756000000,
             average: 108000000,
             peak: { date: '2026-09-02', revenue: 141900000 },
+            previousTotal: 673000000,
+            changePercent: 12.3,
+            invoiceCount: 37,
+            ranges: {
+                '1': { range: 1, from: '2026-09-03', to: '2026-09-03', total: 105000000, average: 105000000, previousTotal: 141900000, changePercent: -26.0, invoiceCount: 5, peak: { date: '2026-09-03', revenue: 105000000 }, series: ['...'] },
+                '7': { range: 7, from: '2026-08-28', to: '2026-09-03', total: 756000000, average: 108000000, previousTotal: 673000000, changePercent: 12.3, invoiceCount: 37, peak: { date: '2026-09-02', revenue: 141900000 }, series: ['...'] },
+                '14': { range: 14, from: '2026-08-21', to: '2026-09-03', total: 1429000000, average: 102071429, previousTotal: 1310000000, changePercent: 9.1, invoiceCount: 71, peak: { date: '2026-09-02', revenue: 141900000 }, series: ['...'] },
+                '30': { range: 30, from: '2026-08-05', to: '2026-09-03', total: 3050000000, average: 101666667, previousTotal: 2890000000, changePercent: 5.5, invoiceCount: 152, peak: { date: '2026-09-02', revenue: 141900000 }, series: ['...'] },
+            },
         },
     }),
-    __param(0, (0, common_1.Query)('days')),
+    __param(0, (0, common_1.Query)('range')),
+    __param(1, (0, common_1.Query)('days')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number]),
+    __metadata("design:paramtypes", [Number, Number]),
     __metadata("design:returntype", void 0)
 ], AnalyticsController.prototype, "getDailyRevenue", null);
 __decorate([

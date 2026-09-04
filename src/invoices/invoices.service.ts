@@ -3,6 +3,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { PaymentMethod, PaymentStatus } from '@prisma/client';
+import {
+  collectedRevenueWhere,
+  endOfDay,
+  formatLocalDate,
+  roundMoney,
+  startOfDay,
+} from '../common/utils/revenue.util';
 
 @Injectable()
 export class InvoicesService {
@@ -141,7 +148,10 @@ export class InvoicesService {
           : PaymentStatus.PARTIAL,
         notes: dto.notes ? `${invoice.notes || ''}\n${dto.notes}`.trim() : invoice.notes,
         issuedById: cashierId,
-        paidAt: isFullyPaid ? new Date() : invoice.paidAt,
+        // Luôn đóng dấu thời điểm thu tiền, kể cả khi mới thu một phần.
+        // Trước đây hóa đơn PARTIAL để paidAt = null nên toàn bộ tiền đã thu
+        // không xuất hiện ở bất kỳ báo cáo doanh thu theo ngày nào.
+        paidAt: new Date(),
       },
       include: {
         booking: {
@@ -233,11 +243,8 @@ export class InvoicesService {
       }
     }
 
-    const startOfDay = new Date(targetDate);
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const endOfDay = new Date(targetDate);
-    endOfDay.setHours(23, 59, 59, 999);
+    const dayStart = startOfDay(targetDate);
+    const dayEnd = endOfDay(targetDate);
 
     const [
       revenueTodayAgg,
@@ -246,21 +253,21 @@ export class InvoicesService {
       unpaidInvoices,
       partialInvoices,
     ] = await Promise.all([
+      // Dùng chung quy tắc với /analytics để thu ngân và dashboard
+      // không còn hiển thị hai con số khác nhau cho cùng một ngày.
       this.prisma.invoice.aggregate({
         _sum: { paidAmount: true },
-        where: {
-          paidAt: { gte: startOfDay, lte: endOfDay },
-        },
+        where: collectedRevenueWhere(dayStart, dayEnd),
       }),
       this.prisma.invoice.count({
         where: {
-          createdAt: { gte: startOfDay, lte: endOfDay },
+          createdAt: { gte: dayStart, lte: dayEnd },
         },
       }),
       this.prisma.invoice.count({
         where: {
           paymentStatus: PaymentStatus.PAID,
-          paidAt: { gte: startOfDay, lte: endOfDay },
+          paidAt: { gte: dayStart, lte: dayEnd },
         },
       }),
       this.prisma.invoice.count({
@@ -275,10 +282,10 @@ export class InvoicesService {
       }),
     ]);
 
-    const todayRevenue = revenueTodayAgg._sum.paidAmount || 0;
+    const todayRevenue = roundMoney(revenueTodayAgg._sum.paidAmount || 0);
 
     return {
-      date: startOfDay.toISOString().split('T')[0],
+      date: formatLocalDate(dayStart),
       todayRevenue,
       totalInvoices,
       paidInvoices,

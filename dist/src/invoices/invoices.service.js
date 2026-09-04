@@ -13,6 +13,7 @@ exports.InvoicesService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const client_1 = require("@prisma/client");
+const revenue_util_1 = require("../common/utils/revenue.util");
 let InvoicesService = class InvoicesService {
     constructor(prisma) {
         this.prisma = prisma;
@@ -120,7 +121,7 @@ let InvoicesService = class InvoicesService {
                     : client_1.PaymentStatus.PARTIAL,
                 notes: dto.notes ? `${invoice.notes || ''}\n${dto.notes}`.trim() : invoice.notes,
                 issuedById: cashierId,
-                paidAt: isFullyPaid ? new Date() : invoice.paidAt,
+                paidAt: new Date(),
             },
             include: {
                 booking: {
@@ -191,26 +192,22 @@ let InvoicesService = class InvoicesService {
                 targetDate = parsed;
             }
         }
-        const startOfDay = new Date(targetDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(targetDate);
-        endOfDay.setHours(23, 59, 59, 999);
+        const dayStart = (0, revenue_util_1.startOfDay)(targetDate);
+        const dayEnd = (0, revenue_util_1.endOfDay)(targetDate);
         const [revenueTodayAgg, totalInvoices, paidInvoices, unpaidInvoices, partialInvoices,] = await Promise.all([
             this.prisma.invoice.aggregate({
                 _sum: { paidAmount: true },
-                where: {
-                    paidAt: { gte: startOfDay, lte: endOfDay },
-                },
+                where: (0, revenue_util_1.collectedRevenueWhere)(dayStart, dayEnd),
             }),
             this.prisma.invoice.count({
                 where: {
-                    createdAt: { gte: startOfDay, lte: endOfDay },
+                    createdAt: { gte: dayStart, lte: dayEnd },
                 },
             }),
             this.prisma.invoice.count({
                 where: {
                     paymentStatus: client_1.PaymentStatus.PAID,
-                    paidAt: { gte: startOfDay, lte: endOfDay },
+                    paidAt: { gte: dayStart, lte: dayEnd },
                 },
             }),
             this.prisma.invoice.count({
@@ -224,9 +221,9 @@ let InvoicesService = class InvoicesService {
                 },
             }),
         ]);
-        const todayRevenue = revenueTodayAgg._sum.paidAmount || 0;
+        const todayRevenue = (0, revenue_util_1.roundMoney)(revenueTodayAgg._sum.paidAmount || 0);
         return {
-            date: startOfDay.toISOString().split('T')[0],
+            date: (0, revenue_util_1.formatLocalDate)(dayStart),
             todayRevenue,
             totalInvoices,
             paidInvoices,

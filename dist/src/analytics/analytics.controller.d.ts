@@ -29,13 +29,23 @@ export declare class AnalyticsController {
             CLEANING: number;
             MAINTENANCE: number;
         };
-        revenue7Days: {
-            date: string;
-            label: string;
-            amount: number;
-            revenue: number;
+        revenue7Days: import("../common/utils/revenue.util").DailyRevenuePoint[];
+        revenueRanges: Record<string, {
+            range: number;
+            from: string;
+            to: string;
+            series: import("../common/utils/revenue.util").DailyRevenuePoint[];
+            total: number;
+            average: number;
+            peak: {
+                date: string;
+                revenue: number;
+            };
+            previousTotal: number;
+            changePercent: number;
             invoiceCount: number;
-        }[];
+        }>;
+        availableRanges: number[];
         rooms: {
             total: number;
             available: number;
@@ -68,20 +78,37 @@ export declare class AnalyticsController {
             invoiceCount: number;
         }[];
     }>;
-    getDailyRevenue(days?: number): Promise<{
+    getDailyRevenue(range?: number, days?: number): Promise<{
         days: number;
-        series: {
-            date: string;
-            label: string;
-            revenue: number;
+        availableRanges: number[];
+        ranges: Record<string, {
+            range: number;
+            from: string;
+            to: string;
+            series: import("../common/utils/revenue.util").DailyRevenuePoint[];
+            total: number;
+            average: number;
+            peak: {
+                date: string;
+                revenue: number;
+            };
+            previousTotal: number;
+            changePercent: number;
             invoiceCount: number;
-        }[];
+        }>;
+        range: number;
+        from: string;
+        to: string;
+        series: import("../common/utils/revenue.util").DailyRevenuePoint[];
         total: number;
         average: number;
         peak: {
             date: string;
             revenue: number;
         };
+        previousTotal: number;
+        changePercent: number;
+        invoiceCount: number;
     }>;
     getOccupancyByType(): Promise<{
         roomTypeId: string;

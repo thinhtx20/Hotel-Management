@@ -114,17 +114,78 @@ Client gửi payload:
       "MAINTENANCE": 0
     },
     "revenue7Days": [
-      { "date": "2026-08-28", "label": "T5", "amount": 96200000, "invoiceCount": 4 },
-      { "date": "2026-08-29", "label": "T6", "amount": 112400000, "invoiceCount": 6 },
-      { "date": "2026-08-30", "label": "T7", "amount": 135000000, "invoiceCount": 7 },
-      { "date": "2026-08-31", "label": "CN", "amount": 148000000, "invoiceCount": 8 },
-      { "date": "2026-09-01", "label": "T2", "amount": 105000000, "invoiceCount": 5 },
-      { "date": "2026-09-02", "label": "T3", "amount": 141900000, "invoiceCount": 7 },
-      { "date": "2026-09-03", "label": "T4", "amount": 128500000, "invoiceCount": 6 }
-    ]
+      { "date": "2026-08-28", "label": "T5", "dateLabel": "28/08", "amount": 96200000, "revenue": 96200000, "invoiceCount": 4 },
+      { "date": "2026-08-29", "label": "T6", "dateLabel": "29/08", "amount": 112400000, "revenue": 112400000, "invoiceCount": 6 },
+      { "date": "2026-08-30", "label": "T7", "dateLabel": "30/08", "amount": 135000000, "revenue": 135000000, "invoiceCount": 7 },
+      { "date": "2026-08-31", "label": "CN", "dateLabel": "31/08", "amount": 148000000, "revenue": 148000000, "invoiceCount": 8 },
+      { "date": "2026-09-01", "label": "T2", "dateLabel": "01/09", "amount": 105000000, "revenue": 105000000, "invoiceCount": 5 },
+      { "date": "2026-09-02", "label": "T3", "dateLabel": "02/09", "amount": 141900000, "revenue": 141900000, "invoiceCount": 7 },
+      { "date": "2026-09-03", "label": "T4", "dateLabel": "03/09", "amount": 128500000, "revenue": 128500000, "invoiceCount": 6 }
+    ],
+    "availableRanges": [1, 7, 14, 30],
+    "revenueRanges": { "1": { "...": "" }, "7": { "...": "" }, "14": { "...": "" }, "30": { "...": "" } }
   }
 }
 ```
+
+`revenueRanges` là đúng khối `ranges` của `GET /analytics/revenue/daily` bên dưới — dashboard nhúng sẵn để FE dựng 4 chip lọc mà không phải gọi thêm API.
+
+### A2. Doanh thu theo ngày, 4 khoảng (`GET /api/v1/analytics/revenue/daily?range=7`)
+
+Quyền: `ADMIN`, `RECEPTIONIST`, `CASHIER`.
+
+Tham số `range` nhận **1 / 7 / 14 / 30** (mặc định `7`). `days` vẫn dùng được như alias cũ.
+Một lần gọi trả về **cả 4 khoảng** trong `ranges`, nên bấm chip lọc là đổi được ngay ở client.
+Các field `series` / `total` / `average` / `peak` ở cấp ngoài ứng với khoảng đang chọn.
+
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "data": {
+    "range": 7,
+    "days": 7,
+    "availableRanges": [1, 7, 14, 30],
+    "from": "2026-08-28",
+    "to": "2026-09-03",
+    "series": [
+      { "date": "2026-09-03", "label": "T4", "dateLabel": "03/09", "revenue": 128500000, "amount": 128500000, "invoiceCount": 6 }
+    ],
+    "total": 867000000,
+    "average": 123857143,
+    "peak": { "date": "2026-08-31", "revenue": 148000000 },
+    "previousTotal": 773000000,
+    "changePercent": 12.2,
+    "invoiceCount": 43,
+    "ranges": {
+      "1":  { "range": 1,  "from": "2026-09-03", "to": "2026-09-03", "series": [], "total": 128500000, "average": 128500000, "peak": {}, "previousTotal": 141900000, "changePercent": -9.4, "invoiceCount": 6 },
+      "7":  { "range": 7,  "from": "2026-08-28", "to": "2026-09-03", "series": [], "total": 867000000, "average": 123857143, "peak": {}, "previousTotal": 773000000, "changePercent": 12.2, "invoiceCount": 43 },
+      "14": { "range": 14, "from": "2026-08-21", "to": "2026-09-03", "series": [], "total": 1640000000, "average": 117142857, "peak": {}, "previousTotal": 1512000000, "changePercent": 8.5, "invoiceCount": 84 },
+      "30": { "range": 30, "from": "2026-08-05", "to": "2026-09-03", "series": [], "total": 3480000000, "average": 116000000, "peak": {}, "previousTotal": 3295000000, "changePercent": 5.6, "invoiceCount": 178 }
+    }
+  }
+}
+```
+
+Ghi chú cho FE:
+- `series` luôn có **đủ số điểm bằng `range`**, ngày không phát sinh tiền trả `revenue: 0` chứ không bị bỏ khỏi mảng — vẽ biểu đồ không cần vá lỗ.
+- `revenue` và `amount` là cùng một số, để tương thích cả hai tên field client đang đọc.
+- `label` là thứ trong tuần (`T2`…`CN`), `dateLabel` là `dd/MM` — dùng `dateLabel` cho khoảng 14/30 ngày vì thứ bị lặp lại.
+- `changePercent` so với **kỳ liền trước cùng độ dài**, trả `null` khi kỳ trước chưa có doanh thu (đừng hiển thị `0%` trong trường hợp này).
+
+### Quy tắc tính doanh thu (áp dụng cho mọi endpoint tiền)
+
+Ba endpoint `/analytics/dashboard`, `/analytics/revenue/daily` và `/invoices/summary` trước đây mỗi chỗ lọc một kiểu nên trả ba con số khác nhau cho cùng một ngày. Nay dùng chung một quy tắc:
+
+| Quy tắc | Giá trị |
+|---|---|
+| Số tiền lấy từ | `paidAmount` (**tiền thực thu**), không phải `finalAmount` |
+| Gán vào ngày nào | `paidAt` (ngày thanh toán), không phải `createdAt` |
+| Trạng thái được tính | `PAID` **và** `PARTIAL` — tiền đã vào két thì phải thấy |
+| Trạng thái bị loại | `UNPAID`, `REFUNDED` |
+| Múi giờ cắt ngày | `Asia/Ho_Chi_Minh` (`TZ` đặt trong `render.yaml` + `Dockerfile`) |
+
+FE **không tự cộng `paidAmount` client-side nữa** — con số đó sai ngay khi có phân trang. Lấy `todayRevenue` từ `/invoices/summary` hoặc `/analytics/dashboard`.
 
 ### B. Danh mục dịch vụ (`GET /api/v1/services`)
 ```json

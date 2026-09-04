@@ -11,6 +11,9 @@ services:
           property: connectionString
       - key: NODE_ENV
         value: production
+      # Báo cáo doanh thu cắt ngày theo giờ khách sạn, không theo UTC
+      - key: TZ
+        value: Asia/Ho_Chi_Minh
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN

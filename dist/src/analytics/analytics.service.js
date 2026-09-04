@@ -13,19 +13,19 @@ exports.AnalyticsService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const client_1 = require("@prisma/client");
+const revenue_util_1 = require("../common/utils/revenue.util");
 let AnalyticsService = class AnalyticsService {
     constructor(prisma) {
         this.prisma = prisma;
     }
     async getDashboardOverview() {
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        const todayEnd = new Date();
-        todayEnd.setHours(23, 59, 59, 999);
-        const yesterdayStart = new Date(todayStart);
-        yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-        const yesterdayEnd = new Date(todayEnd);
-        yesterdayEnd.setDate(yesterdayEnd.getDate() - 1);
+        const today = new Date();
+        const todayStart = (0, revenue_util_1.startOfDay)(today);
+        const todayEnd = (0, revenue_util_1.endOfDay)(today);
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStart = (0, revenue_util_1.startOfDay)(yesterday);
+        const yesterdayEnd = (0, revenue_util_1.endOfDay)(yesterday);
         const [totalRooms, availableRooms, occupiedRooms, reservedRooms, cleaningRooms, maintenanceRooms,] = await Promise.all([
             this.prisma.room.count(),
             this.prisma.room.count({ where: { status: client_1.RoomStatus.AVAILABLE } }),
@@ -56,21 +56,15 @@ let AnalyticsService = class AnalyticsService {
         const [allRevenueAggregate, todayRevenueAggregate, yesterdayRevenueAggregate, pendingBookings, unpaidInvoices,] = await Promise.all([
             this.prisma.invoice.aggregate({
                 _sum: { paidAmount: true },
-                where: { paymentStatus: client_1.PaymentStatus.PAID },
+                where: { paymentStatus: { in: revenue_util_1.COLLECTED_PAYMENT_STATUSES } },
             }),
             this.prisma.invoice.aggregate({
                 _sum: { paidAmount: true },
-                where: {
-                    paymentStatus: client_1.PaymentStatus.PAID,
-                    paidAt: { gte: todayStart, lte: todayEnd },
-                },
+                where: (0, revenue_util_1.collectedRevenueWhere)(todayStart, todayEnd),
             }),
             this.prisma.invoice.aggregate({
                 _sum: { paidAmount: true },
-                where: {
-                    paymentStatus: client_1.PaymentStatus.PAID,
-                    paidAt: { gte: yesterdayStart, lte: yesterdayEnd },
-                },
+                where: (0, revenue_util_1.collectedRevenueWhere)(yesterdayStart, yesterdayEnd),
             }),
             this.prisma.booking.count({
                 where: { status: client_1.BookingStatus.PENDING },
@@ -81,21 +75,15 @@ let AnalyticsService = class AnalyticsService {
                 },
             }),
         ]);
-        const todayRevenue = todayRevenueAggregate._sum.paidAmount || 0;
-        const yesterdayRevenue = yesterdayRevenueAggregate._sum.paidAmount || 0;
+        const todayRevenue = (0, revenue_util_1.roundMoney)(todayRevenueAggregate._sum.paidAmount || 0);
+        const yesterdayRevenue = (0, revenue_util_1.roundMoney)(yesterdayRevenueAggregate._sum.paidAmount || 0);
         let revenueChangePercent = null;
         if (yesterdayRevenue > 0) {
             revenueChangePercent = Number((((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100).toFixed(1));
         }
         const occupancyRate = totalRooms > 0 ? Number(((occupiedRooms / totalRooms) * 100).toFixed(1)) : 0;
-        const dailyRev = await this.getDailyRevenue(7);
-        const revenue7Days = dailyRev.series.map((s) => ({
-            date: s.date,
-            label: s.label,
-            amount: s.revenue,
-            revenue: s.revenue,
-            invoiceCount: s.invoiceCount,
-        }));
+        const dailyRev = await this.getDailyRevenue(revenue_util_1.DEFAULT_REVENUE_RANGE);
+        const revenue7Days = dailyRev.series;
         const roomStatusBreakdown = {
             AVAILABLE: availableRooms,
             OCCUPIED: occupiedRooms,
@@ -125,6 +113,8 @@ let AnalyticsService = class AnalyticsService {
             unpaidInvoices,
             roomStatusBreakdown,
             revenue7Days,
+            revenueRanges: dailyRev.ranges,
+            availableRanges: revenue_util_1.REVENUE_RANGES,
             rooms: {
                 total: totalRooms,
                 available: availableRooms,
@@ -139,86 +129,92 @@ let AnalyticsService = class AnalyticsService {
                 expectedCheckOuts: todayCheckOuts,
                 activeBookings,
             },
-            totalRevenue: allRevenueAggregate._sum.paidAmount || 0,
+            totalRevenue: (0, revenue_util_1.roundMoney)(allRevenueAggregate._sum.paidAmount || 0),
         };
     }
-    async getDailyRevenue(days = 7) {
-        const numDays = Math.max(1, Math.min(days || 7, 90));
-        const dayBuckets = [];
-        const weekdayLabels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-        for (let i = numDays - 1; i >= 0; i--) {
-            const d = new Date();
-            d.setDate(d.getDate() - i);
-            const start = new Date(d);
-            start.setHours(0, 0, 0, 0);
-            const end = new Date(d);
-            end.setHours(23, 59, 59, 999);
-            const year = start.getFullYear();
-            const month = String(start.getMonth() + 1).padStart(2, '0');
-            const day = String(start.getDate()).padStart(2, '0');
-            const dateStr = `${year}-${month}-${day}`;
-            const label = weekdayLabels[start.getDay()];
-            dayBuckets.push({ dateStr, label, start, end });
-        }
-        const rangeStart = dayBuckets[0].start;
-        const rangeEnd = dayBuckets[dayBuckets.length - 1].end;
+    async getDailyRevenue(days = revenue_util_1.DEFAULT_REVENUE_RANGE) {
+        const range = (0, revenue_util_1.normalizeRevenueRange)(days);
+        const maxRange = Math.max(range, ...revenue_util_1.REVENUE_RANGES);
+        const buckets = (0, revenue_util_1.buildDayBuckets)(maxRange * 2);
         const invoices = await this.prisma.invoice.findMany({
-            where: {
-                paidAt: { gte: rangeStart, lte: rangeEnd },
-                paymentStatus: client_1.PaymentStatus.PAID,
-            },
+            where: (0, revenue_util_1.collectedRevenueWhere)(buckets[0].start, buckets[buckets.length - 1].end),
             select: {
                 paidAmount: true,
                 paidAt: true,
             },
         });
-        const series = dayBuckets.map((bucket) => {
-            let revenue = 0;
-            let invoiceCount = 0;
-            for (const inv of invoices) {
-                if (inv.paidAt && inv.paidAt >= bucket.start && inv.paidAt <= bucket.end) {
-                    revenue += inv.paidAmount;
-                    invoiceCount += 1;
-                }
-            }
+        const byDate = new Map();
+        for (const inv of invoices) {
+            if (!inv.paidAt)
+                continue;
+            const key = (0, revenue_util_1.formatLocalDate)(inv.paidAt);
+            const entry = byDate.get(key) || { revenue: 0, invoiceCount: 0 };
+            entry.revenue += inv.paidAmount;
+            entry.invoiceCount += 1;
+            byDate.set(key, entry);
+        }
+        const allDays = buckets.map((bucket) => {
+            const entry = byDate.get(bucket.date);
+            const revenue = (0, revenue_util_1.roundMoney)(entry?.revenue || 0);
             return {
-                date: bucket.dateStr,
+                date: bucket.date,
                 label: bucket.label,
+                dateLabel: bucket.dateLabel,
                 revenue,
-                invoiceCount,
+                amount: revenue,
+                invoiceCount: entry?.invoiceCount || 0,
             };
         });
-        const total = series.reduce((acc, item) => acc + item.revenue, 0);
-        const average = numDays > 0 ? Math.round(total / numDays) : 0;
-        let peak = series[0]
-            ? { date: series[0].date, revenue: series[0].revenue }
-            : { date: '', revenue: 0 };
-        for (const item of series) {
-            if (item.revenue > peak.revenue) {
-                peak = { date: item.date, revenue: item.revenue };
-            }
+        const ranges = {};
+        for (const preset of revenue_util_1.REVENUE_RANGES) {
+            ranges[preset] = this.summarizeRange(allDays, preset);
         }
         return {
-            days: numDays,
+            ...this.summarizeRange(allDays, range),
+            days: range,
+            availableRanges: revenue_util_1.REVENUE_RANGES,
+            ranges,
+        };
+    }
+    summarizeRange(allDays, range) {
+        const series = allDays.slice(-range);
+        const previous = allDays.slice(-range * 2, -range);
+        const total = (0, revenue_util_1.roundMoney)(series.reduce((acc, d) => acc + d.revenue, 0));
+        const previousTotal = (0, revenue_util_1.roundMoney)(previous.reduce((acc, d) => acc + d.revenue, 0));
+        const average = series.length > 0 ? (0, revenue_util_1.roundMoney)(total / series.length) : 0;
+        let peak = { date: '', revenue: 0 };
+        for (const point of series) {
+            if (!peak.date || point.revenue > peak.revenue) {
+                peak = { date: point.date, revenue: point.revenue };
+            }
+        }
+        const changePercent = previousTotal > 0
+            ? Number((((total - previousTotal) / previousTotal) * 100).toFixed(1))
+            : null;
+        return {
+            range,
+            from: series[0]?.date || '',
+            to: series[series.length - 1]?.date || '',
             series,
             total,
             average,
             peak,
+            previousTotal,
+            changePercent,
+            invoiceCount: series.reduce((acc, d) => acc + d.invoiceCount, 0),
         };
     }
     async getRevenueAnalytics(year) {
         const targetYear = year || new Date().getFullYear();
-        const startDate = new Date(targetYear, 0, 1);
-        const endDate = new Date(targetYear, 11, 31, 23, 59, 59);
+        const startDate = (0, revenue_util_1.startOfDay)(new Date(targetYear, 0, 1));
+        const endDate = (0, revenue_util_1.endOfDay)(new Date(targetYear, 11, 31));
         const invoices = await this.prisma.invoice.findMany({
-            where: {
-                paidAt: { gte: startDate, lte: endDate },
-                paymentStatus: client_1.PaymentStatus.PAID,
-            },
+            where: (0, revenue_util_1.collectedRevenueWhere)(startDate, endDate),
             select: {
                 roomAmount: true,
                 servicesAmount: true,
                 finalAmount: true,
+                paidAmount: true,
                 paidAt: true,
             },
         });
@@ -233,23 +229,29 @@ let AnalyticsService = class AnalyticsService {
         let totalRoomRevenue = 0;
         let totalServicesRevenue = 0;
         invoices.forEach((inv) => {
-            if (inv.paidAt) {
-                const month = inv.paidAt.getMonth();
-                monthlyRevenue[month].totalRevenue += inv.finalAmount;
-                monthlyRevenue[month].roomRevenue += inv.roomAmount;
-                monthlyRevenue[month].serviceRevenue += inv.servicesAmount;
-                monthlyRevenue[month].invoiceCount += 1;
-                totalYearRevenue += inv.finalAmount;
-                totalRoomRevenue += inv.roomAmount;
-                totalServicesRevenue += inv.servicesAmount;
-            }
+            if (!inv.paidAt)
+                return;
+            const collectedRatio = inv.finalAmount > 0 ? Math.min(inv.paidAmount / inv.finalAmount, 1) : 0;
+            const month = inv.paidAt.getMonth();
+            monthlyRevenue[month].totalRevenue += inv.paidAmount;
+            monthlyRevenue[month].roomRevenue += inv.roomAmount * collectedRatio;
+            monthlyRevenue[month].serviceRevenue += inv.servicesAmount * collectedRatio;
+            monthlyRevenue[month].invoiceCount += 1;
+            totalYearRevenue += inv.paidAmount;
+            totalRoomRevenue += inv.roomAmount * collectedRatio;
+            totalServicesRevenue += inv.servicesAmount * collectedRatio;
+        });
+        monthlyRevenue.forEach((m) => {
+            m.totalRevenue = (0, revenue_util_1.roundMoney)(m.totalRevenue);
+            m.roomRevenue = (0, revenue_util_1.roundMoney)(m.roomRevenue);
+            m.serviceRevenue = (0, revenue_util_1.roundMoney)(m.serviceRevenue);
         });
         return {
             year: targetYear,
             summary: {
-                totalYearRevenue,
-                totalRoomRevenue,
-                totalServicesRevenue,
+                totalYearRevenue: (0, revenue_util_1.roundMoney)(totalYearRevenue),
+                totalRoomRevenue: (0, revenue_util_1.roundMoney)(totalRoomRevenue),
+                totalServicesRevenue: (0, revenue_util_1.roundMoney)(totalServicesRevenue),
                 totalInvoices: invoices.length,
             },
             monthly: monthlyRevenue,
