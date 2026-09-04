@@ -158,8 +158,9 @@ export class RoomsService {
       include: {
         roomType: true,
         bookings: {
-          where: { status: BookingStatus.CHECKED_IN },
-          take: 1,
+          where: { status: { in: [BookingStatus.CHECKED_IN, BookingStatus.CONFIRMED] } },
+          orderBy: { checkInDate: 'asc' },
+          take: 2,
           include: { customer: { select: { fullName: true, phone: true } } },
         },
       },
@@ -207,9 +208,10 @@ export class RoomsService {
     }
 
     // Lấy danh sách roomId đã bị đặt trong khoảng thời gian này
+    // Bao gồm cả PENDING (chờ duyệt), CONFIRMED (đã duyệt) và CHECKED_IN (đang ở)
     const busyBookings = await this.prisma.booking.findMany({
       where: {
-        status: { in: [BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN] },
+        status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN] },
         AND: [
           { checkInDate: { lt: checkOut } },
           { checkOutDate: { gt: checkIn } },

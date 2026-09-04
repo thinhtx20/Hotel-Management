@@ -2,6 +2,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { AddServiceOrderDto, CheckOutDto } from './dto/update-booking-status.dto';
+import { ApproveBookingDto, RejectBookingDto } from './dto/approve-booking.dto';
 import { BookingStatus, Role } from '@prisma/client';
 export declare class BookingsService {
     private prisma;
@@ -13,6 +14,15 @@ export declare class BookingsService {
     findAll(status?: BookingStatus, customerId?: string, roomId?: string): Promise<any[]>;
     private assertOwnership;
     findOne(id: string, currentUserId?: string, currentUserRole?: Role): Promise<any>;
+    approve(id: string, dto?: ApproveBookingDto, currentUserId?: string): Promise<{
+        message: string;
+        depositAmount: number;
+        booking: any;
+    }>;
+    reject(id: string, dto?: RejectBookingDto, currentUserId?: string): Promise<{
+        message: string;
+        booking: any;
+    }>;
     checkIn(id: string): Promise<{
         room: {
             id: string;

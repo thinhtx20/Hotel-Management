@@ -705,5 +705,95 @@ Trả về dữ liệu phòng phẳng hóa đầy đủ (`RoomResponse`) sẵn s
 }
 ```
 
+---
+
+### K. Duyệt & Từ chối Đơn Đặt Phòng Trước và Quản Lý Tiền Cọc
+
+Nhằm phục vụ quy trình nghiệp vụ khách đặt trước qua app hoặc kênh trực tuyến, Lễ tân và Quản trị viên sử dụng các endpoint sau để phê duyệt đơn, ghi nhận tiền cọc hoặc từ chối đơn.
+
+#### 1. Phê duyệt Đơn Đặt Phòng & Xác nhận Tiền Cọc
+- **Endpoints:**
+  - `PATCH /api/v1/bookings/:id/approve`
+  - `POST /api/v1/bookings/:id/approve` *(alias)*
+- **Quyền truy cập:** `RECEPTIONIST`, `ADMIN` (yêu cầu Bearer Token).
+- **Request Body (Tùy chọn):**
+```json
+{
+  "depositAmount": 500000,
+  "paymentMethod": "BANK_TRANSFER",
+  "notes": "Khách đã chuyển khoản tiền cọc 500k qua VietQR"
+}
+```
+*Ghi chú:*
+- `depositAmount` *(tùy chọn, number >= 0)*: Số tiền cọc khách đóng. Nếu không gửi, backend giữ nguyên số tiền cọc đã nhập lúc tạo đơn (nếu có).
+- `paymentMethod` *(tùy chọn, enum)*: `BANK_TRANSFER` (mặc định), `CASH`, `CREDIT_CARD`.
+- `notes` *(tùy chọn, string)*: Ghi chú duyệt cọc.
+
+- **Quy tắc xử lý trên Backend:**
+  1. Chỉ duyệt được đơn ở trạng thái `PENDING`. Nếu đơn đã `CONFIRMED`, `CANCELLED` hoặc đang `CHECKED_IN`, hệ thống trả về lỗi `400 Bad Request`.
+  2. Cập nhật trạng thái đơn: `status = CONFIRMED`.
+  3. Cập nhật trạng thái phòng: `status = RESERVED` (Cam hổ phách - Đã cọc giữ chỗ).
+  4. Nếu `depositAmount > 0`: Hệ thống tự động tạo hoặc cập nhật bản ghi `Invoice` đặt cọc (`paidAmount = depositAmount`, `paymentStatus = PARTIAL` hoặc `PAID`, `paidAt = now()`, `issuedById = receptionistId`), ghi nhận trực tiếp vào doanh thu thực thu trong ngày.
+  5. Giải phóng cache Redis `cache:rooms:*` và đồng bộ Elasticsearch.
+
+- **Response thành công (Status 200 OK):**
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Phê duyệt đơn đặt phòng và xác nhận tiền cọc thành công",
+  "data": {
+    "message": "Phê duyệt đơn đặt phòng và xác nhận tiền cọc thành công",
+    "depositAmount": 500000,
+    "booking": {
+      "id": "b1e4c7a2-9d3f-4e8b-8a21-72948e9102c1",
+      "bookingCode": "BK-240904-89",
+      "customerId": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "roomId": "3f6c8d20-41ab-4f27-96a8-208935cba48b",
+      "checkInDate": "2026-09-10T14:00:00.000Z",
+      "checkOutDate": "2026-09-12T12:00:00.000Z",
+      "guestCount": 2,
+      "totalAmount": 2400000,
+      "depositAmount": 500000,
+      "status": "CONFIRMED",
+      "paymentStatus": "PARTIAL",
+      "nights": 2,
+      "room": {
+        "id": "3f6c8d20-41ab-4f27-96a8-208935cba48b",
+        "roomNumber": "101",
+        "status": "RESERVED"
+      }
+    }
+  }
+}
+```
+
+---
+
+#### 2. Từ chối Đơn Đặt Phòng (Không duyệt)
+- **Endpoints:**
+  - `PATCH /api/v1/bookings/:id/reject`
+  - `POST /api/v1/bookings/:id/reject` *(alias)*
+- **Quyền truy cập:** `RECEPTIONIST`, `ADMIN` (yêu cầu Bearer Token).
+- **Request Body (Tùy chọn):**
+```json
+{
+  "reason": "Khách không chuyển khoản cọc trong 24h quy định"
+}
+```
+- **Quy tắc xử lý trên Backend:**
+  1. Đơn chuyển sang trạng thái `CANCELLED`.
+  2. Phòng được trả về trạng thái `AVAILABLE` (Xanh ngọc).
+  3. Giải phóng khóa lịch, xóa cache Redis để khách khác có thể đặt phòng này.
+
+---
+
+#### 3. Quy trình Đặt phòng trước của Khách (`POST /api/v1/bookings`)
+- Khi người dùng đăng nhập quyền `CUSTOMER` tạo đơn:
+  - Trường `status` mặc định luôn là **`PENDING`** (Chờ duyệt).
+  - Có thể truyền số tiền cọc muốn cọc trước: `"depositAmount": 500000`.
+  - Hệ thống tự động khóa lịch chống trùng phòng (Overlap conflict check bao gồm cả đơn `PENDING`).
+
+
 
 

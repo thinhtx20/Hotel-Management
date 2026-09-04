@@ -18,6 +18,7 @@ const swagger_1 = require("@nestjs/swagger");
 const bookings_service_1 = require("./bookings.service");
 const create_booking_dto_1 = require("./dto/create-booking.dto");
 const update_booking_status_dto_1 = require("./dto/update-booking-status.dto");
+const approve_booking_dto_1 = require("./dto/approve-booking.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
@@ -66,6 +67,18 @@ let BookingsController = class BookingsController {
     }
     findOne(id, userId, userRole) {
         return this.bookingsService.findOne(id, userId, userRole);
+    }
+    approve(id, dto, receptionistId) {
+        return this.bookingsService.approve(id, dto, receptionistId);
+    }
+    approvePost(id, dto, receptionistId) {
+        return this.bookingsService.approve(id, dto, receptionistId);
+    }
+    reject(id, dto, receptionistId) {
+        return this.bookingsService.reject(id, dto, receptionistId);
+    }
+    rejectPost(id, dto, receptionistId) {
+        return this.bookingsService.reject(id, dto, receptionistId);
     }
     checkIn(id) {
         return this.bookingsService.checkIn(id);
@@ -152,6 +165,94 @@ __decorate([
     __metadata("design:paramtypes", [String, String, String]),
     __metadata("design:returntype", void 0)
 ], BookingsController.prototype, "findOne", null);
+__decorate([
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, common_1.Patch)(':id/approve'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Lễ tân/Admin phê duyệt đơn đặt phòng và xác nhận tiền cọc',
+        description: 'Chuyển đơn từ PENDING sang CONFIRMED. Nếu có tiền cọc (depositAmount), tự động tạo/cập nhật hóa đơn cọc ' +
+            'và chuyển trạng thái phòng sang RESERVED (Cam hổ phách).',
+    }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Phê duyệt đơn đặt phòng và xác nhận tiền cọc thành công',
+        exampleData: {
+            message: 'Phê duyệt đơn đặt phòng và xác nhận tiền cọc thành công',
+            depositAmount: 500000,
+            booking: { ...SAMPLE_BOOKING, status: 'CONFIRMED', depositAmount: 500000 },
+        },
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 400,
+        message: 'Đơn đặt phòng này đã được phê duyệt trước đó hoặc đã bị hủy',
+        error: 'Bad Request',
+        path: '/api/v1/bookings/:id/approve',
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, approve_booking_dto_1.ApproveBookingDto, String]),
+    __metadata("design:returntype", void 0)
+], BookingsController.prototype, "approve", null);
+__decorate([
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, common_1.Post)(':id/approve'),
+    (0, swagger_1.ApiOperation)({ summary: 'Lễ tân/Admin phê duyệt đơn đặt phòng (POST alias)' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Phê duyệt đơn đặt phòng và xác nhận tiền cọc thành công',
+        exampleData: {
+            message: 'Phê duyệt đơn đặt phòng và xác nhận tiền cọc thành công',
+            depositAmount: 500000,
+            booking: { ...SAMPLE_BOOKING, status: 'CONFIRMED', depositAmount: 500000 },
+        },
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, approve_booking_dto_1.ApproveBookingDto, String]),
+    __metadata("design:returntype", void 0)
+], BookingsController.prototype, "approvePost", null);
+__decorate([
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, common_1.Patch)(':id/reject'),
+    (0, swagger_1.ApiOperation)({ summary: 'Lễ tân/Admin từ chối đơn đặt phòng mà khách đặt trước' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Từ chối đơn đặt phòng thành công',
+        exampleData: {
+            message: 'Từ chối đơn đặt phòng thành công',
+            booking: { ...SAMPLE_BOOKING, status: 'CANCELLED' },
+        },
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, approve_booking_dto_1.RejectBookingDto, String]),
+    __metadata("design:returntype", void 0)
+], BookingsController.prototype, "reject", null);
+__decorate([
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, common_1.Post)(':id/reject'),
+    (0, swagger_1.ApiOperation)({ summary: 'Lễ tân/Admin từ chối đơn đặt phòng (POST alias)' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Từ chối đơn đặt phòng thành công',
+        exampleData: {
+            message: 'Từ chối đơn đặt phòng thành công',
+            booking: { ...SAMPLE_BOOKING, status: 'CANCELLED' },
+        },
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, approve_booking_dto_1.RejectBookingDto, String]),
+    __metadata("design:returntype", void 0)
+], BookingsController.prototype, "rejectPost", null);
 __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, common_1.Post)(':id/check-in'),

@@ -1,6 +1,7 @@
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { AddServiceOrderDto, CheckOutDto } from './dto/update-booking-status.dto';
+import { ApproveBookingDto, RejectBookingDto } from './dto/approve-booking.dto';
 import { BookingStatus, Role } from '@prisma/client';
 export declare class BookingsController {
     private readonly bookingsService;
@@ -8,6 +9,24 @@ export declare class BookingsController {
     create(createBookingDto: CreateBookingDto, userId: string, userRole: Role): Promise<any>;
     findAll(userId: string, userRole: Role, status?: BookingStatus, customerId?: string, roomId?: string): Promise<any[]>;
     findOne(id: string, userId: string, userRole: Role): Promise<any>;
+    approve(id: string, dto: ApproveBookingDto, receptionistId: string): Promise<{
+        message: string;
+        depositAmount: number;
+        booking: any;
+    }>;
+    approvePost(id: string, dto: ApproveBookingDto, receptionistId: string): Promise<{
+        message: string;
+        depositAmount: number;
+        booking: any;
+    }>;
+    reject(id: string, dto: RejectBookingDto, receptionistId: string): Promise<{
+        message: string;
+        booking: any;
+    }>;
+    rejectPost(id: string, dto: RejectBookingDto, receptionistId: string): Promise<{
+        message: string;
+        booking: any;
+    }>;
     checkIn(id: string): Promise<{
         room: {
             id: string;

@@ -13,6 +13,7 @@ exports.CreateBookingDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
+const client_1 = require("@prisma/client");
 class CreateBookingDto {
 }
 exports.CreateBookingDto = CreateBookingDto;
@@ -56,6 +57,16 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], CreateBookingDto.prototype, "depositAmount", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: client_1.BookingStatus,
+        default: client_1.BookingStatus.PENDING,
+        description: 'Trạng thái ban đầu (Khách đặt trước luôn là PENDING; Lễ tân/Admin có thể chọn CONFIRMED)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(client_1.BookingStatus),
+    __metadata("design:type", String)
+], CreateBookingDto.prototype, "status", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ example: 'Yêu cầu phòng không hút thuốc, check-in sớm 1 tiếng', description: 'Ghi chú đặc biệt của khách' }),
     (0, class_validator_1.IsOptional)(),

@@ -139,8 +139,9 @@ let RoomsService = class RoomsService {
             include: {
                 roomType: true,
                 bookings: {
-                    where: { status: client_1.BookingStatus.CHECKED_IN },
-                    take: 1,
+                    where: { status: { in: [client_1.BookingStatus.CHECKED_IN, client_1.BookingStatus.CONFIRMED] } },
+                    orderBy: { checkInDate: 'asc' },
+                    take: 2,
                     include: { customer: { select: { fullName: true, phone: true } } },
                 },
             },
@@ -178,7 +179,7 @@ let RoomsService = class RoomsService {
         }
         const busyBookings = await this.prisma.booking.findMany({
             where: {
-                status: { in: [client_1.BookingStatus.CONFIRMED, client_1.BookingStatus.CHECKED_IN] },
+                status: { in: [client_1.BookingStatus.PENDING, client_1.BookingStatus.CONFIRMED, client_1.BookingStatus.CHECKED_IN] },
                 AND: [
                     { checkInDate: { lt: checkOut } },
                     { checkOutDate: { gt: checkIn } },

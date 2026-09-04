@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDate, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsDate, IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { BookingStatus } from '@prisma/client';
 
 export class CreateBookingDto {
   @ApiPropertyOptional({ example: 'uuid-user-id', description: 'ID khách hàng (nếu Lễ tân đặt hộ, để trống sẽ lấy user đang login)' })
@@ -36,6 +37,15 @@ export class CreateBookingDto {
   @IsNumber()
   @Min(0)
   depositAmount?: number;
+
+  @ApiPropertyOptional({
+    enum: BookingStatus,
+    default: BookingStatus.PENDING,
+    description: 'Trạng thái ban đầu (Khách đặt trước luôn là PENDING; Lễ tân/Admin có thể chọn CONFIRMED)',
+  })
+  @IsOptional()
+  @IsEnum(BookingStatus)
+  status?: BookingStatus;
 
   @ApiPropertyOptional({ example: 'Yêu cầu phòng không hút thuốc, check-in sớm 1 tiếng', description: 'Ghi chú đặc biệt của khách' })
   @IsOptional()

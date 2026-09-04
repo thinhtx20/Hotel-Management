@@ -12,6 +12,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { AddServiceOrderDto, CheckOutDto } from './dto/update-booking-status.dto';
+import { ApproveBookingDto, RejectBookingDto } from './dto/approve-booking.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -123,6 +124,95 @@ export class BookingsController {
     @CurrentUser('role') userRole: Role,
   ) {
     return this.bookingsService.findOne(id, userId, userRole);
+  }
+
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @Patch(':id/approve')
+  @ApiOperation({
+    summary: 'Lễ tân/Admin phê duyệt đơn đặt phòng và xác nhận tiền cọc',
+    description:
+      'Chuyển đơn từ PENDING sang CONFIRMED. Nếu có tiền cọc (depositAmount), tự động tạo/cập nhật hóa đơn cọc ' +
+      'và chuyển trạng thái phòng sang RESERVED (Cam hổ phách).',
+  })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Phê duyệt đơn đặt phòng và xác nhận tiền cọc thành công',
+    exampleData: {
+      message: 'Phê duyệt đơn đặt phòng và xác nhận tiền cọc thành công',
+      depositAmount: 500000,
+      booking: { ...SAMPLE_BOOKING, status: 'CONFIRMED', depositAmount: 500000 },
+    },
+  })
+  @ApiErrorResponse({
+    status: 400,
+    message: 'Đơn đặt phòng này đã được phê duyệt trước đó hoặc đã bị hủy',
+    error: 'Bad Request',
+    path: '/api/v1/bookings/:id/approve',
+  })
+  approve(
+    @Param('id') id: string,
+    @Body() dto: ApproveBookingDto,
+    @CurrentUser('id') receptionistId: string,
+  ) {
+    return this.bookingsService.approve(id, dto, receptionistId);
+  }
+
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @Post(':id/approve')
+  @ApiOperation({ summary: 'Lễ tân/Admin phê duyệt đơn đặt phòng (POST alias)' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Phê duyệt đơn đặt phòng và xác nhận tiền cọc thành công',
+    exampleData: {
+      message: 'Phê duyệt đơn đặt phòng và xác nhận tiền cọc thành công',
+      depositAmount: 500000,
+      booking: { ...SAMPLE_BOOKING, status: 'CONFIRMED', depositAmount: 500000 },
+    },
+  })
+  approvePost(
+    @Param('id') id: string,
+    @Body() dto: ApproveBookingDto,
+    @CurrentUser('id') receptionistId: string,
+  ) {
+    return this.bookingsService.approve(id, dto, receptionistId);
+  }
+
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @Patch(':id/reject')
+  @ApiOperation({ summary: 'Lễ tân/Admin từ chối đơn đặt phòng mà khách đặt trước' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Từ chối đơn đặt phòng thành công',
+    exampleData: {
+      message: 'Từ chối đơn đặt phòng thành công',
+      booking: { ...SAMPLE_BOOKING, status: 'CANCELLED' },
+    },
+  })
+  reject(
+    @Param('id') id: string,
+    @Body() dto: RejectBookingDto,
+    @CurrentUser('id') receptionistId: string,
+  ) {
+    return this.bookingsService.reject(id, dto, receptionistId);
+  }
+
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @Post(':id/reject')
+  @ApiOperation({ summary: 'Lễ tân/Admin từ chối đơn đặt phòng (POST alias)' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Từ chối đơn đặt phòng thành công',
+    exampleData: {
+      message: 'Từ chối đơn đặt phòng thành công',
+      booking: { ...SAMPLE_BOOKING, status: 'CANCELLED' },
+    },
+  })
+  rejectPost(
+    @Param('id') id: string,
+    @Body() dto: RejectBookingDto,
+    @CurrentUser('id') receptionistId: string,
+  ) {
+    return this.bookingsService.reject(id, dto, receptionistId);
   }
 
   @Roles(Role.ADMIN, Role.RECEPTIONIST)

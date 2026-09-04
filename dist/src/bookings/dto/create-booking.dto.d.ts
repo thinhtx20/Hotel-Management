@@ -1,3 +1,4 @@
+import { BookingStatus } from '@prisma/client';
 export declare class CreateBookingDto {
     customerId?: string;
     roomId: string;
@@ -5,5 +6,6 @@ export declare class CreateBookingDto {
     checkOutDate: Date;
     guestCount?: number;
     depositAmount?: number;
+    status?: BookingStatus;
     specialRequests?: string;
 }

@@ -484,14 +484,19 @@ export function toRoomResponse(
 ): RoomResponse {
   let currentBooking: RoomCurrentBooking | null = null;
   if (room.bookings && room.bookings.length > 0) {
-    const active = room.bookings.find(
-      (b) => b.status === BookingStatus.CHECKED_IN,
-    );
+    const active =
+      room.bookings.find((b) => b.status === BookingStatus.CHECKED_IN) ||
+      room.bookings.find((b) => b.status === BookingStatus.CONFIRMED);
     if (active) {
+      const isCheckedIn = active.status === BookingStatus.CHECKED_IN;
       currentBooking = {
         id: active.id,
         bookingCode: active.bookingCode,
-        guestName: active.customer?.fullName || 'Khách đang lưu trú',
+        guestName: active.customer?.fullName
+          ? `${active.customer.fullName}${isCheckedIn ? '' : ' (Đặt trước)'}`
+          : isCheckedIn
+            ? 'Khách đang lưu trú'
+            : 'Khách đặt trước',
         guestPhone: active.customer?.phone || null,
         checkOutDate: active.checkOutDate,
       };
