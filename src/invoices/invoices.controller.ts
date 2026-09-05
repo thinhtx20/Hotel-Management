@@ -11,6 +11,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { InvoicesService } from './invoices.service';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { RefundDto } from './dto/refund.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -62,9 +63,10 @@ export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}
 
   @Get('summary')
-  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
-  @ApiOperation({ summary: 'Tổng quan doanh thu hôm nay và số lượng hóa đơn cho thu ngân' })
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @ApiOperation({ summary: 'Tổng quan doanh thu hôm nay hoặc sổ quỹ chốt ca (Lễ tân – Thu ngân)' })
   @ApiQuery({ name: 'date', required: false, description: 'today hoặc ngày theo định dạng YYYY-MM-DD' })
+  @ApiQuery({ name: 'staffId', required: false, description: '"me" để xem chốt ca của chính mình, hoặc userId của nhân viên cụ thể' })
   @ApiSuccessResponse({
     status: 200,
     description: 'Lấy tóm tắt doanh thu thành công',
@@ -77,8 +79,12 @@ export class InvoicesController {
       partialInvoices: 1,
     },
   })
-  getSummary(@Query('date') date?: string) {
-    return this.invoicesService.getSummary(date);
+  getSummary(
+    @Query('date') date?: string,
+    @Query('staffId') staffId?: string,
+    @CurrentUser('id') currentUserId?: string,
+  ) {
+    return this.invoicesService.getSummary(date, staffId, currentUserId);
   }
 
   @Get('my')
@@ -103,7 +109,7 @@ export class InvoicesController {
   }
 
   @Post()
-  @Roles(Role.ADMIN, Role.CASHIER)
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @ApiOperation({ summary: 'Tạo hóa đơn thủ công cho đơn đặt phòng' })
   @ApiSuccessResponse({
     status: 201,
@@ -118,7 +124,7 @@ export class InvoicesController {
   }
 
   @Get()
-  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @ApiOperation({ summary: 'Lấy danh sách hóa đơn theo trạng thái thanh toán' })
   @ApiQuery({ name: 'status', enum: PaymentStatus, required: false })
   @ApiSuccessResponse({
@@ -131,7 +137,7 @@ export class InvoicesController {
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER, Role.CUSTOMER)
+  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CUSTOMER)
   @ApiOperation({
     summary: 'Xem chi tiết hóa đơn, tiền phòng và bảng kê dịch vụ phụ trợ',
     description:
@@ -164,8 +170,8 @@ export class InvoicesController {
   }
 
   @Post(':id/pay')
-  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
-  @ApiOperation({ summary: 'Ghi nhận thanh toán hóa đơn (Thu ngân / Kế toán)' })
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @ApiOperation({ summary: 'Ghi nhận thanh toán hóa đơn (Lễ tân – Thu ngân)' })
   @ApiSuccessResponse({
     status: 200,
     description: 'Ghi nhận thanh toán hóa đơn thành công',
@@ -183,5 +189,27 @@ export class InvoicesController {
     @CurrentUser('id') cashierId: string,
   ) {
     return this.invoicesService.recordPayment(id, dto, cashierId);
+  }
+
+  @Post(':id/refund')
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @ApiOperation({ summary: 'Hoàn tiền hóa đơn (Lễ tân – Thu ngân)' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Hoàn tiền hóa đơn thành công',
+    exampleData: SAMPLE_INVOICE,
+  })
+  @ApiErrorResponse({
+    status: 400,
+    message: 'Số tiền hoàn vượt quá số tiền đã thu hoặc hóa đơn chưa thanh toán',
+    error: 'Bad Request',
+    path: '/api/v1/invoices/:id/refund',
+  })
+  refund(
+    @Param('id') id: string,
+    @Body() dto: RefundDto,
+    @CurrentUser('id') staffId: string,
+  ) {
+    return this.invoicesService.refund(id, dto, staffId);
   }
 }

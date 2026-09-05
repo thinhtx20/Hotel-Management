@@ -4,7 +4,7 @@ import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-vali
 /**
  * Đăng ký công khai: KHÔNG nhận `role`.
  * Server luôn ép vai trò CUSTOMER, nếu không bất kỳ ai cũng có thể tự đăng ký làm ADMIN.
- * Admin tạo tài khoản nhân viên (RECEPTIONIST / CASHIER / ADMIN) qua POST /users.
+ * Admin tạo tài khoản nhân viên (RECEPTIONIST / ADMIN) qua POST /users.
  */
 export class RegisterDto {
   @ApiProperty({ example: 'customer@hotel.com', description: 'Email tài khoản' })

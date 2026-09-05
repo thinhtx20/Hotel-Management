@@ -5,6 +5,9 @@ import { ApproveBookingDto, RejectBookingDto } from './dto/approve-booking.dto';
 import { ConfirmBookingDto } from './dto/confirm-booking.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { QueryBookingsDto } from './dto/query-bookings.dto';
+import { ChangeRoomDto } from './dto/change-room.dto';
+import { RequestServiceDto } from './dto/request-service.dto';
+import { UpdateServiceOrderStatusDto } from './dto/update-service-order-status.dto';
 import { Role } from '@prisma/client';
 export declare class BookingsController {
     private readonly bookingsService;
@@ -69,10 +72,41 @@ export declare class BookingsController {
     addServiceOrder(id: string, dto: AddServiceOrderDto): Promise<{
         id: string;
         createdAt: Date;
+        status: string;
         bookingId: string;
-        serviceName: string;
         unitPrice: number;
+        serviceName: string;
         quantity: number;
+        note: string | null;
         totalPrice: number;
+        requestedById: string | null;
+    }>;
+    changeRoom(id: string, dto: ChangeRoomDto): Promise<{
+        message: string;
+        booking: any;
+    }>;
+    requestService(id: string, dto: RequestServiceDto, customerId: string): Promise<{
+        id: string;
+        createdAt: Date;
+        status: string;
+        bookingId: string;
+        unitPrice: number;
+        serviceName: string;
+        quantity: number;
+        note: string | null;
+        totalPrice: number;
+        requestedById: string | null;
+    }>;
+    updateServiceStatus(id: string, orderId: string, dto: UpdateServiceOrderStatusDto): Promise<{
+        id: string;
+        createdAt: Date;
+        status: string;
+        bookingId: string;
+        unitPrice: number;
+        serviceName: string;
+        quantity: number;
+        note: string | null;
+        totalPrice: number;
+        requestedById: string | null;
     }>;
 }

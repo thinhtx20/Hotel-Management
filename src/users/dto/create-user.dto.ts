@@ -34,7 +34,7 @@ export class CreateUserDto {
   @ApiProperty({
     enum: Role,
     example: Role.RECEPTIONIST,
-    description: 'Vai trò được cấp: ADMIN, RECEPTIONIST, CASHIER hoặc CUSTOMER',
+    description: 'Vai trò được cấp: ADMIN, RECEPTIONIST hoặc CUSTOMER',
   })
   @IsEnum(Role, { message: 'Vai trò không hợp lệ' })
   role: Role;

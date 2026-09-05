@@ -108,7 +108,7 @@ let PrismaService = PrismaService_1 = class PrismaService extends client_1.Prism
                     password: staffPassword,
                     fullName: 'Trần Văn Minh (Thu ngân Quầy sảnh)',
                     phone: '0906667788',
-                    role: client_1.Role.CASHIER,
+                    role: client_1.Role.RECEPTIONIST,
                     avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=400&q=80',
                 },
                 {
@@ -116,7 +116,7 @@ let PrismaService = PrismaService_1 = class PrismaService extends client_1.Prism
                     password: staffPassword,
                     fullName: 'Vũ Thị Bích Ngọc (Kế toán Thu chi)',
                     phone: '0907778899',
-                    role: client_1.Role.CASHIER,
+                    role: client_1.Role.RECEPTIONIST,
                     avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
                 },
                 {

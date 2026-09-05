@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { BookingStatus, PaymentStatus, RoomStatus } from '@prisma/client';
+import { BookingStatus, PaymentStatus, RoomStatus, Role } from '@prisma/client';
 import {
   COLLECTED_PAYMENT_STATUSES,
   DEFAULT_REVENUE_RANGE,
@@ -364,5 +364,90 @@ export class AnalyticsService {
         occupancyRate: `${rate}%`,
       };
     });
+  }
+
+  /**
+   * Báo cáo hiệu suất nhân sự (A1 - P1)
+   * GET /analytics/staff-performance?from=&to=
+   */
+  async getStaffPerformance(from?: string, to?: string) {
+    const today = new Date();
+    const startDate = from ? startOfDay(new Date(from)) : startOfDay(new Date(today.getFullYear(), today.getMonth(), 1));
+    const endDate = to ? endOfDay(new Date(to)) : endOfDay(today);
+
+    // Lấy danh sách nhân viên (ADMIN & RECEPTIONIST)
+    const staffUsers = await this.prisma.user.findMany({
+      where: {
+        role: { in: [Role.ADMIN, Role.RECEPTIONIST] },
+        isActive: true,
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+      },
+      orderBy: { fullName: 'asc' },
+    });
+
+    const staffData = await Promise.all(
+      staffUsers.map(async (user) => {
+        const [bookingsConfirmed, bookingsCancelled, invoicesIssued, paidAgg] = await Promise.all([
+          this.prisma.booking.count({
+            where: {
+              confirmedById: user.id,
+              confirmedAt: { gte: startDate, lte: endDate },
+            },
+          }),
+          this.prisma.booking.count({
+            where: {
+              cancelledById: user.id,
+              cancelledAt: { gte: startDate, lte: endDate },
+            },
+          }),
+          this.prisma.invoice.count({
+            where: {
+              issuedById: user.id,
+              createdAt: { gte: startDate, lte: endDate },
+            },
+          }),
+          this.prisma.invoice.aggregate({
+            _sum: { paidAmount: true },
+            where: {
+              issuedById: user.id,
+              paidAt: { gte: startDate, lte: endDate },
+            },
+          }),
+        ]);
+
+        return {
+          userId: user.id,
+          fullName: user.fullName,
+          email: user.email,
+          role: user.role,
+          bookingsConfirmed,
+          bookingsCancelled,
+          invoicesIssued,
+          amountCollected: roundMoney(paidAgg._sum.paidAmount || 0),
+        };
+      }),
+    );
+
+    const totals = staffData.reduce(
+      (acc, curr) => ({
+        bookingsConfirmed: acc.bookingsConfirmed + curr.bookingsConfirmed,
+        bookingsCancelled: acc.bookingsCancelled + curr.bookingsCancelled,
+        invoicesIssued: acc.invoicesIssued + curr.invoicesIssued,
+        amountCollected: roundMoney(acc.amountCollected + curr.amountCollected),
+      }),
+      { bookingsConfirmed: 0, bookingsCancelled: 0, invoicesIssued: 0, amountCollected: 0 },
+    );
+
+    return {
+      from: formatLocalDate(startDate),
+      to: formatLocalDate(endDate),
+      staff: staffData,
+      totals,
+    };
   }
 }

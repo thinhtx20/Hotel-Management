@@ -16,13 +16,12 @@ import { Role } from '@prisma/client';
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
-  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Get('dashboard')
   @ApiOperation({
     summary: 'Tổng quan chỉ số phòng, khách hôm nay và tỷ lệ lấp đầy',
     description:
-      'Dùng chung cho cả ba vai trò nhân viên. Thu ngân cần khối doanh thu và ' +
-      'số hóa đơn chưa thu trong cùng một lần gọi nên cũng được cấp quyền ở đây.',
+      'Dùng chung cho cả hai vai trò nhân viên (ADMIN và RECEPTIONIST).',
   })
   @ApiSuccessResponse({
     status: 200,
@@ -89,7 +88,7 @@ export class AnalyticsController {
     return this.analyticsService.getRevenueAnalytics(year ? Number(year) : undefined);
   }
 
-  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Get('revenue/daily')
   @ApiOperation({
     summary:
@@ -162,5 +161,47 @@ export class AnalyticsController {
   })
   getOccupancyByType() {
     return this.analyticsService.getOccupancyByRoomType();
+  }
+
+  @Roles(Role.ADMIN)
+  @Get('staff-performance')
+  @ApiOperation({
+    summary: 'Báo cáo hiệu suất công việc nhân sự lễ tân & thu ngân (Chỉ Admin)',
+    description:
+      'Thống kê số đơn đặt phòng xác nhận/hủy, số hóa đơn phát hành và tổng số tiền thu được theo từng nhân viên.',
+  })
+  @ApiQuery({ name: 'from', required: false, example: '2026-09-01', description: 'Ngày bắt đầu (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'to', required: false, example: '2026-09-05', description: 'Ngày kết thúc (YYYY-MM-DD)' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Lấy báo cáo hiệu suất nhân sự thành công',
+    exampleData: {
+      from: '2026-09-01',
+      to: '2026-09-05',
+      staff: [
+        {
+          userId: 'user-uuid',
+          fullName: 'Lê Thu Hà',
+          email: 'reception@hotel.com',
+          role: 'RECEPTIONIST',
+          bookingsConfirmed: 34,
+          bookingsCancelled: 2,
+          invoicesIssued: 41,
+          amountCollected: 128500000,
+        },
+      ],
+      totals: {
+        bookingsConfirmed: 34,
+        bookingsCancelled: 2,
+        invoicesIssued: 41,
+        amountCollected: 128500000,
+      },
+    },
+  })
+  getStaffPerformance(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analyticsService.getStaffPerformance(from, to);
   }
 }

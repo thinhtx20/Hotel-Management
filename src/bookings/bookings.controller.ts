@@ -17,6 +17,9 @@ import { ApproveBookingDto, RejectBookingDto } from './dto/approve-booking.dto';
 import { ConfirmBookingDto } from './dto/confirm-booking.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { QueryBookingsDto } from './dto/query-bookings.dto';
+import { ChangeRoomDto } from './dto/change-room.dto';
+import { RequestServiceDto } from './dto/request-service.dto';
+import { UpdateServiceOrderStatusDto } from './dto/update-service-order-status.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -349,7 +352,7 @@ export class BookingsController {
     return this.bookingsService.checkIn(id);
   }
 
-  @Roles(Role.ADMIN, Role.RECEPTIONIST, Role.CASHIER)
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Post(':id/check-out')
   @ApiOperation({ summary: 'Check-out trả phòng, tính tiền dịch vụ và xuất hóa đơn' })
   @ApiSuccessResponse({
@@ -462,5 +465,75 @@ export class BookingsController {
     @Body() dto: AddServiceOrderDto,
   ) {
     return this.bookingsService.addServiceOrder(id, dto);
+  }
+
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @Post(':id/change-room')
+  @ApiOperation({ summary: 'Đổi phòng cho khách đang lưu trú tại khách sạn (S2 - P1)' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Đổi phòng thành công',
+    exampleData: {
+      message: 'Đổi phòng thành công',
+      booking: SAMPLE_BOOKING,
+    },
+  })
+  @ApiErrorResponse({
+    status: 400,
+    message: 'Chỉ có thể đổi phòng cho đơn đang lưu trú CHECKED_IN hoặc phòng mới không khả dụng',
+    error: 'Bad Request',
+    path: '/api/v1/bookings/:id/change-room',
+  })
+  changeRoom(
+    @Param('id') id: string,
+    @Body() dto: ChangeRoomDto,
+  ) {
+    return this.bookingsService.changeRoom(id, dto);
+  }
+
+  @Roles(Role.CUSTOMER)
+  @Post(':id/service-requests')
+  @ApiOperation({ summary: 'Khách hàng gọi dịch vụ tại phòng (C1 - P1)' })
+  @ApiSuccessResponse({
+    status: 201,
+    description: 'Yêu cầu dịch vụ phòng thành công',
+    exampleData: {
+      id: 'srv-req-123',
+      bookingId: 'b1e4c7a2-9d3f-4e8b-8a21-72948e9102c1',
+      serviceName: 'Giặt là cao cấp',
+      quantity: 2,
+      unitPrice: 50000,
+      totalPrice: 100000,
+      status: 'REQUESTED',
+      note: 'Giao trước 10h',
+    },
+  })
+  requestService(
+    @Param('id') id: string,
+    @Body() dto: RequestServiceDto,
+    @CurrentUser('id') customerId: string,
+  ) {
+    return this.bookingsService.requestServiceOrder(id, dto, customerId);
+  }
+
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @Patch(':id/services/:orderId')
+  @ApiOperation({ summary: 'Lễ tân duyệt hoặc từ chối yêu cầu dịch vụ của khách (C1 - P1)' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Cập nhật trạng thái yêu cầu dịch vụ thành công',
+    exampleData: {
+      id: 'srv-req-123',
+      bookingId: 'b1e4c7a2-9d3f-4e8b-8a21-72948e9102c1',
+      status: 'CONFIRMED',
+      note: 'Đã giao đồ lên phòng',
+    },
+  })
+  updateServiceStatus(
+    @Param('id') id: string,
+    @Param('orderId') orderId: string,
+    @Body() dto: UpdateServiceOrderStatusDto,
+  ) {
+    return this.bookingsService.updateServiceOrderStatus(id, orderId, dto);
   }
 }

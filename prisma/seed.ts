@@ -23,6 +23,7 @@ async function main() {
   await prisma.booking.deleteMany({});
   await prisma.room.deleteMany({});
   await prisma.roomType.deleteMany({});
+  await prisma.hotelService.deleteMany({});
   await prisma.user.deleteMany({});
   console.log('   -> Đã làm sạch các bảng dữ liệu.');
 
@@ -33,7 +34,7 @@ async function main() {
   const custPassword = await bcrypt.hash('Cust@123', salt);
 
   // 2. Tạo Users cho đầy đủ các Role
-  console.log('\n👥 2. Đang tạo các tài khoản cho từng Role (ADMIN, RECEPTIONIST, CASHIER, CUSTOMER)...');
+  console.log('\n👥 2. Đang tạo các tài khoản cho từng Role (ADMIN, RECEPTIONIST, CUSTOMER)...');
   
   // ADMIN
   const admin1 = await prisma.user.create({
@@ -92,14 +93,14 @@ async function main() {
     },
   });
 
-  // CASHIER
+  // RECEPTIONIST (Lễ tân – Thu ngân, tài khoản quầy sảnh & kế toán)
   const cashier1 = await prisma.user.create({
     data: {
       email: 'cashier@hotel.com',
       password: staffPassword,
       fullName: 'Trần Văn Minh (Thu ngân Quầy sảnh)',
       phone: '0906667788',
-      role: Role.CASHIER,
+      role: Role.RECEPTIONIST,
       avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=400&q=80',
     },
   });
@@ -110,7 +111,7 @@ async function main() {
       password: staffPassword,
       fullName: 'Vũ Thị Bích Ngọc (Kế toán Thu chi)',
       phone: '0907778899',
-      role: Role.CASHIER,
+      role: Role.RECEPTIONIST,
       avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
     },
   });
@@ -770,6 +771,22 @@ async function main() {
   });
   console.log('   -> Đã gán OTP 123456 hợp lệ cho khachhang1@gmail.com.');
 
+  // 9. Tạo Danh Mục Dịch Vụ Khách Sạn (Hotel Services)
+  console.log('\n🛎️ 9. Đang tạo danh mục dịch vụ khách sạn...');
+  const initialServices = [
+    { code: 'LAUNDRY', name: 'Giặt là cao cấp', category: 'CONVENIENCE', description: 'Giặt ủi quần áo lấy trong ngày, đóng gói cẩn thận', unitPrice: 50000, unit: 'món', icon: 'local_laundry_service', isAvailable: true },
+    { code: 'MINIBAR', name: 'Minibar trọn gói', category: 'FOOD_BEVERAGE', description: 'Bao gồm snack cao cấp, nước ngọt, bia và nước khoáng hảo hạng', unitPrice: 150000, unit: 'combo', icon: 'kitchen', isAvailable: true },
+    { code: 'BREAKFAST', name: 'Ăn sáng buffet tại phòng', category: 'FOOD_BEVERAGE', description: 'Phục vụ bữa sáng tiêu chuẩn 5 sao tận phòng ngủ theo yêu cầu', unitPrice: 200000, unit: 'suất', icon: 'restaurant', isAvailable: true },
+    { code: 'AIRPORT_TRANSFER', name: 'Đưa đón sân bay', category: 'TRANSPORT', description: 'Xe Sedona / Mercedes đời mới đưa đón 2 chiều sân bay tiện lợi', unitPrice: 350000, unit: 'lượt', icon: 'airport_shuttle', isAvailable: true },
+    { code: 'SPA_MASSAGE', name: 'Spa & Massage trị liệu', category: 'WELLNESS', description: 'Gói massage tinh dầu thảo dược thư giãn toàn thân 60 phút', unitPrice: 500000, unit: 'buổi', icon: 'spa', isAvailable: true },
+    { code: 'MOTORBIKE_RENTAL', name: 'Thuê xe máy tay ga', category: 'TRANSPORT', description: 'Xe tay ga đời mới, kèm 2 mũ bảo hiểm đạt chuẩn an toàn', unitPrice: 150000, unit: 'ngày', icon: 'two_wheeler', isAvailable: true },
+    { code: 'AFTERNOON_TEA', name: 'Trà chiều hoàng gia', category: 'ROOM_SERVICE', description: 'Set bánh ngọt Pháp và trà Earl Grey thượng hạng cho 2 người', unitPrice: 180000, unit: 'set', icon: 'emoji_food_beverage', isAvailable: true },
+  ];
+  for (const s of initialServices) {
+    await prisma.hotelService.create({ data: s });
+  }
+  console.log('   -> Đã khởi tạo 7 dịch vụ gia tăng chuẩn vào CSDL.');
+
   console.log('\n===========================================================');
   console.log('🎉 KHỞI TẠO VÀ FAKE DỮ LIỆU CƠ SỞ DỮ LIỆU HOÀN TẤT!');
   console.log('===========================================================');
@@ -779,12 +796,10 @@ async function main() {
   console.log('   - Email: admin@hotel.com            | Pass: Admin@123  (Super Admin)');
   console.log('   - Email: director@hotel.com         | Pass: Admin@123  (Tổng giám đốc)');
   console.log('');
-  console.log('🛎️ [RECEPTIONIST - LỄ TÂN]:');
+  console.log('🛎️ [RECEPTIONIST - LỄ TÂN – THU NGÂN]:');
   console.log('   - Email: reception@hotel.com        | Pass: Staff@123  (Trưởng ca lễ tân)');
   console.log('   - Email: reception.morning@hotel.com| Pass: Staff@123  (Ca sáng)');
   console.log('   - Email: reception.night@hotel.com  | Pass: Staff@123  (Ca đêm)');
-  console.log('');
-  console.log('💳 [CASHIER - THU NGÂN]:');
   console.log('   - Email: cashier@hotel.com          | Pass: Staff@123  (Thu ngân sảnh)');
   console.log('   - Email: cashier.accounting@hotel.com| Pass: Staff@123 (Kế toán thu chi)');
   console.log('');

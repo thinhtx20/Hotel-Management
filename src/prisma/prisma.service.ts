@@ -114,13 +114,13 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
           role: Role.RECEPTIONIST,
           avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80',
         },
-        // CASHIER
+        // RECEPTIONIST (Lễ tân – Thu ngân)
         {
           email: 'cashier@hotel.com',
           password: staffPassword,
           fullName: 'Trần Văn Minh (Thu ngân Quầy sảnh)',
           phone: '0906667788',
-          role: Role.CASHIER,
+          role: Role.RECEPTIONIST,
           avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=400&q=80',
         },
         {
@@ -128,7 +128,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
           password: staffPassword,
           fullName: 'Vũ Thị Bích Ngọc (Kế toán Thu chi)',
           phone: '0907778899',
-          role: Role.CASHIER,
+          role: Role.RECEPTIONIST,
           avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
         },
         // CUSTOMER

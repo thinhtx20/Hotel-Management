@@ -97,11 +97,11 @@ exports.RoomsController = RoomsController;
 __decorate([
     (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CUSTOMER, client_1.Role.CASHIER),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CUSTOMER),
     (0, common_1.Post)(),
     (0, swagger_1.ApiOperation)({
         summary: 'Tạo phòng mới (Admin tạo duyệt thẳng, vai trò khác tạo bản chờ duyệt PENDING_APPROVAL)',
-        description: 'ADMIN tạo phòng sẽ vào hoạt động ngay (AVAILABLE). RECEPTIONIST / CASHIER / CUSTOMER tạo ra bản ghi ở trạng thái ' +
+        description: 'ADMIN tạo phòng sẽ vào hoạt động ngay (AVAILABLE). RECEPTIONIST / CUSTOMER tạo ra bản ghi ở trạng thái ' +
             'PENDING_APPROVAL, phải được duyệt qua PATCH /rooms/:id/approve mới hiển thị đón khách.',
     }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({

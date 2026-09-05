@@ -78,8 +78,8 @@ let AuthService = AuthService_1 = class AuthService {
             },
             'cashier@hotel.com': {
                 password: 'Staff@123',
-                fullName: 'Trần Văn Minh (Thu Ngân)',
-                role: client_1.Role.CASHIER,
+                fullName: 'Trần Văn Minh (Lễ Tân – Thu Ngân)',
+                role: client_1.Role.RECEPTIONIST,
                 phone: '0906667788',
             },
             'customer@hotel.com': {

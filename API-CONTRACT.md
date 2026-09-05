@@ -2,7 +2,7 @@
 
 Tài liệu này giải đáp chi tiết 10 câu hỏi quy ước (Mục 07) và tổng hợp tất cả các endpoint đã được hoàn thiện trên backend NestJS theo tài liệu rà soát [Khoảng Trống API Luxe Grand](https://claude.ai/code/artifact/a9723aad-ae9e-4d6a-b702-970e9b965190).
 
-> **Ai được gọi endpoint nào?** Tài liệu này chỉ mô tả payload. Ma trận phân quyền theo từng vai trò (`ADMIN` / `RECEPTIONIST` / `CASHIER` / `CUSTOMER`), kèm hướng dẫn dựng menu và bảng tra lỗi `403` cho FE, nằm ở [docs/FE-ROLE-MATRIX.md](docs/FE-ROLE-MATRIX.md).
+> **Ai được gọi endpoint nào?** Tài liệu này chỉ mô tả payload. Ma trận phân quyền theo từng vai trò (`ADMIN` / `RECEPTIONIST` [Lễ tân – Thu ngân] / `CUSTOMER`), kèm hướng dẫn dựng menu và bảng tra lỗi `403` cho FE, nằm ở [docs/FE-ROLE-MATRIX.md](docs/FE-ROLE-MATRIX.md).
 
 ---
 
@@ -57,7 +57,7 @@ Client gửi payload:
 ### 8. Bảo mật `POST /auth/register`
 - Backend **bỏ qua** trường `role` nếu client gửi lên và **ép cứng** quyền `CUSTOMER` tại server.
 - `role` đã được gỡ khỏi enum trong Swagger (chỉ còn là trường `deprecated`, kiểu chuỗi, được chấp nhận nhưng bỏ qua) để hợp đồng API không còn gợi ý rằng người dùng công khai có thể tự cấp quyền `ADMIN`.
-- Việc cấp quyền `ADMIN`, `RECEPTIONIST`, `CASHIER` thực hiện qua tài khoản quản trị viên tại **`POST /api/v1/users`** (tạo mới) hoặc `PATCH /api/v1/users/:id` (đổi quyền tài khoản đã có).
+- Việc cấp quyền `ADMIN`, `RECEPTIONIST` thực hiện qua tài khoản quản trị viên tại **`POST /api/v1/users`** (tạo mới) hoặc `PATCH /api/v1/users/:id` (đổi quyền tài khoản đã có).
 
 ### 9. Cơ chế xoay vòng Refresh Token (Token Rotation)
 - Mỗi lần gọi `POST /auth/refresh-token`, backend sẽ thu hồi refresh token cũ trong Redis và cấp lại **cặp token mới** (`accessToken` + `refreshToken`).
@@ -135,7 +135,7 @@ Client gửi payload:
 
 ### A2. Doanh thu theo ngày, 4 khoảng (`GET /api/v1/analytics/revenue/daily?range=7`)
 
-Quyền: `ADMIN`, `RECEPTIONIST`, `CASHIER`.
+Quyền: `ADMIN`, `RECEPTIONIST`.
 
 Tham số `range` nhận **1 / 7 / 14 / 30** (mặc định `7`). `days` vẫn dùng được như alias cũ.
 Một lần gọi trả về **cả 4 khoảng** trong `ranges`, nên bấm chip lọc là đổi được ngay ở client.
@@ -642,10 +642,10 @@ Endpoint tạo phòng hỗ trợ cả Admin và nhân viên/khách hàng gửi y
 
 #### 1. Thông tin Endpoint
 - **URL:** `POST /api/v1/rooms`
-- **Quyền:** `ADMIN`, `RECEPTIONIST`, `CASHIER`, `CUSTOMER` (`Bearer <accessToken>` bắt buộc).
+- **Quyền:** `ADMIN`, `RECEPTIONIST`, `CUSTOMER` (`Bearer <accessToken>` bắt buộc).
 - **Quy tắc phân quyền & Trạng thái:**
   - `ADMIN`: Phòng tạo ra sẽ được duyệt ngay và có trạng thái `AVAILABLE` (hoặc trạng thái truyền trong `status`).
-  - `RECEPTIONIST` / `CASHIER` / `CUSTOMER`: Hệ thống **tự động ép** trạng thái về `PENDING_APPROVAL` (Chờ Admin duyệt), không thể tự kích hoạt phòng. Sau đó Admin sẽ duyệt qua `PATCH /api/v1/rooms/:id/approve` hoặc từ chối qua `PATCH /api/v1/rooms/:id/reject`.
+  - `RECEPTIONIST` / `CUSTOMER`: Hệ thống **tự động ép** trạng thái về `PENDING_APPROVAL` (Chờ Admin duyệt), không thể tự kích hoạt phòng. Sau đó Admin sẽ duyệt qua `PATCH /api/v1/rooms/:id/approve` hoặc từ chối qua `PATCH /api/v1/rooms/:id/reject`.
 
 #### 2. Request Body Payload (JSON)
 Backend chấp nhận linh hoạt các trường (hỗ trợ cả các alias phổ biến bên FE):
@@ -916,12 +916,40 @@ Chữa dữ liệu lệch (phòng `OCCUPIED` mà không có đơn `CHECKED_IN` n
 Thay cho việc mượn `POST /auth/register`.
 
 - **Quyền:** `ADMIN`.
-- **Request body:** `{ email, password, fullName, role, phone?, avatar?, isActive? }` với `role` ∈ `ADMIN | RECEPTIONIST | CASHIER | CUSTOMER`.
+- **Request body:** `{ email, password, fullName, role, phone?, avatar?, isActive? }` với `role` ∈ `ADMIN | RECEPTIONIST | CUSTOMER`.
 - Trùng email trả `409 Conflict`.
 
 ### R. Sửa `totalInvoices` ở `GET /api/v1/invoices/summary`
 `totalInvoices` trước đây chỉ đếm theo `createdAt` trong ngày, nên hóa đơn phát hành hôm trước và thu tiền hôm nay vẫn vào `paidInvoices` khiến `totalInvoices: 0` mà `paidInvoices: 1`.
 Nay `totalInvoices` đếm hóa đơn **phát hành trong ngày HOẶC có thu tiền trong ngày**. `unpaidInvoices` / `partialInvoices` vẫn là tồn đọng toàn hệ thống (không giới hạn theo ngày).
+
+### S. Hiệu suất nhân viên (`GET /api/v1/analytics/staff-performance`)
+- **Quyền:** `ADMIN`.
+- **Query params:** `from=YYYY-MM-DD`, `to=YYYY-MM-DD`.
+- **Dữ liệu trả về:** Thống kê theo từng nhân viên (`bookingsConfirmed`, `bookingsCancelled`, `invoicesIssued`, `amountCollected`) và dòng tổng `totals`.
+
+### T. Quản lý danh mục dịch vụ CSDL (`/api/v1/services`)
+- **Quyền:** `GET` công khai (khách vãng lai, app khách hàng). `POST`, `PATCH`, `DELETE` chỉ dành cho `ADMIN`.
+- Lưu trữ trong bảng `hotel_services` với giá niêm yết, mã code, danh mục, đơn vị tính.
+
+### U. Chốt ca cá nhân (`GET /api/v1/invoices/summary?date=...&staffId=me`)
+- **Quyền:** `ADMIN`, `RECEPTIONIST`.
+- Khi truyền `staffId=me` (hoặc userId): trả về tổng tiền thực thu theo phương thức (`CASH`, `CREDIT_CARD`, `BANK_TRANSFER`), số hóa đơn đã xuất trong ca và số hóa đơn chưa thu còn tồn đọng.
+
+### V. Đổi phòng cho khách lưu trú (`POST /api/v1/bookings/:id/change-room`)
+- **Quyền:** `ADMIN`, `RECEPTIONIST`.
+- **Body:** `{ newRoomId: string, reason: string, keepPrice?: boolean }`.
+- **Ràng buộc:** Đơn phải `CHECKED_IN`, phòng mới phải `AVAILABLE` và không xung đột lịch. Phòng cũ chuyển `CLEANING`, phòng mới chuyển `OCCUPIED`.
+
+### W. Hoàn tiền hóa đơn (`POST /api/v1/invoices/:id/refund`)
+- **Quyền:** `ADMIN`, `RECEPTIONIST`.
+- **Body:** `{ amount: number, reason: string }`.
+- **Ràng buộc:** `amount <= paidAmount`. Hóa đơn giảm `paidAmount`, cập nhật `paymentStatus` sang `REFUNDED` hoặc `PARTIAL`.
+
+### X. Khách gọi dịch vụ phòng & Lễ tân xử lý (`/api/v1/bookings/:id/...`)
+- **Gọi dịch vụ:** `POST /api/v1/bookings/:id/service-requests` (Khách hàng gọi khi đang `CHECKED_IN`). Đơn lưu ở trạng thái `REQUESTED`.
+- **Xử lý yêu cầu:** `PATCH /api/v1/bookings/:id/services/:orderId` (Lễ tân duyệt `CONFIRMED` hoặc từ chối `REJECTED`). Chỉ dịch vụ `CONFIRMED` mới được cộng vào hóa đơn thanh toán khi check-out.
+
 
 
 

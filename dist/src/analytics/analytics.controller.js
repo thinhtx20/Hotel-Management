@@ -39,15 +39,17 @@ let AnalyticsController = class AnalyticsController {
     getOccupancyByType() {
         return this.analyticsService.getOccupancyByRoomType();
     }
+    getStaffPerformance(from, to) {
+        return this.analyticsService.getStaffPerformance(from, to);
+    }
 };
 exports.AnalyticsController = AnalyticsController;
 __decorate([
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, common_1.Get)('dashboard'),
     (0, swagger_1.ApiOperation)({
         summary: 'Tổng quan chỉ số phòng, khách hôm nay và tỷ lệ lấp đầy',
-        description: 'Dùng chung cho cả ba vai trò nhân viên. Thu ngân cần khối doanh thu và ' +
-            'số hóa đơn chưa thu trong cùng một lần gọi nên cũng được cấp quyền ở đây.',
+        description: 'Dùng chung cho cả hai vai trò nhân viên (ADMIN và RECEPTIONIST).',
     }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
@@ -117,7 +119,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], AnalyticsController.prototype, "getRevenue", null);
 __decorate([
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, common_1.Get)('revenue/daily'),
     (0, swagger_1.ApiOperation)({
         summary: 'Doanh thu theo ngày, chia sẵn 4 khoảng 1 / 7 / 14 / 30 ngày (mặc định 7)',
@@ -190,6 +192,47 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], AnalyticsController.prototype, "getOccupancyByType", null);
+__decorate([
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
+    (0, common_1.Get)('staff-performance'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Báo cáo hiệu suất công việc nhân sự lễ tân & thu ngân (Chỉ Admin)',
+        description: 'Thống kê số đơn đặt phòng xác nhận/hủy, số hóa đơn phát hành và tổng số tiền thu được theo từng nhân viên.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'from', required: false, example: '2026-09-01', description: 'Ngày bắt đầu (YYYY-MM-DD)' }),
+    (0, swagger_1.ApiQuery)({ name: 'to', required: false, example: '2026-09-05', description: 'Ngày kết thúc (YYYY-MM-DD)' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Lấy báo cáo hiệu suất nhân sự thành công',
+        exampleData: {
+            from: '2026-09-01',
+            to: '2026-09-05',
+            staff: [
+                {
+                    userId: 'user-uuid',
+                    fullName: 'Lê Thu Hà',
+                    email: 'reception@hotel.com',
+                    role: 'RECEPTIONIST',
+                    bookingsConfirmed: 34,
+                    bookingsCancelled: 2,
+                    invoicesIssued: 41,
+                    amountCollected: 128500000,
+                },
+            ],
+            totals: {
+                bookingsConfirmed: 34,
+                bookingsCancelled: 2,
+                invoicesIssued: 41,
+                amountCollected: 128500000,
+            },
+        },
+    }),
+    __param(0, (0, common_1.Query)('from')),
+    __param(1, (0, common_1.Query)('to')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], AnalyticsController.prototype, "getStaffPerformance", null);
 exports.AnalyticsController = AnalyticsController = __decorate([
     (0, swagger_1.ApiTags)('Analytics & Dashboard (Báo cáo & Thống kê)'),
     (0, swagger_1.ApiBearerAuth)('JWT-auth'),

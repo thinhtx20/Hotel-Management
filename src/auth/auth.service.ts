@@ -91,8 +91,8 @@ export class AuthService {
       },
       'cashier@hotel.com': {
         password: 'Staff@123',
-        fullName: 'Trần Văn Minh (Thu Ngân)',
-        role: Role.CASHIER,
+        fullName: 'Trần Văn Minh (Lễ Tân – Thu Ngân)',
+        role: Role.RECEPTIONIST,
         phone: '0906667788',
       },
       'customer@hotel.com': {

@@ -284,6 +284,75 @@ let AnalyticsService = class AnalyticsService {
             };
         });
     }
+    async getStaffPerformance(from, to) {
+        const today = new Date();
+        const startDate = from ? (0, revenue_util_1.startOfDay)(new Date(from)) : (0, revenue_util_1.startOfDay)(new Date(today.getFullYear(), today.getMonth(), 1));
+        const endDate = to ? (0, revenue_util_1.endOfDay)(new Date(to)) : (0, revenue_util_1.endOfDay)(today);
+        const staffUsers = await this.prisma.user.findMany({
+            where: {
+                role: { in: [client_1.Role.ADMIN, client_1.Role.RECEPTIONIST] },
+                isActive: true,
+            },
+            select: {
+                id: true,
+                fullName: true,
+                email: true,
+                role: true,
+            },
+            orderBy: { fullName: 'asc' },
+        });
+        const staffData = await Promise.all(staffUsers.map(async (user) => {
+            const [bookingsConfirmed, bookingsCancelled, invoicesIssued, paidAgg] = await Promise.all([
+                this.prisma.booking.count({
+                    where: {
+                        confirmedById: user.id,
+                        confirmedAt: { gte: startDate, lte: endDate },
+                    },
+                }),
+                this.prisma.booking.count({
+                    where: {
+                        cancelledById: user.id,
+                        cancelledAt: { gte: startDate, lte: endDate },
+                    },
+                }),
+                this.prisma.invoice.count({
+                    where: {
+                        issuedById: user.id,
+                        createdAt: { gte: startDate, lte: endDate },
+                    },
+                }),
+                this.prisma.invoice.aggregate({
+                    _sum: { paidAmount: true },
+                    where: {
+                        issuedById: user.id,
+                        paidAt: { gte: startDate, lte: endDate },
+                    },
+                }),
+            ]);
+            return {
+                userId: user.id,
+                fullName: user.fullName,
+                email: user.email,
+                role: user.role,
+                bookingsConfirmed,
+                bookingsCancelled,
+                invoicesIssued,
+                amountCollected: (0, revenue_util_1.roundMoney)(paidAgg._sum.paidAmount || 0),
+            };
+        }));
+        const totals = staffData.reduce((acc, curr) => ({
+            bookingsConfirmed: acc.bookingsConfirmed + curr.bookingsConfirmed,
+            bookingsCancelled: acc.bookingsCancelled + curr.bookingsCancelled,
+            invoicesIssued: acc.invoicesIssued + curr.invoicesIssued,
+            amountCollected: (0, revenue_util_1.roundMoney)(acc.amountCollected + curr.amountCollected),
+        }), { bookingsConfirmed: 0, bookingsCancelled: 0, invoicesIssued: 0, amountCollected: 0 });
+        return {
+            from: (0, revenue_util_1.formatLocalDate)(startDate),
+            to: (0, revenue_util_1.formatLocalDate)(endDate),
+            staff: staffData,
+            totals,
+        };
+    }
 };
 exports.AnalyticsService = AnalyticsService;
 exports.AnalyticsService = AnalyticsService = __decorate([

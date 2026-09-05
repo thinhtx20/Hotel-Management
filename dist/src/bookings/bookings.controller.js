@@ -22,6 +22,9 @@ const approve_booking_dto_1 = require("./dto/approve-booking.dto");
 const confirm_booking_dto_1 = require("./dto/confirm-booking.dto");
 const cancel_booking_dto_1 = require("./dto/cancel-booking.dto");
 const query_bookings_dto_1 = require("./dto/query-bookings.dto");
+const change_room_dto_1 = require("./dto/change-room.dto");
+const request_service_dto_1 = require("./dto/request-service.dto");
+const update_service_order_status_dto_1 = require("./dto/update-service-order-status.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
@@ -122,6 +125,15 @@ let BookingsController = class BookingsController {
     }
     addServiceOrder(id, dto) {
         return this.bookingsService.addServiceOrder(id, dto);
+    }
+    changeRoom(id, dto) {
+        return this.bookingsService.changeRoom(id, dto);
+    }
+    requestService(id, dto, customerId) {
+        return this.bookingsService.requestServiceOrder(id, dto, customerId);
+    }
+    updateServiceStatus(id, orderId, dto) {
+        return this.bookingsService.updateServiceOrderStatus(id, orderId, dto);
     }
 };
 exports.BookingsController = BookingsController;
@@ -384,7 +396,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], BookingsController.prototype, "checkIn", null);
 __decorate([
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, common_1.Post)(':id/check-out'),
     (0, swagger_1.ApiOperation)({ summary: 'Check-out trả phòng, tính tiền dịch vụ và xuất hóa đơn' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
@@ -494,6 +506,76 @@ __decorate([
     __metadata("design:paramtypes", [String, update_booking_status_dto_1.AddServiceOrderDto]),
     __metadata("design:returntype", void 0)
 ], BookingsController.prototype, "addServiceOrder", null);
+__decorate([
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, common_1.Post)(':id/change-room'),
+    (0, swagger_1.ApiOperation)({ summary: 'Đổi phòng cho khách đang lưu trú tại khách sạn (S2 - P1)' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Đổi phòng thành công',
+        exampleData: {
+            message: 'Đổi phòng thành công',
+            booking: SAMPLE_BOOKING,
+        },
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 400,
+        message: 'Chỉ có thể đổi phòng cho đơn đang lưu trú CHECKED_IN hoặc phòng mới không khả dụng',
+        error: 'Bad Request',
+        path: '/api/v1/bookings/:id/change-room',
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, change_room_dto_1.ChangeRoomDto]),
+    __metadata("design:returntype", void 0)
+], BookingsController.prototype, "changeRoom", null);
+__decorate([
+    (0, roles_decorator_1.Roles)(client_1.Role.CUSTOMER),
+    (0, common_1.Post)(':id/service-requests'),
+    (0, swagger_1.ApiOperation)({ summary: 'Khách hàng gọi dịch vụ tại phòng (C1 - P1)' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 201,
+        description: 'Yêu cầu dịch vụ phòng thành công',
+        exampleData: {
+            id: 'srv-req-123',
+            bookingId: 'b1e4c7a2-9d3f-4e8b-8a21-72948e9102c1',
+            serviceName: 'Giặt là cao cấp',
+            quantity: 2,
+            unitPrice: 50000,
+            totalPrice: 100000,
+            status: 'REQUESTED',
+            note: 'Giao trước 10h',
+        },
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, request_service_dto_1.RequestServiceDto, String]),
+    __metadata("design:returntype", void 0)
+], BookingsController.prototype, "requestService", null);
+__decorate([
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, common_1.Patch)(':id/services/:orderId'),
+    (0, swagger_1.ApiOperation)({ summary: 'Lễ tân duyệt hoặc từ chối yêu cầu dịch vụ của khách (C1 - P1)' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Cập nhật trạng thái yêu cầu dịch vụ thành công',
+        exampleData: {
+            id: 'srv-req-123',
+            bookingId: 'b1e4c7a2-9d3f-4e8b-8a21-72948e9102c1',
+            status: 'CONFIRMED',
+            note: 'Đã giao đồ lên phòng',
+        },
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Param)('orderId')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, update_service_order_status_dto_1.UpdateServiceOrderStatusDto]),
+    __metadata("design:returntype", void 0)
+], BookingsController.prototype, "updateServiceStatus", null);
 exports.BookingsController = BookingsController = __decorate([
     (0, swagger_1.ApiTags)('Bookings (Đặt phòng & Lưu trú)'),
     (0, swagger_1.ApiBearerAuth)('JWT-auth'),

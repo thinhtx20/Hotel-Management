@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { RefundDto } from './dto/refund.dto';
 import { PaymentMethod, PaymentStatus, Role } from '@prisma/client';
 import {
   collectedRevenueWhere,
@@ -272,10 +273,10 @@ export class InvoicesService {
   }
 
   /**
-   * Báo cáo tổng quan doanh thu hôm nay cho thu ngân (Mục 03 - P1)
-   * GET /invoices/summary?date=today
+   * Báo cáo tổng quan doanh thu hôm nay hoặc chốt ca cá nhân (S1 - P1)
+   * GET /invoices/summary?date=today&staffId=me
    */
-  async getSummary(dateQuery?: string) {
+  async getSummary(dateQuery?: string, staffIdQuery?: string, currentUserId?: string) {
     let targetDate = new Date();
     if (dateQuery && dateQuery !== 'today') {
       const parsed = new Date(dateQuery);
@@ -287,6 +288,74 @@ export class InvoicesService {
     const dayStart = startOfDay(targetDate);
     const dayEnd = endOfDay(targetDate);
 
+    // Nếu có tham số staffId -> chế độ Chốt ca / sổ quỹ cá nhân (S1 - P1)
+    if (staffIdQuery) {
+      const targetStaffId = staffIdQuery === 'me' ? currentUserId : staffIdQuery;
+      let staffName = 'Nhân viên';
+
+      if (targetStaffId) {
+        const staffUser = await this.prisma.user.findUnique({
+          where: { id: targetStaffId },
+          select: { fullName: true },
+        });
+        if (staffUser) {
+          staffName = staffUser.fullName;
+        }
+      }
+
+      // Hóa đơn do nhân viên này lập hoặc thu tiền trong ngày
+      const staffInvoices = await this.prisma.invoice.findMany({
+        where: {
+          issuedById: targetStaffId,
+          OR: [
+            { createdAt: { gte: dayStart, lte: dayEnd } },
+            { paidAt: { gte: dayStart, lte: dayEnd } },
+          ],
+        },
+      });
+
+      const invoicesIssued = staffInvoices.length;
+      let amountCollected = 0;
+      const byMethod = {
+        CASH: 0,
+        CREDIT_CARD: 0,
+        BANK_TRANSFER: 0,
+      };
+
+      for (const inv of staffInvoices) {
+        // Chỉ tính tiền nếu được thu trong khoảng ngày này
+        if (inv.paidAt && inv.paidAt >= dayStart && inv.paidAt <= dayEnd) {
+          amountCollected += inv.paidAmount;
+          if (inv.paymentMethod === PaymentMethod.CASH) {
+            byMethod.CASH += inv.paidAmount;
+          } else if (inv.paymentMethod === PaymentMethod.CREDIT_CARD) {
+            byMethod.CREDIT_CARD += inv.paidAmount;
+          } else if (inv.paymentMethod === PaymentMethod.BANK_TRANSFER) {
+            byMethod.BANK_TRANSFER += inv.paidAmount;
+          }
+        }
+      }
+
+      // Số hóa đơn chưa thanh toán trong ca của nhân viên
+      const unpaidLeftBehind = staffInvoices.filter(
+        (inv) => inv.paymentStatus === PaymentStatus.UNPAID || inv.paymentStatus === PaymentStatus.PARTIAL,
+      ).length;
+
+      return {
+        date: formatLocalDate(dayStart),
+        staffId: targetStaffId,
+        staffName,
+        invoicesIssued,
+        amountCollected: roundMoney(amountCollected),
+        byMethod: {
+          CASH: roundMoney(byMethod.CASH),
+          CREDIT_CARD: roundMoney(byMethod.CREDIT_CARD),
+          BANK_TRANSFER: roundMoney(byMethod.BANK_TRANSFER),
+        },
+        unpaidLeftBehind,
+      };
+    }
+
     const [
       revenueTodayAgg,
       totalInvoices,
@@ -294,15 +363,10 @@ export class InvoicesService {
       unpaidInvoices,
       partialInvoices,
     ] = await Promise.all([
-      // Dùng chung quy tắc với /analytics để thu ngân và dashboard
-      // không còn hiển thị hai con số khác nhau cho cùng một ngày.
       this.prisma.invoice.aggregate({
         _sum: { paidAmount: true },
         where: collectedRevenueWhere(dayStart, dayEnd),
       }),
-      // Hóa đơn "thuộc về ngày" = phát hành trong ngày HOẶC có thu tiền trong ngày.
-      // Trước đây chỉ đếm theo createdAt nên hóa đơn của hôm trước được thanh toán
-      // hôm nay vẫn vào paidInvoices, dẫn tới totalInvoices = 0 mà paidInvoices = 1.
       this.prisma.invoice.count({
         where: {
           OR: [
@@ -334,12 +398,71 @@ export class InvoicesService {
     return {
       date: formatLocalDate(dayStart),
       todayRevenue,
-      // Theo ngày được hỏi
       totalInvoices,
       paidInvoices,
-      // Tồn đọng toàn hệ thống (không giới hạn theo ngày)
       unpaidInvoices,
       partialInvoices,
     };
+  }
+
+  /**
+   * Hoàn tiền hóa đơn (S4 - P1)
+   * POST /invoices/:id/refund
+   */
+  async refund(id: string, dto: RefundDto, staffId: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id },
+      include: {
+        booking: {
+          include: {
+            customer: true,
+            room: { include: { roomType: true } },
+            serviceOrders: true,
+          },
+        },
+        issuedBy: true,
+      },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException(`Không tìm thấy hóa đơn ID: ${id}`);
+    }
+
+    if (invoice.paidAmount <= 0) {
+      throw new BadRequestException('Hóa đơn chưa thu tiền hoặc đã hoàn tiền toàn bộ, không thể hoàn thêm');
+    }
+
+    if (dto.amount > invoice.paidAmount) {
+      throw new BadRequestException(
+        `Số tiền hoàn (${dto.amount.toLocaleString()}đ) không được vượt quá số tiền đã thu (${invoice.paidAmount.toLocaleString()}đ)`,
+      );
+    }
+
+    const newPaidAmount = roundMoney(invoice.paidAmount - dto.amount);
+    const newStatus = newPaidAmount <= 0 ? PaymentStatus.REFUNDED : PaymentStatus.PARTIAL;
+    const refundNote = `[Hoàn tiền: ${dto.amount.toLocaleString()}đ lúc ${new Date().toLocaleString('vi-VN')}. Lý do: ${dto.reason}]`;
+    const updatedNotes = invoice.notes ? `${invoice.notes}\n${refundNote}` : refundNote;
+
+    const updated = await this.prisma.invoice.update({
+      where: { id },
+      data: {
+        paidAmount: newPaidAmount,
+        paymentStatus: newStatus,
+        notes: updatedNotes,
+        issuedById: staffId,
+      },
+      include: {
+        booking: {
+          include: {
+            customer: true,
+            room: { include: { roomType: true } },
+            serviceOrders: true,
+          },
+        },
+        issuedBy: { select: { fullName: true, email: true, role: true } },
+      },
+    });
+
+    return this.toInvoiceResponse(updated);
   }
 }

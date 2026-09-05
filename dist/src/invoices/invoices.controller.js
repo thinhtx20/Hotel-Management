@@ -18,6 +18,7 @@ const swagger_1 = require("@nestjs/swagger");
 const invoices_service_1 = require("./invoices.service");
 const record_payment_dto_1 = require("./dto/record-payment.dto");
 const create_invoice_dto_1 = require("./dto/create-invoice.dto");
+const refund_dto_1 = require("./dto/refund.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
@@ -63,8 +64,8 @@ let InvoicesController = class InvoicesController {
     constructor(invoicesService) {
         this.invoicesService = invoicesService;
     }
-    getSummary(date) {
-        return this.invoicesService.getSummary(date);
+    getSummary(date, staffId, currentUserId) {
+        return this.invoicesService.getSummary(date, staffId, currentUserId);
     }
     findMine(userId, status) {
         return this.invoicesService.findMyInvoices(userId, status);
@@ -81,13 +82,17 @@ let InvoicesController = class InvoicesController {
     recordPayment(id, dto, cashierId) {
         return this.invoicesService.recordPayment(id, dto, cashierId);
     }
+    refund(id, dto, staffId) {
+        return this.invoicesService.refund(id, dto, staffId);
+    }
 };
 exports.InvoicesController = InvoicesController;
 __decorate([
     (0, common_1.Get)('summary'),
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER),
-    (0, swagger_1.ApiOperation)({ summary: 'Tổng quan doanh thu hôm nay và số lượng hóa đơn cho thu ngân' }),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, swagger_1.ApiOperation)({ summary: 'Tổng quan doanh thu hôm nay hoặc sổ quỹ chốt ca (Lễ tân – Thu ngân)' }),
     (0, swagger_1.ApiQuery)({ name: 'date', required: false, description: 'today hoặc ngày theo định dạng YYYY-MM-DD' }),
+    (0, swagger_1.ApiQuery)({ name: 'staffId', required: false, description: '"me" để xem chốt ca của chính mình, hoặc userId của nhân viên cụ thể' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Lấy tóm tắt doanh thu thành công',
@@ -101,8 +106,10 @@ __decorate([
         },
     }),
     __param(0, (0, common_1.Query)('date')),
+    __param(1, (0, common_1.Query)('staffId')),
+    __param(2, (0, current_user_decorator_1.CurrentUser)('id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String, String]),
     __metadata("design:returntype", void 0)
 ], InvoicesController.prototype, "getSummary", null);
 __decorate([
@@ -127,7 +134,7 @@ __decorate([
 ], InvoicesController.prototype, "findMine", null);
 __decorate([
     (0, common_1.Post)(),
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.CASHIER),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, swagger_1.ApiOperation)({ summary: 'Tạo hóa đơn thủ công cho đơn đặt phòng' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 201,
@@ -142,7 +149,7 @@ __decorate([
 ], InvoicesController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)(),
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, swagger_1.ApiOperation)({ summary: 'Lấy danh sách hóa đơn theo trạng thái thanh toán' }),
     (0, swagger_1.ApiQuery)({ name: 'status', enum: client_1.PaymentStatus, required: false }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
@@ -157,7 +164,7 @@ __decorate([
 ], InvoicesController.prototype, "findAll", null);
 __decorate([
     (0, common_1.Get)(':id'),
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER, client_1.Role.CUSTOMER),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CUSTOMER),
     (0, swagger_1.ApiOperation)({
         summary: 'Xem chi tiết hóa đơn, tiền phòng và bảng kê dịch vụ phụ trợ',
         description: 'Nhân viên xem được mọi hóa đơn. Khách hàng chỉ mở được hóa đơn thuộc đơn đặt phòng ' +
@@ -189,8 +196,8 @@ __decorate([
 ], InvoicesController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Post)(':id/pay'),
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST, client_1.Role.CASHIER),
-    (0, swagger_1.ApiOperation)({ summary: 'Ghi nhận thanh toán hóa đơn (Thu ngân / Kế toán)' }),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, swagger_1.ApiOperation)({ summary: 'Ghi nhận thanh toán hóa đơn (Lễ tân – Thu ngân)' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Ghi nhận thanh toán hóa đơn thành công',
@@ -209,6 +216,28 @@ __decorate([
     __metadata("design:paramtypes", [String, record_payment_dto_1.RecordPaymentDto, String]),
     __metadata("design:returntype", void 0)
 ], InvoicesController.prototype, "recordPayment", null);
+__decorate([
+    (0, common_1.Post)(':id/refund'),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, swagger_1.ApiOperation)({ summary: 'Hoàn tiền hóa đơn (Lễ tân – Thu ngân)' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Hoàn tiền hóa đơn thành công',
+        exampleData: SAMPLE_INVOICE,
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 400,
+        message: 'Số tiền hoàn vượt quá số tiền đã thu hoặc hóa đơn chưa thanh toán',
+        error: 'Bad Request',
+        path: '/api/v1/invoices/:id/refund',
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, refund_dto_1.RefundDto, String]),
+    __metadata("design:returntype", void 0)
+], InvoicesController.prototype, "refund", null);
 exports.InvoicesController = InvoicesController = __decorate([
     (0, swagger_1.ApiTags)('Invoices (Hóa đơn & Thu ngân)'),
     (0, swagger_1.ApiBearerAuth)('JWT-auth'),

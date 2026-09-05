@@ -123,4 +123,24 @@ export declare class AnalyticsService {
         reservedRooms: number;
         occupancyRate: string;
     }[]>;
+    getStaffPerformance(from?: string, to?: string): Promise<{
+        from: string;
+        to: string;
+        staff: {
+            userId: string;
+            fullName: string;
+            email: string;
+            role: import(".prisma/client").$Enums.Role;
+            bookingsConfirmed: number;
+            bookingsCancelled: number;
+            invoicesIssued: number;
+            amountCollected: number;
+        }[];
+        totals: {
+            bookingsConfirmed: number;
+            bookingsCancelled: number;
+            invoicesIssued: number;
+            amountCollected: number;
+        };
+    }>;
 }

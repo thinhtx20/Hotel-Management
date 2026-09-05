@@ -208,7 +208,7 @@ let InvoicesService = class InvoicesService {
         });
         return this.toInvoiceResponse(newInvoice);
     }
-    async getSummary(dateQuery) {
+    async getSummary(dateQuery, staffIdQuery, currentUserId) {
         let targetDate = new Date();
         if (dateQuery && dateQuery !== 'today') {
             const parsed = new Date(dateQuery);
@@ -218,6 +218,63 @@ let InvoicesService = class InvoicesService {
         }
         const dayStart = (0, revenue_util_1.startOfDay)(targetDate);
         const dayEnd = (0, revenue_util_1.endOfDay)(targetDate);
+        if (staffIdQuery) {
+            const targetStaffId = staffIdQuery === 'me' ? currentUserId : staffIdQuery;
+            let staffName = 'Nhân viên';
+            if (targetStaffId) {
+                const staffUser = await this.prisma.user.findUnique({
+                    where: { id: targetStaffId },
+                    select: { fullName: true },
+                });
+                if (staffUser) {
+                    staffName = staffUser.fullName;
+                }
+            }
+            const staffInvoices = await this.prisma.invoice.findMany({
+                where: {
+                    issuedById: targetStaffId,
+                    OR: [
+                        { createdAt: { gte: dayStart, lte: dayEnd } },
+                        { paidAt: { gte: dayStart, lte: dayEnd } },
+                    ],
+                },
+            });
+            const invoicesIssued = staffInvoices.length;
+            let amountCollected = 0;
+            const byMethod = {
+                CASH: 0,
+                CREDIT_CARD: 0,
+                BANK_TRANSFER: 0,
+            };
+            for (const inv of staffInvoices) {
+                if (inv.paidAt && inv.paidAt >= dayStart && inv.paidAt <= dayEnd) {
+                    amountCollected += inv.paidAmount;
+                    if (inv.paymentMethod === client_1.PaymentMethod.CASH) {
+                        byMethod.CASH += inv.paidAmount;
+                    }
+                    else if (inv.paymentMethod === client_1.PaymentMethod.CREDIT_CARD) {
+                        byMethod.CREDIT_CARD += inv.paidAmount;
+                    }
+                    else if (inv.paymentMethod === client_1.PaymentMethod.BANK_TRANSFER) {
+                        byMethod.BANK_TRANSFER += inv.paidAmount;
+                    }
+                }
+            }
+            const unpaidLeftBehind = staffInvoices.filter((inv) => inv.paymentStatus === client_1.PaymentStatus.UNPAID || inv.paymentStatus === client_1.PaymentStatus.PARTIAL).length;
+            return {
+                date: (0, revenue_util_1.formatLocalDate)(dayStart),
+                staffId: targetStaffId,
+                staffName,
+                invoicesIssued,
+                amountCollected: (0, revenue_util_1.roundMoney)(amountCollected),
+                byMethod: {
+                    CASH: (0, revenue_util_1.roundMoney)(byMethod.CASH),
+                    CREDIT_CARD: (0, revenue_util_1.roundMoney)(byMethod.CREDIT_CARD),
+                    BANK_TRANSFER: (0, revenue_util_1.roundMoney)(byMethod.BANK_TRANSFER),
+                },
+                unpaidLeftBehind,
+            };
+        }
         const [revenueTodayAgg, totalInvoices, paidInvoices, unpaidInvoices, partialInvoices,] = await Promise.all([
             this.prisma.invoice.aggregate({
                 _sum: { paidAmount: true },
@@ -257,6 +314,54 @@ let InvoicesService = class InvoicesService {
             unpaidInvoices,
             partialInvoices,
         };
+    }
+    async refund(id, dto, staffId) {
+        const invoice = await this.prisma.invoice.findUnique({
+            where: { id },
+            include: {
+                booking: {
+                    include: {
+                        customer: true,
+                        room: { include: { roomType: true } },
+                        serviceOrders: true,
+                    },
+                },
+                issuedBy: true,
+            },
+        });
+        if (!invoice) {
+            throw new common_1.NotFoundException(`Không tìm thấy hóa đơn ID: ${id}`);
+        }
+        if (invoice.paidAmount <= 0) {
+            throw new common_1.BadRequestException('Hóa đơn chưa thu tiền hoặc đã hoàn tiền toàn bộ, không thể hoàn thêm');
+        }
+        if (dto.amount > invoice.paidAmount) {
+            throw new common_1.BadRequestException(`Số tiền hoàn (${dto.amount.toLocaleString()}đ) không được vượt quá số tiền đã thu (${invoice.paidAmount.toLocaleString()}đ)`);
+        }
+        const newPaidAmount = (0, revenue_util_1.roundMoney)(invoice.paidAmount - dto.amount);
+        const newStatus = newPaidAmount <= 0 ? client_1.PaymentStatus.REFUNDED : client_1.PaymentStatus.PARTIAL;
+        const refundNote = `[Hoàn tiền: ${dto.amount.toLocaleString()}đ lúc ${new Date().toLocaleString('vi-VN')}. Lý do: ${dto.reason}]`;
+        const updatedNotes = invoice.notes ? `${invoice.notes}\n${refundNote}` : refundNote;
+        const updated = await this.prisma.invoice.update({
+            where: { id },
+            data: {
+                paidAmount: newPaidAmount,
+                paymentStatus: newStatus,
+                notes: updatedNotes,
+                issuedById: staffId,
+            },
+            include: {
+                booking: {
+                    include: {
+                        customer: true,
+                        room: { include: { roomType: true } },
+                        serviceOrders: true,
+                    },
+                },
+                issuedBy: { select: { fullName: true, email: true, role: true } },
+            },
+        });
+        return this.toInvoiceResponse(updated);
     }
 };
 exports.InvoicesService = InvoicesService;

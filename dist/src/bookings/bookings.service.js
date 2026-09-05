@@ -15,6 +15,7 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const redis_service_1 = require("../redis/redis.service");
 const elasticsearch_service_1 = require("../elasticsearch/elasticsearch.service");
+const revenue_util_1 = require("../common/utils/revenue.util");
 const room_status_util_1 = require("../common/utils/room-status.util");
 const client_1 = require("@prisma/client");
 const BOOKING_INCLUDE = {
@@ -438,7 +439,9 @@ let BookingsService = BookingsService_1 = class BookingsService {
         if (booking.status !== client_1.BookingStatus.CHECKED_IN) {
             throw new common_1.BadRequestException('Chỉ có thể check-out đơn đặt phòng đang ở trạng thái CHECKED_IN');
         }
-        const servicesTotal = booking.serviceOrders.reduce((sum, s) => sum + s.totalPrice, 0);
+        const servicesTotal = booking.serviceOrders
+            .filter((s) => s.status === 'CONFIRMED' || !s.status)
+            .reduce((sum, s) => sum + s.totalPrice, 0);
         const roomAmount = booking.totalAmount;
         const discount = dto.discount || 0;
         const taxRate = dto.taxRate !== undefined ? dto.taxRate : 0.1;
@@ -545,6 +548,147 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 unitPrice: dto.unitPrice,
                 quantity,
                 totalPrice,
+                status: 'CONFIRMED',
+            },
+        });
+    }
+    async changeRoom(id, dto) {
+        const booking = await this.findOne(id);
+        if (booking.status !== client_1.BookingStatus.CHECKED_IN) {
+            throw new common_1.BadRequestException('Chỉ có thể đổi phòng cho đơn đặt phòng đang lưu trú (CHECKED_IN)');
+        }
+        if (dto.newRoomId === booking.roomId) {
+            throw new common_1.BadRequestException('Phòng mới phải khác phòng hiện tại đang ở');
+        }
+        const newRoom = await this.prisma.room.findUnique({
+            where: { id: dto.newRoomId },
+            include: { roomType: true },
+        });
+        if (!newRoom) {
+            throw new common_1.NotFoundException(`Không tìm thấy phòng mới với ID: ${dto.newRoomId}`);
+        }
+        if (newRoom.status === client_1.RoomStatus.MAINTENANCE) {
+            throw new common_1.BadRequestException('Phòng mới hiện đang bảo trì, không thể chuyển vào');
+        }
+        if (newRoom.status !== client_1.RoomStatus.AVAILABLE) {
+            throw new common_1.BadRequestException(`Phòng mới hiện không khả dụng (Trạng thái: ${newRoom.status})`);
+        }
+        const lockKey = `lock:room:${dto.newRoomId}`;
+        const lockToken = await this.redis.acquireLock(lockKey, 5000);
+        if (!lockToken) {
+            throw new common_1.ConflictException('Phòng mới đang được xử lý bởi một thao tác khác, vui lòng thử lại');
+        }
+        try {
+            const now = new Date();
+            const conflictBooking = await this.prisma.booking.findFirst({
+                where: {
+                    roomId: dto.newRoomId,
+                    status: { in: [client_1.BookingStatus.PENDING, client_1.BookingStatus.CONFIRMED, client_1.BookingStatus.CHECKED_IN] },
+                    checkOutDate: { gt: now },
+                    AND: [
+                        { checkInDate: { lt: booking.checkOutDate } },
+                        { checkOutDate: { gt: now } },
+                    ],
+                },
+            });
+            if (conflictBooking) {
+                throw new common_1.ConflictException('Phòng mới đã có lịch đặt trong khoảng thời gian lưu trú còn lại');
+            }
+            let newTotalAmount = booking.totalAmount;
+            if (dto.keepPrice === false) {
+                const remainingNights = Math.max(1, Math.ceil((new Date(booking.checkOutDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+                const totalNights = Math.max(1, Math.ceil((new Date(booking.checkOutDate).getTime() - new Date(booking.checkInDate).getTime()) / (1000 * 60 * 60 * 24)));
+                const passedNights = Math.max(0, totalNights - remainingNights);
+                const oldBasePrice = booking.room.roomType.basePrice;
+                const newBasePrice = newRoom.roomType.basePrice;
+                newTotalAmount = (0, revenue_util_1.roundMoney)((passedNights * oldBasePrice) + (remainingNights * newBasePrice));
+            }
+            const oldRoomId = booking.roomId;
+            const note = `[Đổi phòng: từ ${booking.room.roomNumber} sang ${newRoom.roomNumber} lúc ${new Date().toLocaleString('vi-VN')}. Lý do: ${dto.reason}]`;
+            const updatedRequests = booking.specialRequests ? `${booking.specialRequests}\n${note}` : note;
+            const [updatedBooking] = await this.prisma.$transaction([
+                this.prisma.booking.update({
+                    where: { id },
+                    data: {
+                        roomId: dto.newRoomId,
+                        totalAmount: newTotalAmount,
+                        specialRequests: updatedRequests,
+                    },
+                    include: BOOKING_INCLUDE,
+                }),
+                this.prisma.room.update({
+                    where: { id: oldRoomId },
+                    data: { status: client_1.RoomStatus.CLEANING },
+                }),
+                this.prisma.room.update({
+                    where: { id: dto.newRoomId },
+                    data: { status: client_1.RoomStatus.OCCUPIED },
+                }),
+            ]);
+            if (booking.invoice && dto.keepPrice === false) {
+                const servicesTotal = booking.serviceOrders
+                    .filter((s) => s.status === 'CONFIRMED' || !s.status)
+                    .reduce((sum, s) => sum + s.totalPrice, 0);
+                const taxable = Math.max(0, newTotalAmount + servicesTotal - booking.invoice.discount);
+                const tax = taxable * 0.1;
+                const finalAmount = taxable + tax;
+                await this.prisma.invoice.update({
+                    where: { bookingId: id },
+                    data: {
+                        roomAmount: newTotalAmount,
+                        tax,
+                        finalAmount,
+                    },
+                });
+            }
+            await this.reindexRoom(oldRoomId);
+            await this.reindexRoom(dto.newRoomId);
+            await this.redis.delByPattern('cache:rooms:*');
+            return {
+                message: 'Đổi phòng thành công',
+                booking: this.toBookingResponse(updatedBooking),
+            };
+        }
+        finally {
+            await this.redis.releaseLock(lockKey, lockToken);
+        }
+    }
+    async requestServiceOrder(id, dto, customerId) {
+        const booking = await this.findOne(id);
+        if (booking.customerId !== customerId) {
+            throw new common_1.ForbiddenException('Bạn chỉ có thể yêu cầu dịch vụ cho đơn đặt phòng của chính mình');
+        }
+        if (booking.status !== client_1.BookingStatus.CHECKED_IN) {
+            throw new common_1.BadRequestException('Chỉ có thể gọi dịch vụ khi đang nhận phòng lưu trú (CHECKED_IN)');
+        }
+        const quantity = dto.quantity || 1;
+        const totalPrice = (0, revenue_util_1.roundMoney)(dto.unitPrice * quantity);
+        return this.prisma.extraServiceOrder.create({
+            data: {
+                bookingId: id,
+                serviceName: dto.serviceName,
+                unitPrice: dto.unitPrice,
+                quantity,
+                totalPrice,
+                status: 'REQUESTED',
+                requestedById: customerId,
+                note: dto.note || null,
+            },
+        });
+    }
+    async updateServiceOrderStatus(bookingId, orderId, dto) {
+        const order = await this.prisma.extraServiceOrder.findFirst({
+            where: { id: orderId, bookingId },
+        });
+        if (!order) {
+            throw new common_1.NotFoundException(`Không tìm thấy yêu cầu dịch vụ với ID: ${orderId}`);
+        }
+        const updatedNote = dto.note ? (order.note ? `${order.note} | ${dto.note}` : dto.note) : order.note;
+        return this.prisma.extraServiceOrder.update({
+            where: { id: orderId },
+            data: {
+                status: dto.status,
+                note: updatedNote,
             },
         });
     }
