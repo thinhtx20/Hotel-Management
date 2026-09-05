@@ -45,7 +45,8 @@ hotel-management-be/
 │   └── microservices-architecture.md  # Tài liệu thiết kế Microservices & Saga Pattern
 ├── prisma/
 │   ├── schema.prisma                  # Schema PostgreSQL Prisma
-│   └── seed.ts                        # Dữ liệu mẫu (Users, Rooms, Bookings)
+│   ├── seed.ts                        # Dữ liệu mẫu (Users, Rooms, Bookings) - XÓA SẠCH rồi tạo lại
+│   └── seed-history.ts                # Nạp thêm dữ liệu báo cáo các năm cũ (không xóa dữ liệu đang có)
 ├── src/
 │   ├── analytics/                     # Dashboard & KPIs
 │   ├── auth/                          # JWT Auth & Passport
@@ -84,6 +85,17 @@ npx ts-node prisma/seed.ts
 ```bash
 npm run start:dev
 ```
+
+### 4. Dữ liệu báo cáo các năm cũ (Doanh thu 12 tháng & Hiệu suất nhân sự)
+Màn **Báo cáo** chỉ có số khi CSDL tồn tại đơn đã xác nhận và hóa đơn đã thu tiền trong năm đang xem.
+App tự dựng dữ liệu các năm **2024, 2025** ngay lần khởi động đầu tiên; muốn nạp thủ công vào CSDL
+đang chạy mà **không xóa dữ liệu hiện có**:
+```bash
+npm run db:seed-history                # nạp 2024, 2025 (bỏ qua năm đã có dữ liệu)
+npm run db:seed-history -- 2023        # nạp thêm một năm khác
+npm run db:seed-history -- --force     # dựng lại từ đầu các năm mặc định
+```
+Danh sách năm mặc định khai báo tại `HISTORY_YEARS` trong [src/prisma/history-seed.ts](src/prisma/history-seed.ts).
 
 - **Swagger Docs**: `http://localhost:3000/api/docs`
 - **Elasticsearch Search API**: `http://localhost:3000/api/v1/rooms/search?q=biển`

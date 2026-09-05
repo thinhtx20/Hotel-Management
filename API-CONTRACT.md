@@ -956,6 +956,17 @@ Nay `totalInvoices` đếm hóa đơn **phát hành trong ngày HOẶC có thu t
 - **Quyền:** `ADMIN`.
 - **Query params:** `from=YYYY-MM-DD`, `to=YYYY-MM-DD`.
 - **Dữ liệu trả về:** Thống kê theo từng nhân viên (`bookingsConfirmed`, `bookingsCancelled`, `invoicesIssued`, `amountCollected`) và dòng tổng `totals`.
+- **Không truyền `from`/`to`** thì mặc định lấy từ đầu tháng hiện tại đến hôm nay. Muốn xem cả năm phải truyền `from=YYYY-01-01&to=YYYY-12-31`.
+
+**Dữ liệu mẫu theo năm (BE đã seed sẵn):** CSDL có sẵn lịch sử kinh doanh **2024** và **2025** — mỗi năm đủ 12 tháng đơn đặt phòng đã trả phòng, đơn bị hủy có người hủy, và hóa đơn đã thu tiền có người phát hành. Nhờ vậy:
+
+| Endpoint | Query để lên số | Kết quả mong đợi |
+|---|---|---|
+| `GET /analytics/revenue` | `?year=2024` / `?year=2025` | Biểu đồ 12 tháng theo mùa (cao điểm hè T6–T8, Tết T2 & T12; thấp điểm T9–T10) |
+| `GET /analytics/staff-performance` | `?from=2024-01-01&to=2024-12-31` | Đủ 6 tài khoản nhân sự với số đơn duyệt / hủy / hóa đơn / tiền thu khác nhau |
+
+> **FE lưu ý:** ô chọn năm ở màn Báo cáo cần liệt kê cả **2024, 2025** (không chỉ năm hiện tại), nếu không sẽ không có cách nào xem được dữ liệu hai năm này.
+> Thêm năm khác: chạy `npm run db:seed-history -- 2023` ở backend.
 
 ### T. Quản lý danh mục dịch vụ CSDL (`/api/v1/services`)
 - **Quyền:** `GET` công khai (khách vãng lai, app khách hàng). `POST`, `PATCH`, `DELETE` chỉ dành cho `ADMIN`.

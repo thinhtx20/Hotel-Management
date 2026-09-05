@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { syncDatabaseSchema } from './schema-sync';
+import { HISTORY_YEARS, seedHistoricalYears } from './history-seed';
 
 function formatDatabaseUrl(): string | undefined {
   let url = process.env.DATABASE_URL;
@@ -586,7 +587,16 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         });
       }
 
+      // 6. DỮ LIỆU LỊCH SỬ CÁC NĂM TRƯỚC (Báo cáo doanh thu 12 tháng & Hiệu suất nhân sự)
+      // Chỉ dựng cho năm nào chưa có, nên khởi động lại app không bị nhân đôi số liệu.
+      await seedHistoricalYears(this, {
+        log: (msg) => this.logger.log(msg.trim()),
+      });
+
       this.logger.log('🎉 ĐÃ KHỞI TẠO ĐẦY ĐỦ DỮ LIỆU CÁC BẢNG CHO TỪNG ROLE:');
+      this.logger.log(
+        `📈 BÁO CÁO: Đã có dữ liệu doanh thu & hiệu suất nhân sự các năm ${HISTORY_YEARS.join(', ')}.`,
+      );
       this.logger.log('👑 ADMIN (admin@hotel.com): Toàn bộ thống kê, người dùng, phòng, hóa đơn, doanh thu.');
       this.logger.log('🛎️ LỄ TÂN (reception@hotel.com): 18 phòng (5 trạng thái), 6 đơn đặt phòng (Đang ở, Sắp tới, Chờ duyệt, Trả phòng, Đã hủy).');
       this.logger.log('💳 THU NGÂN (cashier@hotel.com): 4 hóa đơn (PAID, PARTIAL), 8 dịch vụ phụ trợ (Minibar, Spa, Xe Limousine, Buffet).');

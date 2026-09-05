@@ -7,6 +7,7 @@ import {
   PaymentStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { HISTORY_YEARS, seedHistoricalYears } from '../src/prisma/history-seed';
 
 const prisma = new PrismaClient();
 
@@ -786,6 +787,13 @@ async function main() {
     await prisma.hotelService.create({ data: s });
   }
   console.log('   -> Đã khởi tạo 7 dịch vụ gia tăng chuẩn vào CSDL.');
+
+  // 10. Dữ liệu lịch sử các năm trước cho màn Báo cáo & Hiệu suất
+  console.log(
+    `\n📈 10. Đang dựng dữ liệu kinh doanh lịch sử các năm ${HISTORY_YEARS.join(', ')} ` +
+      '(doanh thu 12 tháng + hiệu suất nhân sự)...',
+  );
+  await seedHistoricalYears(prisma, { log: (msg) => console.log(msg), force: true });
 
   console.log('\n===========================================================');
   console.log('🎉 KHỞI TẠO VÀ FAKE DỮ LIỆU CƠ SỞ DỮ LIỆU HOÀN TẤT!');
