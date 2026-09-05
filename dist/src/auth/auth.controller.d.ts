@@ -11,7 +11,8 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 export declare class AuthController {
     private readonly authService;
     constructor(authService: AuthService);
-    register(registerDto: RegisterDto): Promise<{
+    private deviceOf;
+    register(registerDto: RegisterDto, req?: Request): Promise<{
         accessToken: string;
         refreshToken: string;
         tokenType: string;
@@ -26,7 +27,7 @@ export declare class AuthController {
             createdAt: Date;
         };
     }>;
-    login(loginDto: LoginDto): Promise<{
+    login(loginDto: LoginDto, req?: Request): Promise<{
         accessToken: string;
         refreshToken: string;
         tokenType: string;

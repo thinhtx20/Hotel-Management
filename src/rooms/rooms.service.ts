@@ -14,6 +14,7 @@ import { RoomSortOption, SearchRoomDto } from './dto/search-room.dto';
 import { toRoomResponse } from './dto/room-response.dto';
 import { deriveRoomStatus } from '../common/utils/room-status.util';
 import { BookingStatus, RoomStatus } from '@prisma/client';
+import { RoomEventsService } from './room-events.service';
 
 @Injectable()
 export class RoomsService {
@@ -21,6 +22,7 @@ export class RoomsService {
     private prisma: PrismaService,
     private redis: RedisService,
     private esService: ElasticsearchService,
+    private roomEvents: RoomEventsService,
   ) {}
 
   async create(dto: CreateRoomDto) {
@@ -119,6 +121,22 @@ export class RoomsService {
 
     // Sync to Elasticsearch
     await this.esService.indexRoomEntity(room);
+
+    // Phát sự kiện realtime
+    const roomPayload = {
+      id: room.id,
+      roomNumber: room.roomNumber,
+      floor: room.floor,
+      status: room.status,
+      roomTypeId: room.roomTypeId,
+      roomTypeName: room.roomType?.name,
+      roomTypeCode: room.roomType?.code,
+      pricePerNight: room.roomType?.basePrice,
+      notes: room.notes,
+      updatedAt: room.updatedAt,
+    };
+    this.roomEvents.emitCreated(roomPayload);
+    this.roomEvents.emitStatusChanged(roomPayload);
 
     return toRoomResponse(room, true);
   }
@@ -318,7 +336,7 @@ export class RoomsService {
   }
 
   async update(id: string, dto: UpdateRoomDto) {
-    await this.findOne(id, true);
+    const existing = await this.findOne(id, true);
     const updated = await this.prisma.room.update({
       where: { id },
       data: dto,
@@ -329,6 +347,25 @@ export class RoomsService {
 
     // Update Elasticsearch
     await this.esService.indexRoomEntity(updated);
+
+    const payload = {
+      id: updated.id,
+      roomNumber: updated.roomNumber,
+      floor: updated.floor,
+      status: updated.status,
+      previousStatus: existing.status,
+      roomTypeId: updated.roomTypeId,
+      roomTypeName: updated.roomType?.name,
+      roomTypeCode: updated.roomType?.code,
+      pricePerNight: updated.roomType?.basePrice,
+      notes: updated.notes,
+      updatedAt: updated.updatedAt,
+    };
+
+    if (existing.status !== updated.status) {
+      this.roomEvents.emitStatusChanged(payload);
+    }
+    this.roomEvents.emitUpdated(payload);
 
     return toRoomResponse(updated, true);
   }
@@ -357,12 +394,27 @@ export class RoomsService {
     for (const room of rooms) {
       const next = deriveRoomStatus(room.status, room.bookings, now);
       if (next !== room.status) {
-        await this.prisma.room.update({
+        const updated = await this.prisma.room.update({
           where: { id: room.id },
           data: { status: next },
+          include: { roomType: true },
         });
         await this.esService.indexRoomEntity({ ...room, status: next });
         changes.push({ roomNumber: room.roomNumber, from: room.status, to: next });
+
+        this.roomEvents.emitStatusChanged({
+          id: updated.id,
+          roomNumber: updated.roomNumber,
+          floor: updated.floor,
+          status: updated.status,
+          previousStatus: room.status,
+          roomTypeId: updated.roomTypeId,
+          roomTypeName: updated.roomType?.name,
+          roomTypeCode: updated.roomType?.code,
+          pricePerNight: updated.roomType?.basePrice,
+          notes: updated.notes,
+          updatedAt: updated.updatedAt,
+        });
       }
     }
 
@@ -382,7 +434,7 @@ export class RoomsService {
   }
 
   async updateStatus(id: string, status: RoomStatus) {
-    await this.findOne(id, true);
+    const existing = await this.findOne(id, true);
     const updated = await this.prisma.room.update({
       where: { id },
       data: { status },
@@ -391,17 +443,34 @@ export class RoomsService {
 
     await this.redis.delByPattern('cache:rooms:*');
     await this.esService.indexRoomEntity(updated);
+
+    this.roomEvents.emitStatusChanged({
+      id: updated.id,
+      roomNumber: updated.roomNumber,
+      floor: updated.floor,
+      status: updated.status,
+      previousStatus: existing.status,
+      roomTypeId: updated.roomTypeId,
+      roomTypeName: updated.roomType?.name,
+      roomTypeCode: updated.roomType?.code,
+      pricePerNight: updated.roomType?.basePrice,
+      notes: updated.notes,
+      updatedAt: updated.updatedAt,
+    });
+
     return toRoomResponse(updated, true);
   }
 
   async remove(id: string) {
-    await this.findOne(id, true);
+    const existing = await this.findOne(id, true);
     const deleted = await this.prisma.room.delete({
       where: { id },
     });
 
     await this.redis.delByPattern('cache:rooms:*');
     await this.esService.removeRoom(id);
+
+    this.roomEvents.emitDeleted(existing.id, existing.roomNumber);
 
     return deleted;
   }

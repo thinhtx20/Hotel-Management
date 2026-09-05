@@ -14,6 +14,7 @@ exports.PrismaService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const bcrypt = require("bcrypt");
+const schema_sync_1 = require("./schema-sync");
 function formatDatabaseUrl() {
     let url = process.env.DATABASE_URL;
     if (!url)
@@ -47,6 +48,7 @@ let PrismaService = PrismaService_1 = class PrismaService extends client_1.Prism
             try {
                 await this.$connect();
                 this.logger.log('✅ Kết nối cơ sở dữ liệu PostgreSQL thành công!');
+                await (0, schema_sync_1.syncDatabaseSchema)((sql) => this.$executeRawUnsafe(sql), this.logger);
                 await this.ensureInitialSeed();
                 return;
             }

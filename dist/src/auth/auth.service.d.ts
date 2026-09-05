@@ -9,14 +9,17 @@ import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { UserEventsService } from '../users/user-events.service';
+import { DeviceInfo } from './session-policy';
 export declare class AuthService {
     private prisma;
     private jwtService;
     private mailService;
     private redisService;
+    private userEvents;
     private readonly logger;
-    constructor(prisma: PrismaService, jwtService: JwtService, mailService: MailService, redisService: RedisService);
-    register(dto: RegisterDto): Promise<{
+    constructor(prisma: PrismaService, jwtService: JwtService, mailService: MailService, redisService: RedisService, userEvents: UserEventsService);
+    register(dto: RegisterDto, device?: DeviceInfo): Promise<{
         accessToken: string;
         refreshToken: string;
         tokenType: string;
@@ -31,7 +34,7 @@ export declare class AuthService {
             createdAt: Date;
         };
     }>;
-    login(dto: LoginDto): Promise<{
+    login(dto: LoginDto, device?: DeviceInfo): Promise<{
         accessToken: string;
         refreshToken: string;
         tokenType: string;
@@ -46,6 +49,9 @@ export declare class AuthService {
             role: import(".prisma/client").$Enums.Role;
         };
     }>;
+    private openDeviceSession;
+    private closeDeviceSession;
+    private isSessionStillAlive;
     getProfile(userId: string): Promise<{
         avatarUrl: string;
         stats: {

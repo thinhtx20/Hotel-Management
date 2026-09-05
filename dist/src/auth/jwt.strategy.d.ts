@@ -11,6 +11,7 @@ export declare class JwtStrategy extends JwtStrategy_base {
         sub: string;
         email: string;
         role: string;
+        sid?: string;
     }): Promise<{
         id: string;
         email: string;

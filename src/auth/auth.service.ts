@@ -18,6 +18,15 @@ import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { UserEventsService } from '../users/user-events.service';
+import {
+  DeviceInfo,
+  describeDevice,
+  deviceLimitException,
+  getSingleDeviceMode,
+  isSingleDeviceRole,
+  sessionRevokedException,
+} from './session-policy';
 import { Role, BookingStatus } from '@prisma/client';
 
 @Injectable()
@@ -29,9 +38,10 @@ export class AuthService {
     private jwtService: JwtService,
     private mailService: MailService,
     private redisService: RedisService,
+    private userEvents: UserEventsService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, device?: DeviceInfo) {
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
     });
@@ -61,7 +71,11 @@ export class AuthService {
       },
     });
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    // Báo realtime cho màn hình "Quản lý tài khoản" đang mở của Admin / Lễ tân
+    this.userEvents.emitCreated(user);
+
+    const sessionId = await this.openDeviceSession(user, device);
+    const tokens = await this.generateTokens(user.id, user.email, user.role, sessionId);
 
     return {
       user,
@@ -69,7 +83,7 @@ export class AuthService {
     };
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, device?: DeviceInfo) {
     const email = (dto.email || '').trim().toLowerCase();
     const inputPassword = (dto.password || '').trim();
 
@@ -125,6 +139,7 @@ export class AuthService {
         },
       });
       this.logger.log(`✅ Đã khởi tạo thành công tài khoản: ${email}`);
+      this.userEvents.emitCreated(user);
     }
 
     if (!user) {
@@ -207,7 +222,10 @@ export class AuthService {
       throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
     }
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    // Chốt phiên 1 thiết bị: đá phiên cũ ra (hoặc chặn máy mới, tùy SINGLE_DEVICE_MODE)
+    const sessionId = await this.openDeviceSession(user, device);
+
+    const tokens = await this.generateTokens(user.id, user.email, user.role, sessionId);
 
     return {
       user: {
@@ -221,6 +239,97 @@ export class AuthService {
       },
       ...tokens,
     };
+  }
+
+  /**
+   * Mở phiên đăng nhập mới cho tài khoản bị giới hạn 1 thiết bị (khách hàng).
+   *
+   * - `kick_old` (mặc định): ghi đè `activeSessionId`, đồng thời xóa sạch refresh token
+   *   đang treo trong Redis nên thiết bị cũ mất hiệu lực ngay lập tức.
+   * - `block_new`: nếu phiên cũ còn hạn thì từ chối đăng nhập ở máy mới.
+   *
+   * Trả về `undefined` với các vai trò không bị giới hạn (Admin / Lễ tân) — token khi đó
+   * không mang `sid` và không bị đối chiếu phiên.
+   */
+  private async openDeviceSession(
+    user: { id: string; email: string; role: Role; activeSessionId?: string | null; activeDevice?: string | null; lastLoginAt?: Date | null },
+    device?: DeviceInfo,
+  ): Promise<string | undefined> {
+    if (!isSingleDeviceRole(user.role)) return undefined;
+
+    if (
+      getSingleDeviceMode() === 'block_new' &&
+      user.activeSessionId &&
+      this.isSessionStillAlive(user.lastLoginAt)
+    ) {
+      this.logger.warn(
+        `[Auth] Chặn đăng nhập thiết bị thứ 2 cho "${user.email}" (thiết bị đang giữ phiên: ${user.activeDevice || 'không xác định'}).`,
+      );
+      throw deviceLimitException(user.activeDevice);
+    }
+
+    const sessionId = crypto.randomUUID();
+    const deviceLabel = describeDevice(device);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        activeSessionId: sessionId,
+        activeDevice: deviceLabel,
+        lastLoginAt: new Date(),
+      },
+    });
+
+    // Thu hồi toàn bộ refresh token của các thiết bị trước đó (nếu có Redis)
+    if (this.redisService?.isReady) {
+      await this.redisService.delByPattern(`auth:refresh:${user.id}:*`);
+    }
+
+    if (user.activeSessionId && user.activeSessionId !== sessionId) {
+      this.logger.log(
+        `[Auth] Tài khoản "${user.email}" đăng nhập trên thiết bị mới (${deviceLabel}), phiên cũ đã bị thu hồi.`,
+      );
+    }
+
+    return sessionId;
+  }
+
+  /**
+   * Đóng phiên 1 thiết bị khi người dùng chủ động đăng xuất.
+   * Chỉ xóa khi đúng phiên đang hoạt động, tránh việc một token cũ vừa bị đá ra
+   * lại gọi logout và làm mất phiên hợp lệ trên thiết bị mới.
+   */
+  private async closeDeviceSession(userId: string, sessionId?: string) {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, role: true, activeSessionId: true },
+      });
+
+      if (!user || !isSingleDeviceRole(user.role) || !user.activeSessionId) return;
+      if (sessionId && sessionId !== user.activeSessionId) return;
+
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { activeSessionId: null, activeDevice: null },
+      });
+    } catch (err: any) {
+      // Đăng xuất không được phép thất bại chỉ vì dọn phiên lỗi
+      this.logger.warn(`[Auth] Không dọn được phiên thiết bị của user ${userId}: ${err.message}`);
+    }
+  }
+
+  /**
+   * Phiên cũ được coi là còn hiệu lực trong vòng đời của refresh token tính từ lần đăng nhập gần nhất.
+   * Nhờ vậy chế độ `block_new` tự mở khóa nếu khách mất máy cũ, không cần quản trị viên can thiệp.
+   */
+  private isSessionStillAlive(lastLoginAt?: Date | null): boolean {
+    if (!lastLoginAt) return true;
+    const ttlSeconds = this.parseExpiresInToSeconds(
+      process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+      7 * 24 * 3600,
+    );
+    return Date.now() - new Date(lastLoginAt).getTime() < ttlSeconds * 1000;
   }
 
   async getProfile(userId: string) {
@@ -531,7 +640,12 @@ export class AuthService {
       throw new UnauthorizedException('Tài khoản người dùng không tồn tại hoặc đã bị khóa');
     }
 
-    const newTokens = await this.generateTokens(user.id, user.email, user.role);
+    // Refresh token của thiết bị cũ không được phép hồi sinh thành phiên mới
+    if (isSingleDeviceRole(user.role) && user.activeSessionId && payload.sid !== user.activeSessionId) {
+      throw sessionRevokedException(user.activeDevice);
+    }
+
+    const newTokens = await this.generateTokens(user.id, user.email, user.role, payload.sid);
 
     return {
       ...newTokens,
@@ -566,6 +680,19 @@ export class AuthService {
       }
     }
 
+    // 2. Giải mã Access Token (nếu có) để lấy userId / mã phiên thiết bị
+    let accessPayload: any = null;
+    if (accessToken) {
+      try {
+        accessPayload = this.jwtService.decode(accessToken);
+        if (accessPayload?.sub && !targetUserId) {
+          targetUserId = accessPayload.sub;
+        }
+      } catch {
+        // Bỏ qua lỗi decode access token
+      }
+    }
+
     // Nếu không có cả userId lẫn refreshToken/accessToken
     if (!targetUserId && !accessToken) {
       throw new BadRequestException(
@@ -573,8 +700,13 @@ export class AuthService {
       );
     }
 
+    // 3. Xóa phiên 1 thiết bị của tài khoản khách hàng để lần sau đăng nhập lại từ đầu
+    if (targetUserId) {
+      await this.closeDeviceSession(targetUserId, refreshPayload?.sid || accessPayload?.sid);
+    }
+
     if (this.redisService?.isReady) {
-      // 2. Thu hồi Refresh Token trong Redis
+      // 4. Thu hồi Refresh Token trong Redis
       if (targetUserId) {
         if (refreshToken && refreshPayload?.jti) {
           await this.redisService.del(
@@ -586,23 +718,16 @@ export class AuthService {
         }
       }
 
-      // 3. Đưa Access Token vào Blacklist trong Redis nếu có
-      if (accessToken) {
-        try {
-          const accessPayload: any = this.jwtService.decode(accessToken);
-          if (accessPayload?.exp) {
-            const currentTime = Math.floor(Date.now() / 1000);
-            const remainingTtl = accessPayload.exp - currentTime;
-            if (remainingTtl > 0) {
-              await this.redisService.set(
-                `auth:blacklist:${accessToken}`,
-                '1',
-                remainingTtl,
-              );
-            }
-          }
-        } catch {
-          // Bỏ qua lỗi decode access token
+      // 5. Đưa Access Token vào Blacklist trong Redis nếu có
+      if (accessToken && accessPayload?.exp) {
+        const currentTime = Math.floor(Date.now() / 1000);
+        const remainingTtl = accessPayload.exp - currentTime;
+        if (remainingTtl > 0) {
+          await this.redisService.set(
+            `auth:blacklist:${accessToken}`,
+            '1',
+            remainingTtl,
+          );
         }
       }
     }
@@ -616,7 +741,7 @@ export class AuthService {
   /**
    * Tạo cặp Access Token và Refresh Token kèm metadata
    */
-  private async generateTokens(userId: string, email: string, role: Role) {
+  private async generateTokens(userId: string, email: string, role: Role, sessionId?: string) {
     const accessSecret =
       process.env.JWT_SECRET || 'super-secret-hotel-jwt-key-2026-change-in-production';
     const refreshSecret =
@@ -624,14 +749,22 @@ export class AuthService {
     const accessExpiresIn = process.env.JWT_EXPIRES_IN || '1d';
     const refreshExpiresIn = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 
-    const accessPayload = { sub: userId, email, role, type: 'access' };
+    // `sid` gắn token vào đúng phiên thiết bị đang hoạt động (chỉ có với vai trò bị giới hạn 1 máy)
+    const accessPayload = { sub: userId, email, role, type: 'access', ...(sessionId ? { sid: sessionId } : {}) };
     const accessToken = this.jwtService.sign(accessPayload, {
       secret: accessSecret,
       expiresIn: accessExpiresIn,
     });
 
     const tokenId = crypto.randomUUID();
-    const refreshPayload = { sub: userId, email, role, jti: tokenId, type: 'refresh' };
+    const refreshPayload = {
+      sub: userId,
+      email,
+      role,
+      jti: tokenId,
+      type: 'refresh',
+      ...(sessionId ? { sid: sessionId } : {}),
+    };
     const refreshToken = this.jwtService.sign(refreshPayload, {
       secret: refreshSecret,
       expiresIn: refreshExpiresIn,
@@ -641,7 +774,7 @@ export class AuthService {
     if (this.redisService?.isReady) {
       await this.redisService.set(
         `auth:refresh:${userId}:${tokenId}`,
-        { userId, email, role, createdAt: new Date().toISOString() },
+        { userId, email, role, sessionId, createdAt: new Date().toISOString() },
         refreshTtlSeconds,
       );
     }

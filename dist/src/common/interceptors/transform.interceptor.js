@@ -9,8 +9,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TransformInterceptor = void 0;
 const common_1 = require("@nestjs/common");
 const operators_1 = require("rxjs/operators");
+const skip_transform_decorator_1 = require("../decorators/skip-transform.decorator");
 let TransformInterceptor = class TransformInterceptor {
     intercept(context, next) {
+        const skipTransform = Reflect.getMetadata(skip_transform_decorator_1.SKIP_TRANSFORM_KEY, context.getHandler()) ||
+            Reflect.getMetadata(skip_transform_decorator_1.SKIP_TRANSFORM_KEY, context.getClass());
+        if (skipTransform) {
+            return next.handle();
+        }
         const ctx = context.switchToHttp();
         const response = ctx.getResponse();
         const statusCode = response.statusCode;

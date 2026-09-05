@@ -15,10 +15,16 @@ const passport_1 = require("@nestjs/passport");
 const passport_jwt_1 = require("passport-jwt");
 const prisma_service_1 = require("../prisma/prisma.service");
 const redis_service_1 = require("../redis/redis.service");
+const session_policy_1 = require("./session-policy");
+const jwtExtractor = passport_jwt_1.ExtractJwt.fromExtractors([
+    passport_jwt_1.ExtractJwt.fromAuthHeaderAsBearerToken(),
+    passport_jwt_1.ExtractJwt.fromUrlQueryParameter('token'),
+    passport_jwt_1.ExtractJwt.fromUrlQueryParameter('access_token'),
+]);
 let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(passport_jwt_1.Strategy, 'jwt') {
     constructor(prisma, redisService) {
         super({
-            jwtFromRequest: passport_jwt_1.ExtractJwt.fromAuthHeaderAsBearerToken(),
+            jwtFromRequest: jwtExtractor,
             passReqToCallback: true,
             ignoreExpiration: false,
             secretOrKey: process.env.JWT_SECRET || 'super-secret-hotel-jwt-key-2026-change-in-production',
@@ -27,7 +33,7 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
         this.redisService = redisService;
     }
     async validate(req, payload) {
-        const token = passport_jwt_1.ExtractJwt.fromAuthHeaderAsBearerToken()(req);
+        const token = jwtExtractor(req);
         if (token && this.redisService?.isReady) {
             const isBlacklisted = await this.redisService.get(`auth:blacklist:${token}`);
             if (isBlacklisted) {
@@ -43,12 +49,20 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
                 phone: true,
                 role: true,
                 isActive: true,
+                activeSessionId: true,
+                activeDevice: true,
             },
         });
         if (!user || !user.isActive) {
             throw new common_1.UnauthorizedException('Tài khoản không tồn tại hoặc đã bị vô hiệu hóa');
         }
-        return user;
+        if ((0, session_policy_1.isSingleDeviceRole)(user.role) &&
+            user.activeSessionId &&
+            payload.sid !== user.activeSessionId) {
+            throw (0, session_policy_1.sessionRevokedException)(user.activeDevice);
+        }
+        const { activeSessionId, activeDevice, ...currentUser } = user;
+        return currentUser;
     }
 };
 exports.JwtStrategy = JwtStrategy;

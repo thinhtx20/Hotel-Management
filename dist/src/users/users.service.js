@@ -13,9 +13,11 @@ exports.UsersService = void 0;
 const common_1 = require("@nestjs/common");
 const bcrypt = require("bcrypt");
 const prisma_service_1 = require("../prisma/prisma.service");
+const user_events_service_1 = require("./user-events.service");
 let UsersService = class UsersService {
-    constructor(prisma) {
+    constructor(prisma, userEvents) {
         this.prisma = prisma;
+        this.userEvents = userEvents;
     }
     async create(dto) {
         const email = dto.email.trim().toLowerCase();
@@ -24,7 +26,7 @@ let UsersService = class UsersService {
             throw new common_1.ConflictException('Email này đã được đăng ký trong hệ thống');
         }
         const hashedPassword = await bcrypt.hash(dto.password, await bcrypt.genSalt(10));
-        return this.prisma.user.create({
+        const created = await this.prisma.user.create({
             data: {
                 email,
                 password: hashedPassword,
@@ -45,6 +47,8 @@ let UsersService = class UsersService {
                 createdAt: true,
             },
         });
+        this.userEvents.emitCreated(created);
+        return created;
     }
     async findAll(role) {
         return this.prisma.user.findMany({
@@ -95,7 +99,7 @@ let UsersService = class UsersService {
     }
     async update(id, dto) {
         await this.findOne(id);
-        return this.prisma.user.update({
+        const updated = await this.prisma.user.update({
             where: { id },
             data: dto,
             select: {
@@ -109,6 +113,8 @@ let UsersService = class UsersService {
                 updatedAt: true,
             },
         });
+        this.userEvents.emitUpdated(updated);
+        return updated;
     }
     async updateMe(id, dto) {
         await this.findOne(id);
@@ -131,6 +137,7 @@ let UsersService = class UsersService {
                 updatedAt: true,
             },
         });
+        this.userEvents.emitUpdated(updated);
         return {
             ...updated,
             avatarUrl: updated.avatar,
@@ -138,15 +145,29 @@ let UsersService = class UsersService {
     }
     async remove(id) {
         await this.findOne(id);
-        return this.prisma.user.update({
+        const deactivated = await this.prisma.user.update({
             where: { id },
             data: { isActive: false },
+            select: {
+                id: true,
+                email: true,
+                fullName: true,
+                phone: true,
+                avatar: true,
+                role: true,
+                isActive: true,
+                createdAt: true,
+                updatedAt: true,
+            },
         });
+        this.userEvents.emitDeactivated(deactivated);
+        return deactivated;
     }
 };
 exports.UsersService = UsersService;
 exports.UsersService = UsersService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        user_events_service_1.UserEventsService])
 ], UsersService);
 //# sourceMappingURL=users.service.js.map

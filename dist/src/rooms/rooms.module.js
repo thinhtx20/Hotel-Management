@@ -10,14 +10,15 @@ exports.RoomsModule = void 0;
 const common_1 = require("@nestjs/common");
 const rooms_service_1 = require("./rooms.service");
 const rooms_controller_1 = require("./rooms.controller");
+const room_events_service_1 = require("./room-events.service");
 let RoomsModule = class RoomsModule {
 };
 exports.RoomsModule = RoomsModule;
 exports.RoomsModule = RoomsModule = __decorate([
     (0, common_1.Module)({
         controllers: [rooms_controller_1.RoomsController],
-        providers: [rooms_service_1.RoomsService],
-        exports: [rooms_service_1.RoomsService],
+        providers: [rooms_service_1.RoomsService, room_events_service_1.RoomEventsService],
+        exports: [rooms_service_1.RoomsService, room_events_service_1.RoomEventsService],
     })
 ], RoomsModule);
 //# sourceMappingURL=rooms.module.js.map

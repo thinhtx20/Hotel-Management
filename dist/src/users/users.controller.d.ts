@@ -1,11 +1,15 @@
+import { MessageEvent } from '@nestjs/common';
+import { Observable } from 'rxjs';
 import { UsersService } from './users.service';
+import { UserEventsService } from './user-events.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { Role } from '@prisma/client';
 export declare class UsersController {
     private readonly usersService;
-    constructor(usersService: UsersService);
+    private readonly userEvents;
+    constructor(usersService: UsersService, userEvents: UserEventsService);
     updateMe(userId: string, dto: UpdateMeDto): Promise<{
         avatarUrl: string;
         id: string;
@@ -41,6 +45,7 @@ export declare class UsersController {
             bookings: number;
         };
     }[]>;
+    stream(): Observable<MessageEvent>;
     findOne(id: string): Promise<{
         id: string;
         email: string;
@@ -113,10 +118,9 @@ export declare class UsersController {
     remove(id: string): Promise<{
         id: string;
         email: string;
-        password: string;
         fullName: string;
-        phone: string | null;
-        avatar: string | null;
+        phone: string;
+        avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
         createdAt: Date;

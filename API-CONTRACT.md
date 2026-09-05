@@ -74,6 +74,35 @@ Client gửi payload:
 }
 ```
 
+### 9b. Mỗi tài khoản khách hàng chỉ đăng nhập trên 1 thiết bị
+- **Phạm vi:** chỉ vai trò `CUSTOMER`. `ADMIN` / `RECEPTIONIST` vẫn đăng nhập được nhiều máy (quầy lễ tân thường trực nhiều thiết bị).
+- **Cơ chế:** mỗi lần đăng nhập thành công, backend sinh mã phiên `sessionId`, lưu vào `users.activeSessionId` và nhúng vào JWT dưới claim `sid`. Mọi request đều đối chiếu `sid` của token với `activeSessionId` trong CSDL — lệch nghĩa là token của thiết bị cũ.
+- **Chốt ở CSDL chứ không chỉ ở Redis**, nên ràng buộc vẫn đúng khi Redis chưa bật.
+- **Hai chế độ (biến môi trường `SINGLE_DEVICE_MODE`):**
+
+| Chế độ | Hành vi khi khách đăng nhập ở máy thứ 2 |
+| --- | --- |
+| `kick_old` *(mặc định)* | Máy mới vào bình thường, **máy cũ bị đá ra ngay**. |
+| `block_new` | Máy mới bị từ chối `401`, máy cũ giữ nguyên phiên. Phiên cũ tự hết hiệu lực sau `JWT_REFRESH_EXPIRES_IN` (7 ngày) tính từ lần đăng nhập gần nhất, nên khách mất máy cũ không bị khóa vĩnh viễn. |
+
+- **Máy cũ nhận về (mọi endpoint cần đăng nhập, kể cả `POST /auth/refresh-token`):**
+```json
+{
+  "statusCode": 401,
+  "success": false,
+  "message": "Tài khoản của bạn vừa được đăng nhập trên một thiết bị khác (Chrome trên Windows (IP 14.161.20.7)). Phiên làm việc trên thiết bị này đã kết thúc, vui lòng đăng nhập lại.",
+  "error": "SESSION_REVOKED",
+  "timestamp": "2026-09-05T08:00:00.000Z",
+  "path": "/api/v1/auth/me"
+}
+```
+- **Máy mới bị chặn ở chế độ `block_new` (`POST /auth/login`):** cùng cấu trúc trên với `error: "SESSION_DEVICE_LIMIT"`.
+- **FE xử lý:** bắt theo trường `error`.
+  - `SESSION_REVOKED` → xóa `accessToken` / `refreshToken` trong storage, hiển thị thông báo và điều hướng về màn đăng nhập. **Không** gọi `refresh-token` để thử lại vì endpoint đó cũng trả cùng lỗi.
+  - `SESSION_DEVICE_LIMIT` → hiển thị thông báo yêu cầu đăng xuất ở thiết bị kia, giữ nguyên màn đăng nhập.
+- **Nhận diện thiết bị:** backend rút gọn `User-Agent` + IP (`X-Forwarded-For` nếu chạy sau proxy) thành nhãn dễ đọc như `Chrome trên Windows (IP 14.161.20.7)` và trả kèm trong thông điệp lỗi để khách biết phiên đang nằm ở đâu.
+- **`POST /auth/logout`** xóa `activeSessionId`, trả tài khoản về trạng thái chưa gắn thiết bị nào.
+
 ### 10. Thời hạn sống của Token
 - **Access Token:** 15 phút (900 giây).
 - **Refresh Token:** 7 ngày (604,800 giây).
@@ -950,7 +979,147 @@ Nay `totalInvoices` đếm hóa đơn **phát hành trong ngày HOẶC có thu t
 - **Gọi dịch vụ:** `POST /api/v1/bookings/:id/service-requests` (Khách hàng gọi khi đang `CHECKED_IN`). Đơn lưu ở trạng thái `REQUESTED`.
 - **Xử lý yêu cầu:** `PATCH /api/v1/bookings/:id/services/:orderId` (Lễ tân duyệt `CONFIRMED` hoặc từ chối `REJECTED`). Chỉ dịch vụ `CONFIRMED` mới được cộng vào hóa đơn thanh toán khi check-out.
 
+### Y. Danh sách tài khoản cập nhật realtime (`GET /api/v1/users/stream`)
+`GET /api/v1/users` luôn đọc trực tiếp từ PostgreSQL (không cache), nên **mọi lần gọi lại đều có tài khoản vừa đăng ký**.
+Thứ còn thiếu là cơ chế *đẩy*: trước đây FE phải F5 hoặc tự gọi lại API mới thấy người mới. Endpoint SSE này lấp chỗ đó.
 
+- **Quyền:** `ADMIN`, `RECEPTIONIST`.
+- **Kiểu trả về:** `text/event-stream` (kết nối mở liên tục, không phải request-response thường).
+- **Xác thực:** `EventSource` của trình duyệt không gửi được header `Authorization`, nên endpoint chấp nhận token qua query string:
+  `GET /api/v1/users/stream?token=<accessToken>`. Các endpoint khác vẫn nên dùng header `Authorization: Bearer` như cũ.
 
+| Tên sự kiện | Khi nào phát | `data` |
+|---|---|---|
+| `ready` | Ngay khi kết nối thành công | `{ message, at }` |
+| `user.created` | Có tài khoản mới (khách tự đăng ký qua `POST /auth/register` **hoặc** admin tạo qua `POST /users`) | `{ type, source, user, emittedAt }` |
+| `user.updated` | `PATCH /users/:id` hoặc `PATCH /users/me` | `{ type, source, user, emittedAt }` |
+| `user.deactivated` | `DELETE /users/:id` (khóa tài khoản) | `{ type, source, user, emittedAt }` |
+| `ping` | Mỗi 20 giây, giữ kết nối sống qua proxy | `{ at }` |
 
+Trường `user` gồm `{ id, email, fullName, phone, avatar, role, isActive, createdAt }` — không bao giờ chứa mật khẩu.
 
+**Ví dụ tích hợp FE:**
+```js
+const es = new EventSource(`${API_URL}/users/stream?token=${accessToken}`);
+
+es.addEventListener('user.created', (e) => {
+  const { user } = JSON.parse(e.data);
+  setUsers((prev) => [user, ...prev.filter((u) => u.id !== user.id)]);
+  toast.success(`Tài khoản mới: ${user.fullName} (${user.email})`);
+});
+
+es.addEventListener('user.updated', (e) => {
+  const { user } = JSON.parse(e.data);
+  setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...user } : u)));
+});
+
+es.addEventListener('user.deactivated', (e) => {
+  const { user } = JSON.parse(e.data);
+  setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, isActive: false } : u)));
+});
+
+// Nhớ đóng khi rời trang
+return () => es.close();
+```
+> Nếu chỉ muốn đơn giản: bắt sự kiện bất kỳ rồi gọi lại `GET /api/v1/users` để nạp lại toàn bộ danh sách.
+
+**Cơ chế bên trong:** sự kiện phát ra từ hai nguồn và tự chống trùng theo `user.id`:
+1. `source: "app"` — phát ngay lập tức (độ trễ ~0) khi chính tiến trình này tạo/sửa tài khoản.
+2. `source: "db-watcher"` — vòng quét CSDL mỗi 15 giây, **chỉ chạy khi đang có client lắng nghe**, để bắt tài khoản sinh ra ngoài tiến trình (deploy nhiều instance, seed, thao tác thẳng vào CSDL). Đổi bằng biến môi trường `USER_EVENTS_POLL_MS`, đặt `0` để tắt hẳn.
+
+---
+
+### Z. Trạng thái phòng cập nhật realtime (`GET /api/v1/rooms/stream`)
+`GET /api/v1/rooms` trả về sơ đồ phòng hiện tại. Endpoint SSE này cung cấp luồng đẩy trực tiếp: bất cứ khi nào trạng thái phòng thay đổi (khách check-in, check-out, buồng phòng dọn xong, lễ tân đổi phòng, bảo trì), màn hình ma trận phòng của Lễ tân / Quản lý / Ứng dụng khách hàng sẽ **tự động cập nhật màu sắc và trạng thái phòng ngay lập tức mà không cần F5**.
+
+- **Quyền:** Công khai (`@Public()`) kết hợp nhận diện tài khoản tùy chọn.
+  - **Nhân viên (`ADMIN`, `RECEPTIONIST`):** Nhận toàn bộ sự kiện của tất cả phòng, bao gồm cả các phòng nội bộ chờ duyệt (`PENDING_APPROVAL`) hoặc bị từ chối (`REJECTED`).
+  - **Khách hàng (`CUSTOMER`) / Khách vãng lai:** Hệ thống tự động lọc bỏ các phòng nội bộ, chỉ gửi sự kiện cho các phòng hoạt động bình thường (`AVAILABLE`, `OCCUPIED`, `RESERVED`, `CLEANING`, `MAINTENANCE`).
+- **Kiểu trả về:** `text/event-stream` (kết nối mở liên tục).
+- **Xác thực:** Chấp nhận token qua query string `GET /api/v1/rooms/stream?token=<accessToken>` hoặc header `Authorization: Bearer <accessToken>`.
+
+| Tên sự kiện | Khi nào phát | `data` |
+|---|---|---|
+| `ready` | Ngay khi mở luồng thành công | `{ message, at }` |
+| `room.status_changed` | Trạng thái phòng thay đổi: check-in (`OCCUPIED`), check-out (`CLEANING`), dọn xong (`AVAILABLE`), bảo trì (`MAINTENANCE`), xác nhận giữ chỗ (`RESERVED`), v.v. | `{ type, source, room, emittedAt }` |
+| `room.created` | Admin hoặc nhân viên thêm phòng mới | `{ type, source, room, emittedAt }` |
+| `room.updated` | Sửa thông tin phòng (loại phòng, tiện ích, ghi chú, giá) | `{ type, source, room, emittedAt }` |
+| `room.deleted` | Admin xóa phòng | `{ type, source, room, emittedAt }` |
+| `ping` | Giữ kết nối sống mỗi 20 giây qua proxy / load balancer | `{ at }` |
+
+Trường `room` trong `room.status_changed` gồm:
+```json
+{
+  "id": "3f6c8d20-41ab-4f27-96a8-208935cba48b",
+  "roomNumber": "101",
+  "floor": 1,
+  "status": "OCCUPIED",
+  "previousStatus": "AVAILABLE",
+  "roomTypeId": "d9e03d76-e17f-4f05-896c-b3a167cf7564",
+  "roomTypeName": "Phòng Deluxe Hướng Biển",
+  "roomTypeCode": "DELUXE_OCEAN",
+  "pricePerNight": 1200000,
+  "notes": null,
+  "updatedAt": "2026-09-05T08:30:00.000Z"
+}
+```
+
+**Ví dụ tích hợp trên Web (JavaScript / React):**
+```js
+const es = new EventSource(`${API_URL}/rooms/stream?token=${accessToken}`);
+
+es.addEventListener('room.status_changed', (e) => {
+  const { room } = JSON.parse(e.data);
+  console.log(`Phòng ${room.roomNumber} đổi trạng thái từ ${room.previousStatus} sang ${room.status}`);
+  
+  // Cập nhật ô phòng trên ma trận sơ đồ phòng
+  setRooms((prev) =>
+    prev.map((r) => (r.id === room.id ? { ...r, status: room.status, ...room } : r))
+  );
+});
+
+es.addEventListener('room.created', (e) => {
+  const { room } = JSON.parse(e.data);
+  setRooms((prev) => [...prev, room]);
+});
+
+es.addEventListener('room.deleted', (e) => {
+  const { room } = JSON.parse(e.data);
+  setRooms((prev) => prev.filter((r) => r.id !== room.id));
+});
+
+// Hủy đăng ký khi unmount
+return () => es.close();
+```
+
+**Ví dụ tích hợp trên Flutter (Dart):**
+```dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+final client = http.Client();
+final request = http.Request('GET', Uri.parse('$apiUrl/rooms/stream?token=$accessToken'));
+request.headers['Accept'] = 'text/event-stream';
+
+final response = await client.send(request);
+response.stream.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
+  if (line.startsWith('data:')) {
+    final jsonStr = line.substring(5).trim();
+    final data = jsonDecode(jsonStr);
+    if (data['type'] == 'room.status_changed') {
+      final room = data['room'];
+      // Cập nhật State trong RoomMatrixCubit / Bloc
+    }
+  }
+});
+```
+
+**Cơ chế bên trong:**
+1. `source: "app"` — Phát tức thì (< 5ms) khi bất kỳ endpoint nào làm đổi trạng thái phòng:
+   - `PATCH /rooms/:id/status` (Lễ tân đổi trạng thái thủ công)
+   - `POST /bookings/:id/check-in` (Phòng chuyển `OCCUPIED`)
+   - `POST /bookings/:id/check-out` (Phòng chuyển `CLEANING`)
+   - `POST /bookings/:id/change-room` (Phòng cũ sang `CLEANING`, phòng mới sang `OCCUPIED`)
+   - `POST /rooms/sync-status` (Đồng bộ toàn bộ phòng theo lịch)
+   - Xác nhận đơn, hủy đơn, từ chối đơn làm đổi trạng thái suy diễn.
+2. `source: "db-watcher"` — Vòng quét CSDL (mặc định 15 giây qua `ROOM_EVENTS_POLL_MS`) tự động bật khi có người mở kết nối và tắt khi hết client, tự động nhận diện thay đổi từ bên ngoài và tự chống phát trùng lặp.

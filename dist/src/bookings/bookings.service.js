@@ -18,6 +18,7 @@ const elasticsearch_service_1 = require("../elasticsearch/elasticsearch.service"
 const revenue_util_1 = require("../common/utils/revenue.util");
 const room_status_util_1 = require("../common/utils/room-status.util");
 const client_1 = require("@prisma/client");
+const room_events_service_1 = require("../rooms/room-events.service");
 const BOOKING_INCLUDE = {
     customer: { select: { id: true, fullName: true, email: true, phone: true } },
     room: { include: { roomType: true } },
@@ -29,10 +30,11 @@ const BOOKING_INCLUDE = {
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
 const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
 let BookingsService = BookingsService_1 = class BookingsService {
-    constructor(prisma, redis, esService) {
+    constructor(prisma, redis, esService, roomEvents) {
         this.prisma = prisma;
         this.redis = redis;
         this.esService = esService;
+        this.roomEvents = roomEvents;
         this.logger = new common_1.Logger(BookingsService_1.name);
     }
     async reindexRoom(roomId) {
@@ -59,11 +61,26 @@ let BookingsService = BookingsService_1 = class BookingsService {
         const nextStatus = (0, room_status_util_1.deriveRoomStatus)(room.status, room.bookings);
         if (nextStatus === room.status)
             return room.status;
-        await this.prisma.room.update({
+        const updated = await this.prisma.room.update({
             where: { id: roomId },
             data: { status: nextStatus },
+            include: { roomType: true },
         });
         await this.reindexRoom(roomId);
+        await this.redis.delByPattern('cache:rooms:*');
+        this.roomEvents.emitStatusChanged({
+            id: updated.id,
+            roomNumber: updated.roomNumber,
+            floor: updated.floor,
+            status: updated.status,
+            previousStatus: room.status,
+            roomTypeId: updated.roomTypeId,
+            roomTypeName: updated.roomType?.name,
+            roomTypeCode: updated.roomType?.code,
+            pricePerNight: updated.roomType?.basePrice,
+            notes: updated.notes,
+            updatedAt: updated.updatedAt,
+        });
         return nextStatus;
     }
     async create(dto, currentUserId, currentUserRole) {
@@ -432,6 +449,21 @@ let BookingsService = BookingsService_1 = class BookingsService {
         ]);
         await this.reindexRoom(booking.roomId);
         await this.redis.delByPattern('cache:rooms:*');
+        if (updatedBooking.room) {
+            this.roomEvents.emitStatusChanged({
+                id: updatedBooking.room.id,
+                roomNumber: updatedBooking.room.roomNumber,
+                floor: updatedBooking.room.floor,
+                status: client_1.RoomStatus.OCCUPIED,
+                previousStatus: booking.room?.status,
+                roomTypeId: updatedBooking.room.roomTypeId,
+                roomTypeName: updatedBooking.room.roomType?.name,
+                roomTypeCode: updatedBooking.room.roomType?.code,
+                pricePerNight: updatedBooking.room.roomType?.basePrice,
+                notes: updatedBooking.room.notes,
+                updatedAt: new Date().toISOString(),
+            });
+        }
         return this.toBookingResponse(updatedBooking);
     }
     async checkOut(id, dto, cashierId) {
@@ -494,6 +526,21 @@ let BookingsService = BookingsService_1 = class BookingsService {
         ]);
         await this.reindexRoom(booking.roomId);
         await this.redis.delByPattern('cache:rooms:*');
+        if (updatedBooking.room) {
+            this.roomEvents.emitStatusChanged({
+                id: updatedBooking.room.id,
+                roomNumber: updatedBooking.room.roomNumber,
+                floor: updatedBooking.room.floor,
+                status: client_1.RoomStatus.CLEANING,
+                previousStatus: booking.room?.status,
+                roomTypeId: updatedBooking.room.roomTypeId,
+                roomTypeName: updatedBooking.room.roomType?.name,
+                roomTypeCode: updatedBooking.room.roomType?.code,
+                pricePerNight: updatedBooking.room.roomType?.basePrice,
+                notes: updatedBooking.room.notes,
+                updatedAt: new Date().toISOString(),
+            });
+        }
         return {
             message: 'Check-out và thanh toán hóa đơn thành công',
             invoiceId: invoice.id,
@@ -644,6 +691,32 @@ let BookingsService = BookingsService_1 = class BookingsService {
             await this.reindexRoom(oldRoomId);
             await this.reindexRoom(dto.newRoomId);
             await this.redis.delByPattern('cache:rooms:*');
+            this.roomEvents.emitStatusChanged({
+                id: booking.room.id,
+                roomNumber: booking.room.roomNumber,
+                floor: booking.room.floor,
+                status: client_1.RoomStatus.CLEANING,
+                previousStatus: booking.room.status,
+                roomTypeId: booking.room.roomTypeId,
+                roomTypeName: booking.room.roomType?.name,
+                roomTypeCode: booking.room.roomType?.code,
+                pricePerNight: booking.room.roomType?.basePrice,
+                notes: booking.room.notes,
+                updatedAt: new Date().toISOString(),
+            });
+            this.roomEvents.emitStatusChanged({
+                id: newRoom.id,
+                roomNumber: newRoom.roomNumber,
+                floor: newRoom.floor,
+                status: client_1.RoomStatus.OCCUPIED,
+                previousStatus: newRoom.status,
+                roomTypeId: newRoom.roomTypeId,
+                roomTypeName: newRoom.roomType?.name,
+                roomTypeCode: newRoom.roomType?.code,
+                pricePerNight: newRoom.roomType?.basePrice,
+                notes: newRoom.notes,
+                updatedAt: new Date().toISOString(),
+            });
             return {
                 message: 'Đổi phòng thành công',
                 booking: this.toBookingResponse(updatedBooking),
@@ -698,6 +771,7 @@ exports.BookingsService = BookingsService = BookingsService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         redis_service_1.RedisService,
-        elasticsearch_service_1.ElasticsearchService])
+        elasticsearch_service_1.ElasticsearchService,
+        room_events_service_1.RoomEventsService])
 ], BookingsService);
 //# sourceMappingURL=bookings.service.js.map

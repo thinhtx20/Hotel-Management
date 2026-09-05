@@ -18,11 +18,13 @@ const search_room_dto_1 = require("./dto/search-room.dto");
 const room_response_dto_1 = require("./dto/room-response.dto");
 const room_status_util_1 = require("../common/utils/room-status.util");
 const client_1 = require("@prisma/client");
+const room_events_service_1 = require("./room-events.service");
 let RoomsService = class RoomsService {
-    constructor(prisma, redis, esService) {
+    constructor(prisma, redis, esService, roomEvents) {
         this.prisma = prisma;
         this.redis = redis;
         this.esService = esService;
+        this.roomEvents = roomEvents;
     }
     async create(dto) {
         const existing = await this.prisma.room.findUnique({
@@ -106,6 +108,20 @@ let RoomsService = class RoomsService {
         });
         await this.redis.delByPattern('cache:rooms:*');
         await this.esService.indexRoomEntity(room);
+        const roomPayload = {
+            id: room.id,
+            roomNumber: room.roomNumber,
+            floor: room.floor,
+            status: room.status,
+            roomTypeId: room.roomTypeId,
+            roomTypeName: room.roomType?.name,
+            roomTypeCode: room.roomType?.code,
+            pricePerNight: room.roomType?.basePrice,
+            notes: room.notes,
+            updatedAt: room.updatedAt,
+        };
+        this.roomEvents.emitCreated(roomPayload);
+        this.roomEvents.emitStatusChanged(roomPayload);
         return (0, room_response_dto_1.toRoomResponse)(room, true);
     }
     async findAll(status, floor, roomTypeId, isStaff = false) {
@@ -255,7 +271,7 @@ let RoomsService = class RoomsService {
         return rooms.map((r) => (0, room_response_dto_1.toRoomResponse)(r, includeNotes));
     }
     async update(id, dto) {
-        await this.findOne(id, true);
+        const existing = await this.findOne(id, true);
         const updated = await this.prisma.room.update({
             where: { id },
             data: dto,
@@ -263,6 +279,23 @@ let RoomsService = class RoomsService {
         });
         await this.redis.delByPattern('cache:rooms:*');
         await this.esService.indexRoomEntity(updated);
+        const payload = {
+            id: updated.id,
+            roomNumber: updated.roomNumber,
+            floor: updated.floor,
+            status: updated.status,
+            previousStatus: existing.status,
+            roomTypeId: updated.roomTypeId,
+            roomTypeName: updated.roomType?.name,
+            roomTypeCode: updated.roomType?.code,
+            pricePerNight: updated.roomType?.basePrice,
+            notes: updated.notes,
+            updatedAt: updated.updatedAt,
+        };
+        if (existing.status !== updated.status) {
+            this.roomEvents.emitStatusChanged(payload);
+        }
+        this.roomEvents.emitUpdated(payload);
         return (0, room_response_dto_1.toRoomResponse)(updated, true);
     }
     async syncAllStatuses() {
@@ -281,12 +314,26 @@ let RoomsService = class RoomsService {
         for (const room of rooms) {
             const next = (0, room_status_util_1.deriveRoomStatus)(room.status, room.bookings, now);
             if (next !== room.status) {
-                await this.prisma.room.update({
+                const updated = await this.prisma.room.update({
                     where: { id: room.id },
                     data: { status: next },
+                    include: { roomType: true },
                 });
                 await this.esService.indexRoomEntity({ ...room, status: next });
                 changes.push({ roomNumber: room.roomNumber, from: room.status, to: next });
+                this.roomEvents.emitStatusChanged({
+                    id: updated.id,
+                    roomNumber: updated.roomNumber,
+                    floor: updated.floor,
+                    status: updated.status,
+                    previousStatus: room.status,
+                    roomTypeId: updated.roomTypeId,
+                    roomTypeName: updated.roomType?.name,
+                    roomTypeCode: updated.roomType?.code,
+                    pricePerNight: updated.roomType?.basePrice,
+                    notes: updated.notes,
+                    updatedAt: updated.updatedAt,
+                });
             }
         }
         if (changes.length > 0) {
@@ -302,7 +349,7 @@ let RoomsService = class RoomsService {
         };
     }
     async updateStatus(id, status) {
-        await this.findOne(id, true);
+        const existing = await this.findOne(id, true);
         const updated = await this.prisma.room.update({
             where: { id },
             data: { status },
@@ -310,15 +357,29 @@ let RoomsService = class RoomsService {
         });
         await this.redis.delByPattern('cache:rooms:*');
         await this.esService.indexRoomEntity(updated);
+        this.roomEvents.emitStatusChanged({
+            id: updated.id,
+            roomNumber: updated.roomNumber,
+            floor: updated.floor,
+            status: updated.status,
+            previousStatus: existing.status,
+            roomTypeId: updated.roomTypeId,
+            roomTypeName: updated.roomType?.name,
+            roomTypeCode: updated.roomType?.code,
+            pricePerNight: updated.roomType?.basePrice,
+            notes: updated.notes,
+            updatedAt: updated.updatedAt,
+        });
         return (0, room_response_dto_1.toRoomResponse)(updated, true);
     }
     async remove(id) {
-        await this.findOne(id, true);
+        const existing = await this.findOne(id, true);
         const deleted = await this.prisma.room.delete({
             where: { id },
         });
         await this.redis.delByPattern('cache:rooms:*');
         await this.esService.removeRoom(id);
+        this.roomEvents.emitDeleted(existing.id, existing.roomNumber);
         return deleted;
     }
 };
@@ -327,6 +388,7 @@ exports.RoomsService = RoomsService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         redis_service_1.RedisService,
-        elasticsearch_service_1.ElasticsearchService])
+        elasticsearch_service_1.ElasticsearchService,
+        room_events_service_1.RoomEventsService])
 ], RoomsService);
 //# sourceMappingURL=rooms.service.js.map

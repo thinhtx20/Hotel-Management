@@ -11,12 +11,14 @@ import { ChangeRoomDto } from './dto/change-room.dto';
 import { RequestServiceDto } from './dto/request-service.dto';
 import { UpdateServiceOrderStatusDto } from './dto/update-service-order-status.dto';
 import { Role } from '@prisma/client';
+import { RoomEventsService } from '../rooms/room-events.service';
 export declare class BookingsService {
     private prisma;
     private redis;
     private esService;
+    private roomEvents;
     private readonly logger;
-    constructor(prisma: PrismaService, redis: RedisService, esService: ElasticsearchService);
+    constructor(prisma: PrismaService, redis: RedisService, esService: ElasticsearchService, roomEvents: RoomEventsService);
     private reindexRoom;
     private syncRoomStatus;
     create(dto: CreateBookingDto, currentUserId: string, currentUserRole: Role): Promise<any>;

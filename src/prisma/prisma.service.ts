@@ -8,6 +8,7 @@ import {
   PaymentStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { syncDatabaseSchema } from './schema-sync';
 
 function formatDatabaseUrl(): string | undefined {
   let url = process.env.DATABASE_URL;
@@ -50,6 +51,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       try {
         await this.$connect();
         this.logger.log('✅ Kết nối cơ sở dữ liệu PostgreSQL thành công!');
+        // Vá cấu trúc bảng TRƯỚC khi seed / phục vụ request, tránh lỗi P2022
+        // khi `prisma db push` lúc deploy bị bỏ qua vì cảnh báo mất dữ liệu.
+        await syncDatabaseSchema((sql) => this.$executeRawUnsafe(sql), this.logger);
         await this.ensureInitialSeed();
         return;
       } catch (error: any) {

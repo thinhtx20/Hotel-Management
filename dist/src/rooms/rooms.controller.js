@@ -15,7 +15,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.RoomsController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
+const rxjs_1 = require("rxjs");
+const operators_1 = require("rxjs/operators");
+const skip_transform_decorator_1 = require("../common/decorators/skip-transform.decorator");
 const rooms_service_1 = require("./rooms.service");
+const room_events_service_1 = require("./room-events.service");
 const create_room_dto_1 = require("./dto/create-room.dto");
 const update_room_dto_1 = require("./dto/update-room.dto");
 const query_available_rooms_dto_1 = require("./dto/query-available-rooms.dto");
@@ -49,14 +53,40 @@ const SAMPLE_ROOM = {
     sizeSqM: 38,
 };
 let RoomsController = class RoomsController {
-    constructor(roomsService) {
+    constructor(roomsService, roomEvents) {
         this.roomsService = roomsService;
+        this.roomEvents = roomEvents;
     }
     create(createRoomDto, user) {
         if (user && user.role !== client_1.Role.ADMIN) {
             createRoomDto.status = client_1.RoomStatus.PENDING_APPROVAL;
         }
         return this.roomsService.create(createRoomDto);
+    }
+    stream(user) {
+        const isStaff = user?.role === client_1.Role.ADMIN || user?.role === client_1.Role.RECEPTIONIST;
+        const ready$ = (0, rxjs_1.of)({
+            type: 'ready',
+            retry: 5000,
+            data: {
+                message: 'Đã kết nối luồng cập nhật trạng thái phòng realtime',
+                at: new Date().toISOString(),
+            },
+        });
+        const ping$ = (0, rxjs_1.interval)(20000).pipe((0, rxjs_1.map)(() => ({
+            type: 'ping',
+            data: { at: new Date().toISOString() },
+        })));
+        const changes$ = this.roomEvents.stream().pipe((0, operators_1.filter)((event) => {
+            if (isStaff)
+                return true;
+            const status = event.room?.status;
+            return status !== client_1.RoomStatus.PENDING_APPROVAL && status !== client_1.RoomStatus.REJECTED;
+        }), (0, rxjs_1.map)((event) => ({
+            type: event.type,
+            data: event,
+        })));
+        return (0, rxjs_1.merge)(ready$, changes$, ping$);
     }
     search(searchDto, user) {
         const isStaff = user?.role === client_1.Role.ADMIN || user?.role === client_1.Role.RECEPTIONIST;
@@ -121,6 +151,41 @@ __decorate([
     __metadata("design:paramtypes", [create_room_dto_1.CreateRoomDto, Object]),
     __metadata("design:returntype", void 0)
 ], RoomsController.prototype, "create", null);
+__decorate([
+    (0, public_decorator_1.Public)(),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Sse)('stream'),
+    (0, skip_transform_decorator_1.SkipTransform)(),
+    (0, common_1.Header)('X-Accel-Buffering', 'no'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Luồng realtime trạng thái phòng (SSE) — tự cập nhật khi phòng đổi trạng thái',
+        description: 'Trả về `text/event-stream`. Client (Web Lễ tân / Mobile App) mở kết nối một lần và nhận sự kiện ngay khi ' +
+            'phòng chuyển trạng thái (Trống -> Đang ở -> Dọn dẹp -> Bảo trì, v.v.) mà không cần F5 hoặc gọi lại `GET /rooms`.\n\n' +
+            '**Tên sự kiện:** `ready` (kết nối thành công), `ping` (giữ kết nối mỗi 20s), ' +
+            '`room.status_changed` (đổi trạng thái), `room.created` (phòng mới), `room.updated` (sửa thông tin), `room.deleted` (xóa phòng).\n\n' +
+            '**Xác thực:** Chấp nhận token qua query: `GET /api/v1/rooms/stream?token=<accessToken>` hoặc header Bearer token.\n\n' +
+            '**Phân quyền tự động:** Nhân viên (ADMIN / RECEPTIONIST) nhận đầy đủ sự kiện kể cả PENDING_APPROVAL và REJECTED. ' +
+            'Khách hàng / khách vãng lai chỉ nhận các trạng thái phòng vận hành thông thường.\n\n' +
+            '**Ví dụ (FE):**\n' +
+            '```js\n' +
+            "const es = new EventSource(`${API}/rooms/stream?token=${accessToken}`);\n" +
+            "es.addEventListener('room.status_changed', (e) => {\n" +
+            '  const { room } = JSON.parse(e.data);\n' +
+            '  console.log(`Phòng ${room.roomNumber} đổi trạng thái thành ${room.status}`);\n' +
+            '  updateRoomStatusInUI(room.id, room.status);\n' +
+            '});\n' +
+            '```',
+    }),
+    (0, swagger_1.ApiQuery)({
+        name: 'token',
+        required: false,
+        description: 'Access token dành cho EventSource (không gửi được header Authorization)',
+    }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", rxjs_1.Observable)
+], RoomsController.prototype, "stream", null);
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
@@ -318,6 +383,7 @@ __decorate([
 exports.RoomsController = RoomsController = __decorate([
     (0, swagger_1.ApiTags)('Rooms (Quản lý Phòng & Tìm kiếm)'),
     (0, common_1.Controller)('rooms'),
-    __metadata("design:paramtypes", [rooms_service_1.RoomsService])
+    __metadata("design:paramtypes", [rooms_service_1.RoomsService,
+        room_events_service_1.RoomEventsService])
 ], RoomsController);
 //# sourceMappingURL=rooms.controller.js.map

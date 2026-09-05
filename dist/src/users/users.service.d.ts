@@ -1,10 +1,12 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UserEventsService } from './user-events.service';
 import { Role } from '@prisma/client';
 export declare class UsersService {
     private prisma;
-    constructor(prisma: PrismaService);
+    private userEvents;
+    constructor(prisma: PrismaService, userEvents: UserEventsService);
     create(dto: CreateUserDto): Promise<{
         id: string;
         email: string;
@@ -116,10 +118,9 @@ export declare class UsersService {
     remove(id: string): Promise<{
         id: string;
         email: string;
-        password: string;
         fullName: string;
-        phone: string | null;
-        avatar: string | null;
+        phone: string;
+        avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
         createdAt: Date;

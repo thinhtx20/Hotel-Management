@@ -21,6 +21,7 @@ import { UpdateServiceOrderStatusDto } from './dto/update-service-order-status.d
 import { roundMoney } from '../common/utils/revenue.util';
 import { deriveRoomStatus } from '../common/utils/room-status.util';
 import { BookingStatus, PaymentMethod, PaymentStatus, Prisma, Role, RoomStatus } from '@prisma/client';
+import { RoomEventsService } from '../rooms/room-events.service';
 
 /** Include chuẩn dùng chung cho mọi response đơn đặt phòng */
 const BOOKING_INCLUDE = {
@@ -46,6 +47,7 @@ export class BookingsService {
     private prisma: PrismaService,
     private redis: RedisService,
     private esService: ElasticsearchService,
+    private roomEvents: RoomEventsService,
   ) {}
 
   /**
@@ -84,11 +86,27 @@ export class BookingsService {
     const nextStatus = deriveRoomStatus(room.status, room.bookings);
     if (nextStatus === room.status) return room.status;
 
-    await this.prisma.room.update({
+    const updated = await this.prisma.room.update({
       where: { id: roomId },
       data: { status: nextStatus },
+      include: { roomType: true },
     });
     await this.reindexRoom(roomId);
+    await this.redis.delByPattern('cache:rooms:*');
+
+    this.roomEvents.emitStatusChanged({
+      id: updated.id,
+      roomNumber: updated.roomNumber,
+      floor: updated.floor,
+      status: updated.status,
+      previousStatus: room.status,
+      roomTypeId: updated.roomTypeId,
+      roomTypeName: updated.roomType?.name,
+      roomTypeCode: updated.roomType?.code,
+      pricePerNight: updated.roomType?.basePrice,
+      notes: updated.notes,
+      updatedAt: updated.updatedAt,
+    });
 
     return nextStatus;
   }
@@ -603,6 +621,23 @@ export class BookingsService {
     // làm mới cache và index tìm kiếm để sơ đồ phòng và bộ lọc trạng thái khớp ngay.
     await this.reindexRoom(booking.roomId);
     await this.redis.delByPattern('cache:rooms:*');
+
+    if (updatedBooking.room) {
+      this.roomEvents.emitStatusChanged({
+        id: updatedBooking.room.id,
+        roomNumber: updatedBooking.room.roomNumber,
+        floor: updatedBooking.room.floor,
+        status: RoomStatus.OCCUPIED,
+        previousStatus: booking.room?.status,
+        roomTypeId: updatedBooking.room.roomTypeId,
+        roomTypeName: updatedBooking.room.roomType?.name,
+        roomTypeCode: updatedBooking.room.roomType?.code,
+        pricePerNight: updatedBooking.room.roomType?.basePrice,
+        notes: updatedBooking.room.notes,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
     return this.toBookingResponse(updatedBooking);
   }
 
@@ -674,6 +709,22 @@ export class BookingsService {
     // (không suy diễn lại từ lịch đặt, tránh nhảy thẳng sang RESERVED khi còn đơn đặt sau đó).
     await this.reindexRoom(booking.roomId);
     await this.redis.delByPattern('cache:rooms:*');
+
+    if (updatedBooking.room) {
+      this.roomEvents.emitStatusChanged({
+        id: updatedBooking.room.id,
+        roomNumber: updatedBooking.room.roomNumber,
+        floor: updatedBooking.room.floor,
+        status: RoomStatus.CLEANING,
+        previousStatus: booking.room?.status,
+        roomTypeId: updatedBooking.room.roomTypeId,
+        roomTypeName: updatedBooking.room.roomType?.name,
+        roomTypeCode: updatedBooking.room.roomType?.code,
+        pricePerNight: updatedBooking.room.roomType?.basePrice,
+        notes: updatedBooking.room.notes,
+        updatedAt: new Date().toISOString(),
+      });
+    }
 
     return {
       message: 'Check-out và thanh toán hóa đơn thành công',
@@ -865,6 +916,33 @@ export class BookingsService {
       await this.reindexRoom(oldRoomId);
       await this.reindexRoom(dto.newRoomId);
       await this.redis.delByPattern('cache:rooms:*');
+
+      this.roomEvents.emitStatusChanged({
+        id: booking.room.id,
+        roomNumber: booking.room.roomNumber,
+        floor: booking.room.floor,
+        status: RoomStatus.CLEANING,
+        previousStatus: booking.room.status,
+        roomTypeId: booking.room.roomTypeId,
+        roomTypeName: booking.room.roomType?.name,
+        roomTypeCode: booking.room.roomType?.code,
+        pricePerNight: booking.room.roomType?.basePrice,
+        notes: booking.room.notes,
+        updatedAt: new Date().toISOString(),
+      });
+      this.roomEvents.emitStatusChanged({
+        id: newRoom.id,
+        roomNumber: newRoom.roomNumber,
+        floor: newRoom.floor,
+        status: RoomStatus.OCCUPIED,
+        previousStatus: newRoom.status,
+        roomTypeId: newRoom.roomTypeId,
+        roomTypeName: newRoom.roomType?.name,
+        roomTypeCode: newRoom.roomType?.code,
+        pricePerNight: newRoom.roomType?.basePrice,
+        notes: newRoom.notes,
+        updatedAt: new Date().toISOString(),
+      });
 
       return {
         message: 'Đổi phòng thành công',

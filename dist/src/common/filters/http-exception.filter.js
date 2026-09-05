@@ -67,6 +67,18 @@ let AllExceptionsFilter = AllExceptionsFilter_1 = class AllExceptionsFilter {
                     displayMessage = 'Dữ liệu liên quan không hợp lệ hoặc đang được sử dụng ở bảng khác.';
                     break;
                 }
+                case 'P2021':
+                case 'P2022': {
+                    status = common_1.HttpStatus.INTERNAL_SERVER_ERROR;
+                    errorTitle = 'Database Schema Error';
+                    const missing = exception.meta?.column ||
+                        exception.meta?.table ||
+                        'không xác định';
+                    displayMessage =
+                        `Cơ sở dữ liệu chưa được cập nhật cấu trúc mới (thiếu "${missing}"). ` +
+                            `Vui lòng chạy "npx prisma db push" hoặc khởi động lại máy chủ để tự đồng bộ.`;
+                    break;
+                }
                 default: {
                     status = common_1.HttpStatus.BAD_REQUEST;
                     errorTitle = 'Database Error';
@@ -84,6 +96,9 @@ let AllExceptionsFilter = AllExceptionsFilter_1 = class AllExceptionsFilter {
             displayMessage = 'Đã có lỗi xảy ra. Vui lòng thử lại.';
         }
         this.logger.error(`[${request.method}] ${request.url} - Status: ${status} - Error: ${errorTitle} - Message: ${displayMessage}`);
+        if (status >= common_1.HttpStatus.INTERNAL_SERVER_ERROR && exception instanceof Error) {
+            this.logger.error(exception.message, exception.stack);
+        }
         response.status(status).json({
             statusCode: status,
             success: false,

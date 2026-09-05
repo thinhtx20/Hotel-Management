@@ -3,11 +3,15 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UserEventsService } from './user-events.service';
 import { Role } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private userEvents: UserEventsService,
+  ) {}
 
   /**
    * Admin tạo tài khoản nhân viên với vai trò chỉ định.
@@ -23,7 +27,7 @@ export class UsersService {
 
     const hashedPassword = await bcrypt.hash(dto.password, await bcrypt.genSalt(10));
 
-    return this.prisma.user.create({
+    const created = await this.prisma.user.create({
       data: {
         email,
         password: hashedPassword,
@@ -44,6 +48,11 @@ export class UsersService {
         createdAt: true,
       },
     });
+
+    // Đẩy realtime để danh sách tài khoản đang mở tự thêm dòng mới
+    this.userEvents.emitCreated(created);
+
+    return created;
   }
 
   async findAll(role?: Role) {
@@ -99,7 +108,7 @@ export class UsersService {
 
   async update(id: string, dto: UpdateUserDto) {
     await this.findOne(id);
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: dto,
       select: {
@@ -113,6 +122,10 @@ export class UsersService {
         updatedAt: true,
       },
     });
+
+    this.userEvents.emitUpdated(updated);
+
+    return updated;
   }
 
   async updateMe(id: string, dto: { fullName?: string; phone?: string; avatar?: string }) {
@@ -137,6 +150,8 @@ export class UsersService {
       },
     });
 
+    this.userEvents.emitUpdated(updated);
+
     return {
       ...updated,
       avatarUrl: updated.avatar,
@@ -145,9 +160,24 @@ export class UsersService {
 
   async remove(id: string) {
     await this.findOne(id);
-    return this.prisma.user.update({
+    const deactivated = await this.prisma.user.update({
       where: { id },
       data: { isActive: false },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        avatar: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
+
+    this.userEvents.emitDeactivated(deactivated);
+
+    return deactivated;
   }
 }

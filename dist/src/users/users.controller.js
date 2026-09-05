@@ -14,8 +14,12 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersController = void 0;
 const common_1 = require("@nestjs/common");
+const rxjs_1 = require("rxjs");
+const operators_1 = require("rxjs/operators");
 const swagger_1 = require("@nestjs/swagger");
 const users_service_1 = require("./users.service");
+const user_events_service_1 = require("./user-events.service");
+const skip_transform_decorator_1 = require("../common/decorators/skip-transform.decorator");
 const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
 const update_user_dto_1 = require("./dto/update-user.dto");
 const create_user_dto_1 = require("./dto/create-user.dto");
@@ -37,8 +41,9 @@ const SAMPLE_USER = {
     createdAt: '2026-09-03T07:00:00.000Z',
 };
 let UsersController = class UsersController {
-    constructor(usersService) {
+    constructor(usersService, userEvents) {
         this.usersService = usersService;
+        this.userEvents = userEvents;
     }
     updateMe(userId, dto) {
         return this.usersService.updateMe(userId, dto);
@@ -48,6 +53,25 @@ let UsersController = class UsersController {
     }
     findAll(role) {
         return this.usersService.findAll(role);
+    }
+    stream() {
+        const ready$ = (0, rxjs_1.of)({
+            type: 'ready',
+            retry: 5000,
+            data: {
+                message: 'Đã kết nối luồng cập nhật tài khoản',
+                at: new Date().toISOString(),
+            },
+        });
+        const ping$ = (0, rxjs_1.interval)(20000).pipe((0, operators_1.map)(() => ({
+            type: 'ping',
+            data: { at: new Date().toISOString() },
+        })));
+        const changes$ = this.userEvents.stream().pipe((0, operators_1.map)((event) => ({
+            type: event.type,
+            data: event,
+        })));
+        return (0, rxjs_1.merge)(ready$, changes$, ping$);
     }
     findOne(id) {
         return this.usersService.findOne(id);
@@ -114,6 +138,37 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "findAll", null);
 __decorate([
+    (0, common_1.Sse)('stream'),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, skip_transform_decorator_1.SkipTransform)(),
+    (0, common_1.Header)('X-Accel-Buffering', 'no'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Luồng realtime danh sách tài khoản (SSE) — tự báo khi có người đăng ký mới',
+        description: 'Trả về `text/event-stream`. Client mở kết nối một lần và nhận sự kiện ngay khi có tài khoản mới, ' +
+            'thay vì phải F5 hoặc gọi lại `GET /users`.\n\n' +
+            '**Tên sự kiện:** `ready` (mở luồng thành công), `ping` (giữ kết nối mỗi 20 giây), ' +
+            '`user.created` (tài khoản mới), `user.updated` (đổi thông tin / vai trò), `user.deactivated` (khóa tài khoản).\n\n' +
+            '**Xác thực:** `EventSource` của trình duyệt không gửi được header `Authorization`, ' +
+            'nên endpoint này chấp nhận token qua query: `GET /api/v1/users/stream?token=<accessToken>`.\n\n' +
+            '**Ví dụ (FE):**\n' +
+            '```js\n' +
+            "const es = new EventSource(`${API}/users/stream?token=${accessToken}`);\n" +
+            "es.addEventListener('user.created', (e) => {\n" +
+            '  const { user } = JSON.parse(e.data);\n' +
+            '  setUsers((prev) => [user, ...prev.filter((u) => u.id !== user.id)]);\n' +
+            '});\n' +
+            '```',
+    }),
+    (0, swagger_1.ApiQuery)({
+        name: 'token',
+        required: false,
+        description: 'Access token dành cho EventSource (không gửi được header Authorization)',
+    }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", rxjs_1.Observable)
+], UsersController.prototype, "stream", null);
+__decorate([
     (0, common_1.Get)(':id'),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, swagger_1.ApiOperation)({ summary: 'Chi tiết người dùng theo ID' }),
@@ -167,6 +222,7 @@ exports.UsersController = UsersController = __decorate([
     (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     (0, common_1.Controller)('users'),
-    __metadata("design:paramtypes", [users_service_1.UsersService])
+    __metadata("design:paramtypes", [users_service_1.UsersService,
+        user_events_service_1.UserEventsService])
 ], UsersController);
 //# sourceMappingURL=users.controller.js.map

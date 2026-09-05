@@ -18,16 +18,19 @@ const crypto = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
 const mail_service_1 = require("../mail/mail.service");
 const redis_service_1 = require("../redis/redis.service");
+const user_events_service_1 = require("../users/user-events.service");
+const session_policy_1 = require("./session-policy");
 const client_1 = require("@prisma/client");
 let AuthService = AuthService_1 = class AuthService {
-    constructor(prisma, jwtService, mailService, redisService) {
+    constructor(prisma, jwtService, mailService, redisService, userEvents) {
         this.prisma = prisma;
         this.jwtService = jwtService;
         this.mailService = mailService;
         this.redisService = redisService;
+        this.userEvents = userEvents;
         this.logger = new common_1.Logger(AuthService_1.name);
     }
-    async register(dto) {
+    async register(dto, device) {
         const existing = await this.prisma.user.findUnique({
             where: { email: dto.email.toLowerCase() },
         });
@@ -54,13 +57,15 @@ let AuthService = AuthService_1 = class AuthService {
                 createdAt: true,
             },
         });
-        const tokens = await this.generateTokens(user.id, user.email, user.role);
+        this.userEvents.emitCreated(user);
+        const sessionId = await this.openDeviceSession(user, device);
+        const tokens = await this.generateTokens(user.id, user.email, user.role, sessionId);
         return {
             user,
             ...tokens,
         };
     }
-    async login(dto) {
+    async login(dto, device) {
         const email = (dto.email || '').trim().toLowerCase();
         const inputPassword = (dto.password || '').trim();
         const SYSTEM_DEFAULT_ACCOUNTS = {
@@ -108,6 +113,7 @@ let AuthService = AuthService_1 = class AuthService {
                 },
             });
             this.logger.log(`✅ Đã khởi tạo thành công tài khoản: ${email}`);
+            this.userEvents.emitCreated(user);
         }
         if (!user) {
             const userCount = await this.prisma.user.count();
@@ -177,7 +183,8 @@ let AuthService = AuthService_1 = class AuthService {
             this.logger.warn(`[Auth] Đăng nhập thất bại: Mật khẩu không chính xác cho email "${email}".`);
             throw new common_1.UnauthorizedException('Email hoặc mật khẩu không chính xác');
         }
-        const tokens = await this.generateTokens(user.id, user.email, user.role);
+        const sessionId = await this.openDeviceSession(user, device);
+        const tokens = await this.generateTokens(user.id, user.email, user.role, sessionId);
         return {
             user: {
                 id: user.id,
@@ -190,6 +197,58 @@ let AuthService = AuthService_1 = class AuthService {
             },
             ...tokens,
         };
+    }
+    async openDeviceSession(user, device) {
+        if (!(0, session_policy_1.isSingleDeviceRole)(user.role))
+            return undefined;
+        if ((0, session_policy_1.getSingleDeviceMode)() === 'block_new' &&
+            user.activeSessionId &&
+            this.isSessionStillAlive(user.lastLoginAt)) {
+            this.logger.warn(`[Auth] Chặn đăng nhập thiết bị thứ 2 cho "${user.email}" (thiết bị đang giữ phiên: ${user.activeDevice || 'không xác định'}).`);
+            throw (0, session_policy_1.deviceLimitException)(user.activeDevice);
+        }
+        const sessionId = crypto.randomUUID();
+        const deviceLabel = (0, session_policy_1.describeDevice)(device);
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+                activeSessionId: sessionId,
+                activeDevice: deviceLabel,
+                lastLoginAt: new Date(),
+            },
+        });
+        if (this.redisService?.isReady) {
+            await this.redisService.delByPattern(`auth:refresh:${user.id}:*`);
+        }
+        if (user.activeSessionId && user.activeSessionId !== sessionId) {
+            this.logger.log(`[Auth] Tài khoản "${user.email}" đăng nhập trên thiết bị mới (${deviceLabel}), phiên cũ đã bị thu hồi.`);
+        }
+        return sessionId;
+    }
+    async closeDeviceSession(userId, sessionId) {
+        try {
+            const user = await this.prisma.user.findUnique({
+                where: { id: userId },
+                select: { id: true, role: true, activeSessionId: true },
+            });
+            if (!user || !(0, session_policy_1.isSingleDeviceRole)(user.role) || !user.activeSessionId)
+                return;
+            if (sessionId && sessionId !== user.activeSessionId)
+                return;
+            await this.prisma.user.update({
+                where: { id: userId },
+                data: { activeSessionId: null, activeDevice: null },
+            });
+        }
+        catch (err) {
+            this.logger.warn(`[Auth] Không dọn được phiên thiết bị của user ${userId}: ${err.message}`);
+        }
+    }
+    isSessionStillAlive(lastLoginAt) {
+        if (!lastLoginAt)
+            return true;
+        const ttlSeconds = this.parseExpiresInToSeconds(process.env.JWT_REFRESH_EXPIRES_IN || '7d', 7 * 24 * 3600);
+        return Date.now() - new Date(lastLoginAt).getTime() < ttlSeconds * 1000;
     }
     async getProfile(userId) {
         const user = await this.prisma.user.findUnique({
@@ -423,7 +482,10 @@ let AuthService = AuthService_1 = class AuthService {
         if (!user || !user.isActive) {
             throw new common_1.UnauthorizedException('Tài khoản người dùng không tồn tại hoặc đã bị khóa');
         }
-        const newTokens = await this.generateTokens(user.id, user.email, user.role);
+        if ((0, session_policy_1.isSingleDeviceRole)(user.role) && user.activeSessionId && payload.sid !== user.activeSessionId) {
+            throw (0, session_policy_1.sessionRevokedException)(user.activeDevice);
+        }
+        const newTokens = await this.generateTokens(user.id, user.email, user.role, payload.sid);
         return {
             ...newTokens,
             user: {
@@ -450,8 +512,22 @@ let AuthService = AuthService_1 = class AuthService {
             catch {
             }
         }
+        let accessPayload = null;
+        if (accessToken) {
+            try {
+                accessPayload = this.jwtService.decode(accessToken);
+                if (accessPayload?.sub && !targetUserId) {
+                    targetUserId = accessPayload.sub;
+                }
+            }
+            catch {
+            }
+        }
         if (!targetUserId && !accessToken) {
             throw new common_1.BadRequestException('Vui lòng cung cấp Access Token (Bearer) hoặc Refresh Token để đăng xuất');
+        }
+        if (targetUserId) {
+            await this.closeDeviceSession(targetUserId, refreshPayload?.sid || accessPayload?.sid);
         }
         if (this.redisService?.isReady) {
             if (targetUserId) {
@@ -462,18 +538,11 @@ let AuthService = AuthService_1 = class AuthService {
                     await this.redisService.delByPattern(`auth:refresh:${targetUserId}:*`);
                 }
             }
-            if (accessToken) {
-                try {
-                    const accessPayload = this.jwtService.decode(accessToken);
-                    if (accessPayload?.exp) {
-                        const currentTime = Math.floor(Date.now() / 1000);
-                        const remainingTtl = accessPayload.exp - currentTime;
-                        if (remainingTtl > 0) {
-                            await this.redisService.set(`auth:blacklist:${accessToken}`, '1', remainingTtl);
-                        }
-                    }
-                }
-                catch {
+            if (accessToken && accessPayload?.exp) {
+                const currentTime = Math.floor(Date.now() / 1000);
+                const remainingTtl = accessPayload.exp - currentTime;
+                if (remainingTtl > 0) {
+                    await this.redisService.set(`auth:blacklist:${accessToken}`, '1', remainingTtl);
                 }
             }
         }
@@ -482,25 +551,32 @@ let AuthService = AuthService_1 = class AuthService {
             message: 'Đăng xuất thành công',
         };
     }
-    async generateTokens(userId, email, role) {
+    async generateTokens(userId, email, role, sessionId) {
         const accessSecret = process.env.JWT_SECRET || 'super-secret-hotel-jwt-key-2026-change-in-production';
         const refreshSecret = process.env.JWT_REFRESH_SECRET || 'super-secret-hotel-refresh-jwt-key-2026';
         const accessExpiresIn = process.env.JWT_EXPIRES_IN || '1d';
         const refreshExpiresIn = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
-        const accessPayload = { sub: userId, email, role, type: 'access' };
+        const accessPayload = { sub: userId, email, role, type: 'access', ...(sessionId ? { sid: sessionId } : {}) };
         const accessToken = this.jwtService.sign(accessPayload, {
             secret: accessSecret,
             expiresIn: accessExpiresIn,
         });
         const tokenId = crypto.randomUUID();
-        const refreshPayload = { sub: userId, email, role, jti: tokenId, type: 'refresh' };
+        const refreshPayload = {
+            sub: userId,
+            email,
+            role,
+            jti: tokenId,
+            type: 'refresh',
+            ...(sessionId ? { sid: sessionId } : {}),
+        };
         const refreshToken = this.jwtService.sign(refreshPayload, {
             secret: refreshSecret,
             expiresIn: refreshExpiresIn,
         });
         const refreshTtlSeconds = this.parseExpiresInToSeconds(refreshExpiresIn, 7 * 24 * 3600);
         if (this.redisService?.isReady) {
-            await this.redisService.set(`auth:refresh:${userId}:${tokenId}`, { userId, email, role, createdAt: new Date().toISOString() }, refreshTtlSeconds);
+            await this.redisService.set(`auth:refresh:${userId}:${tokenId}`, { userId, email, role, sessionId, createdAt: new Date().toISOString() }, refreshTtlSeconds);
         }
         const accessExpiresInSeconds = this.parseExpiresInToSeconds(accessExpiresIn, 24 * 3600);
         return {
@@ -540,6 +616,7 @@ exports.AuthService = AuthService = AuthService_1 = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         jwt_1.JwtService,
         mail_service_1.MailService,
-        redis_service_1.RedisService])
+        redis_service_1.RedisService,
+        user_events_service_1.UserEventsService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

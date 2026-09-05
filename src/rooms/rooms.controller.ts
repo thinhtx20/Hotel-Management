@@ -8,9 +8,16 @@ import {
   Delete,
   Query,
   UseGuards,
+  Header,
+  MessageEvent,
+  Sse,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { Observable, interval, map, merge, of } from 'rxjs';
+import { filter } from 'rxjs/operators';
+import { SkipTransform } from '../common/decorators/skip-transform.decorator';
 import { RoomsService } from './rooms.service';
+import { RoomEventsService } from './room-events.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto, UpdateRoomStatusDto } from './dto/update-room.dto';
 import { QueryAvailableRoomsDto } from './dto/query-available-rooms.dto';
@@ -48,7 +55,10 @@ const SAMPLE_ROOM = {
 @ApiTags('Rooms (Quản lý Phòng & Tìm kiếm)')
 @Controller('rooms')
 export class RoomsController {
-  constructor(private readonly roomsService: RoomsService) {}
+  constructor(
+    private readonly roomsService: RoomsService,
+    private readonly roomEvents: RoomEventsService,
+  ) {}
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -76,6 +86,72 @@ export class RoomsController {
       createRoomDto.status = RoomStatus.PENDING_APPROVAL;
     }
     return this.roomsService.create(createRoomDto);
+  }
+
+  // Luồng realtime SSE: client nhận sự kiện tức thời khi trạng thái phòng thay đổi
+  @Public()
+  @UseGuards(JwtAuthGuard)
+  @Sse('stream')
+  @SkipTransform()
+  @Header('X-Accel-Buffering', 'no')
+  @ApiOperation({
+    summary: 'Luồng realtime trạng thái phòng (SSE) — tự cập nhật khi phòng đổi trạng thái',
+    description:
+      'Trả về `text/event-stream`. Client (Web Lễ tân / Mobile App) mở kết nối một lần và nhận sự kiện ngay khi ' +
+      'phòng chuyển trạng thái (Trống -> Đang ở -> Dọn dẹp -> Bảo trì, v.v.) mà không cần F5 hoặc gọi lại `GET /rooms`.\n\n' +
+      '**Tên sự kiện:** `ready` (kết nối thành công), `ping` (giữ kết nối mỗi 20s), ' +
+      '`room.status_changed` (đổi trạng thái), `room.created` (phòng mới), `room.updated` (sửa thông tin), `room.deleted` (xóa phòng).\n\n' +
+      '**Xác thực:** Chấp nhận token qua query: `GET /api/v1/rooms/stream?token=<accessToken>` hoặc header Bearer token.\n\n' +
+      '**Phân quyền tự động:** Nhân viên (ADMIN / RECEPTIONIST) nhận đầy đủ sự kiện kể cả PENDING_APPROVAL và REJECTED. ' +
+      'Khách hàng / khách vãng lai chỉ nhận các trạng thái phòng vận hành thông thường.\n\n' +
+      '**Ví dụ (FE):**\n' +
+      '```js\n' +
+      "const es = new EventSource(`${API}/rooms/stream?token=${accessToken}`);\n" +
+      "es.addEventListener('room.status_changed', (e) => {\n" +
+      '  const { room } = JSON.parse(e.data);\n' +
+      '  console.log(`Phòng ${room.roomNumber} đổi trạng thái thành ${room.status}`);\n' +
+      '  updateRoomStatusInUI(room.id, room.status);\n' +
+      '});\n' +
+      '```',
+  })
+  @ApiQuery({
+    name: 'token',
+    required: false,
+    description: 'Access token dành cho EventSource (không gửi được header Authorization)',
+  })
+  stream(@CurrentUser() user?: any): Observable<MessageEvent> {
+    const isStaff = user?.role === Role.ADMIN || user?.role === Role.RECEPTIONIST;
+
+    const ready$ = of<MessageEvent>({
+      type: 'ready',
+      retry: 5000,
+      data: {
+        message: 'Đã kết nối luồng cập nhật trạng thái phòng realtime',
+        at: new Date().toISOString(),
+      },
+    });
+
+    const ping$ = interval(20000).pipe(
+      map<number, MessageEvent>(() => ({
+        type: 'ping',
+        data: { at: new Date().toISOString() },
+      })),
+    );
+
+    const changes$ = this.roomEvents.stream().pipe(
+      filter((event) => {
+        if (isStaff) return true;
+        // Khách hàng / khách vãng lai không nhận thông tin phòng chờ duyệt / bị từ chối
+        const status = event.room?.status;
+        return status !== RoomStatus.PENDING_APPROVAL && status !== RoomStatus.REJECTED;
+      }),
+      map<any, MessageEvent>((event) => ({
+        type: event.type,
+        data: event,
+      })),
+    );
+
+    return merge(ready$, changes$, ping$);
   }
 
   // @Public() + JwtAuthGuard = xác thực tùy chọn: khách vãng lai không cần đăng nhập vẫn gọi được,

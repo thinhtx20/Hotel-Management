@@ -32,11 +32,19 @@ let AuthController = class AuthController {
     constructor(authService) {
         this.authService = authService;
     }
-    register(registerDto) {
-        return this.authService.register(registerDto);
+    deviceOf(req) {
+        const forwarded = req?.headers?.['x-forwarded-for'];
+        const forwardedIp = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+        return {
+            userAgent: req?.headers?.['user-agent'],
+            ip: forwardedIp?.split(',')[0]?.trim() || req?.ip,
+        };
     }
-    login(loginDto) {
-        return this.authService.login(loginDto);
+    register(registerDto, req) {
+        return this.authService.register(registerDto, this.deviceOf(req));
+    }
+    login(loginDto, req) {
+        return this.authService.login(loginDto, this.deviceOf(req));
     }
     refreshToken(refreshTokenDto) {
         return this.authService.refreshToken(refreshTokenDto);
@@ -95,14 +103,23 @@ __decorate([
         path: '/api/v1/auth/register',
     }),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [register_dto_1.RegisterDto]),
+    __metadata("design:paramtypes", [register_dto_1.RegisterDto, Object]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "register", null);
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Post)('login'),
-    (0, swagger_1.ApiOperation)({ summary: 'Đăng nhập hệ thống' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Đăng nhập hệ thống',
+        description: 'Tài khoản **khách hàng (CUSTOMER)** chỉ được đăng nhập trên 1 thiết bị tại một thời điểm.\n\n' +
+            '- Mặc định (`SINGLE_DEVICE_MODE=kick_old`): đăng nhập ở máy mới thành công và **đá phiên ở máy cũ ra**. ' +
+            'Máy cũ sẽ nhận `401` với `error: "SESSION_REVOKED"` ở request kế tiếp — FE bắt mã này để xóa token và về màn đăng nhập.\n' +
+            '- Nếu đặt `SINGLE_DEVICE_MODE=block_new`: máy mới bị từ chối `401` với `error: "SESSION_DEVICE_LIMIT"` ' +
+            'cho tới khi máy cũ đăng xuất.\n\n' +
+            'Tài khoản ADMIN / RECEPTIONIST không bị giới hạn số thiết bị.',
+    }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Đăng nhập thành công',
@@ -127,8 +144,9 @@ __decorate([
         path: '/api/v1/auth/login',
     }),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [login_dto_1.LoginDto]),
+    __metadata("design:paramtypes", [login_dto_1.LoginDto, Object]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "login", null);
 __decorate([

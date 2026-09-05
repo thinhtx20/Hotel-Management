@@ -6,11 +6,13 @@ import { UpdateRoomDto } from './dto/update-room.dto';
 import { QueryAvailableRoomsDto } from './dto/query-available-rooms.dto';
 import { SearchRoomDto } from './dto/search-room.dto';
 import { RoomStatus } from '@prisma/client';
+import { RoomEventsService } from './room-events.service';
 export declare class RoomsService {
     private prisma;
     private redis;
     private esService;
-    constructor(prisma: PrismaService, redis: RedisService, esService: ElasticsearchService);
+    private roomEvents;
+    constructor(prisma: PrismaService, redis: RedisService, esService: ElasticsearchService, roomEvents: RoomEventsService);
     create(dto: CreateRoomDto): Promise<import("./dto/room-response.dto").RoomResponse>;
     findAll(status?: RoomStatus, floor?: number, roomTypeId?: string, isStaff?: boolean): Promise<import("./dto/room-response.dto").RoomResponse[]>;
     findOne(id: string, includeNotes?: boolean): Promise<import("./dto/room-response.dto").RoomResponse>;

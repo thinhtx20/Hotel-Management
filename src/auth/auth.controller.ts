@@ -14,11 +14,25 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { ApiSuccessResponse, ApiErrorResponse } from '../common/decorators/api-success-response.decorator';
+import { DeviceInfo } from './session-policy';
 
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  /**
+   * Nhận diện thiết bị đang đăng nhập để hiển thị trong thông báo
+   * "tài khoản vừa đăng nhập ở thiết bị khác" (ràng buộc 1 tài khoản khách - 1 máy).
+   */
+  private deviceOf(req?: Request): DeviceInfo {
+    const forwarded = req?.headers?.['x-forwarded-for'];
+    const forwardedIp = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    return {
+      userAgent: req?.headers?.['user-agent'],
+      ip: forwardedIp?.split(',')[0]?.trim() || req?.ip,
+    };
+  }
 
   @Public()
   @Post('register')
@@ -47,13 +61,22 @@ export class AuthController {
     error: 'Conflict',
     path: '/api/v1/auth/register',
   })
-  register(@Body() registerDto: RegisterDto) {
-    return this.authService.register(registerDto);
+  register(@Body() registerDto: RegisterDto, @Req() req?: Request) {
+    return this.authService.register(registerDto, this.deviceOf(req));
   }
 
   @Public()
   @Post('login')
-  @ApiOperation({ summary: 'Đăng nhập hệ thống' })
+  @ApiOperation({
+    summary: 'Đăng nhập hệ thống',
+    description:
+      'Tài khoản **khách hàng (CUSTOMER)** chỉ được đăng nhập trên 1 thiết bị tại một thời điểm.\n\n' +
+      '- Mặc định (`SINGLE_DEVICE_MODE=kick_old`): đăng nhập ở máy mới thành công và **đá phiên ở máy cũ ra**. ' +
+      'Máy cũ sẽ nhận `401` với `error: "SESSION_REVOKED"` ở request kế tiếp — FE bắt mã này để xóa token và về màn đăng nhập.\n' +
+      '- Nếu đặt `SINGLE_DEVICE_MODE=block_new`: máy mới bị từ chối `401` với `error: "SESSION_DEVICE_LIMIT"` ' +
+      'cho tới khi máy cũ đăng xuất.\n\n' +
+      'Tài khoản ADMIN / RECEPTIONIST không bị giới hạn số thiết bị.',
+  })
   @ApiSuccessResponse({
     status: 200,
     description: 'Đăng nhập thành công',
@@ -77,8 +100,8 @@ export class AuthController {
     error: 'Unauthorized',
     path: '/api/v1/auth/login',
   })
-  login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  login(@Body() loginDto: LoginDto, @Req() req?: Request) {
+    return this.authService.login(loginDto, this.deviceOf(req));
   }
 
   @Public()

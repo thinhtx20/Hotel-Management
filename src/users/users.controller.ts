@@ -8,9 +8,16 @@ import {
   Delete,
   UseGuards,
   Query,
+  Sse,
+  Header,
+  MessageEvent,
 } from '@nestjs/common';
+import { Observable, interval, merge, of } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { UsersService } from './users.service';
+import { UserEventsService } from './user-events.service';
+import { SkipTransform } from '../common/decorators/skip-transform.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -38,7 +45,10 @@ const SAMPLE_USER = {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly userEvents: UserEventsService,
+  ) {}
 
   @Patch('me')
   @ApiOperation({ summary: 'Cập nhật thông tin tài khoản hiện tại (Mục 03 - P1)' })
@@ -88,6 +98,61 @@ export class UsersController {
   })
   findAll(@Query('role') role?: Role) {
     return this.usersService.findAll(role);
+  }
+
+  @Sse('stream')
+  @Roles(Role.ADMIN, Role.RECEPTIONIST)
+  @SkipTransform()
+  @Header('X-Accel-Buffering', 'no')
+  @ApiOperation({
+    summary: 'Luồng realtime danh sách tài khoản (SSE) — tự báo khi có người đăng ký mới',
+    description:
+      'Trả về `text/event-stream`. Client mở kết nối một lần và nhận sự kiện ngay khi có tài khoản mới, ' +
+      'thay vì phải F5 hoặc gọi lại `GET /users`.\n\n' +
+      '**Tên sự kiện:** `ready` (mở luồng thành công), `ping` (giữ kết nối mỗi 20 giây), ' +
+      '`user.created` (tài khoản mới), `user.updated` (đổi thông tin / vai trò), `user.deactivated` (khóa tài khoản).\n\n' +
+      '**Xác thực:** `EventSource` của trình duyệt không gửi được header `Authorization`, ' +
+      'nên endpoint này chấp nhận token qua query: `GET /api/v1/users/stream?token=<accessToken>`.\n\n' +
+      '**Ví dụ (FE):**\n' +
+      '```js\n' +
+      "const es = new EventSource(`${API}/users/stream?token=${accessToken}`);\n" +
+      "es.addEventListener('user.created', (e) => {\n" +
+      '  const { user } = JSON.parse(e.data);\n' +
+      '  setUsers((prev) => [user, ...prev.filter((u) => u.id !== user.id)]);\n' +
+      '});\n' +
+      '```',
+  })
+  @ApiQuery({
+    name: 'token',
+    required: false,
+    description: 'Access token dành cho EventSource (không gửi được header Authorization)',
+  })
+  stream(): Observable<MessageEvent> {
+    const ready$ = of<MessageEvent>({
+      type: 'ready',
+      retry: 5000,
+      data: {
+        message: 'Đã kết nối luồng cập nhật tài khoản',
+        at: new Date().toISOString(),
+      },
+    });
+
+    // Giữ kết nối sống qua proxy / load balancer (Render, Nginx thường ngắt sau ~30-60 giây rảnh)
+    const ping$ = interval(20000).pipe(
+      map<number, MessageEvent>(() => ({
+        type: 'ping',
+        data: { at: new Date().toISOString() },
+      })),
+    );
+
+    const changes$ = this.userEvents.stream().pipe(
+      map<any, MessageEvent>((event) => ({
+        type: event.type,
+        data: event,
+      })),
+    );
+
+    return merge(ready$, changes$, ping$);
   }
 
   @Get(':id')
