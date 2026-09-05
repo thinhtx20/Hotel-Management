@@ -4,7 +4,7 @@ import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { CreatePaymentRequestDto } from './dto/create-payment-request.dto';
 import { ConfirmPaymentDto, RejectPaymentDto } from './dto/review-payment.dto';
 import { RefundDto } from './dto/refund.dto';
-import { QueryInvoicesDto } from './dto/query-invoices.dto';
+import { InvoiceTimeFilterType, QueryInvoicesDto } from './dto/query-invoices.dto';
 import { QueryPaymentRequestsDto } from './dto/query-payment-requests.dto';
 import { PaymentEntryStatus, PaymentStatus, Prisma, Role } from '@prisma/client';
 export declare class InvoicesService {
@@ -21,9 +21,9 @@ export declare class InvoicesService {
                 createdAt: Date;
                 bookingId: string;
                 unitPrice: number;
+                note: string | null;
                 serviceName: string;
                 quantity: number;
-                note: string | null;
                 totalPrice: number;
                 requestedById: string | null;
             }[];
@@ -80,11 +80,11 @@ export declare class InvoicesService {
             confirmedAt: Date | null;
             confirmedById: string | null;
             type: import(".prisma/client").$Enums.PaymentEntryType;
-            method: import(".prisma/client").$Enums.PaymentMethod;
-            note: string | null;
             amount: number;
             reference: string | null;
+            note: string | null;
             invoiceId: string;
+            method: import(".prisma/client").$Enums.PaymentMethod;
             createdById: string | null;
             rejectedReason: string | null;
         })[];
@@ -107,7 +107,22 @@ export declare class InvoicesService {
         issuedById: string | null;
     }>;
     private toInvoiceResponse;
-    findAll(queryOrStatus?: QueryInvoicesDto | PaymentStatus): Promise<import("../common/utils/pagination.util").PaginatedResult<any>>;
+    private resolveInvoiceTimeFilter;
+    findAll(queryOrStatus?: QueryInvoicesDto | PaymentStatus, userRole?: Role): Promise<{
+        meta: {
+            timeFilter: {
+                type: InvoiceTimeFilterType;
+                startDate: string;
+                endDate: string;
+                label: string;
+            };
+            total: number;
+            page: number;
+            limit: number;
+            totalPages: number;
+        };
+        data: any[];
+    }>;
     findMyInvoices(customerId: string, queryOrStatus?: QueryInvoicesDto | PaymentStatus): Promise<import("../common/utils/pagination.util").PaginatedResult<any>>;
     findOne(id: string, currentUserId?: string, currentUserRole?: Role): Promise<any>;
     recordPayment(id: string, dto: RecordPaymentDto, cashierId: string): Promise<any>;

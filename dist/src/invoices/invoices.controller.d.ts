@@ -80,7 +80,21 @@ export declare class InvoicesController {
         invoice: any;
     }>;
     create(dto: CreateInvoiceDto, cashierId: string): Promise<any>;
-    findAll(query: QueryInvoicesDto): Promise<import("../common/utils/pagination.util").PaginatedResult<any>>;
+    findAll(query: QueryInvoicesDto, userRole: Role): Promise<{
+        meta: {
+            timeFilter: {
+                type: import("./dto/query-invoices.dto").InvoiceTimeFilterType;
+                startDate: string;
+                endDate: string;
+                label: string;
+            };
+            total: number;
+            page: number;
+            limit: number;
+            totalPages: number;
+        };
+        data: any[];
+    }>;
     findOne(id: string, userId: string, userRole: Role): Promise<any>;
     recordPayment(id: string, dto: RecordPaymentDto, cashierId: string): Promise<any>;
     createPaymentRequest(id: string, dto: CreatePaymentRequestDto, userId: string, userRole: Role): Promise<{

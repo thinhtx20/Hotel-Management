@@ -264,18 +264,24 @@ export class InvoicesController {
   @Get()
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @ApiOperation({
-    summary: 'Lấy danh sách hóa đơn theo trạng thái thanh toán & phân trang',
+    summary:
+      'Lấy danh sách hóa đơn theo tuần (Lễ tân/mặc định) hoặc theo tháng/năm (Admin)',
     description:
-      'Response luôn có dạng { data: [...], meta: { total, page, limit, totalPages } }; ' +
-      'không truyền page/limit thì trả về toàn bộ kết quả trong data.',
+      'Mặc định (và đối với Lễ tân): trả về hóa đơn trong tuần hiện tại (Thứ 2 đến Chủ nhật). ' +
+      'Admin có quyền truyền các tham số lọc: fromMonth & toMonth (khoảng tháng), month (1 tháng), ' +
+      'year (cả năm), startDate & endDate. Lễ tân nếu truyền tháng/năm sẽ nhận lỗi 403 Forbidden. ' +
+      'Response luôn có dạng { data: [...], meta: { total, page, limit, totalPages, timeFilter } }.',
   })
   @ApiSuccessResponse({
     status: 200,
     description: 'Lấy danh sách hóa đơn thành công',
     exampleData: SAMPLE_PAGINATED_INVOICES,
   })
-  findAll(@Query() query: QueryInvoicesDto) {
-    return this.invoicesService.findAll(query);
+  findAll(
+    @Query() query: QueryInvoicesDto,
+    @CurrentUser('role') userRole: Role,
+  ) {
+    return this.invoicesService.findAll(query, userRole);
   }
 
   @Get(':id')

@@ -105,9 +105,9 @@ export declare class BookingsController {
                     createdAt: Date;
                     bookingId: string;
                     unitPrice: number;
+                    note: string | null;
                     serviceName: string;
                     quantity: number;
-                    note: string | null;
                     totalPrice: number;
                     requestedById: string | null;
                 }[];
@@ -164,11 +164,11 @@ export declare class BookingsController {
                 confirmedAt: Date | null;
                 confirmedById: string | null;
                 type: import(".prisma/client").$Enums.PaymentEntryType;
-                method: import(".prisma/client").$Enums.PaymentMethod;
-                note: string | null;
                 amount: number;
                 reference: string | null;
+                note: string | null;
                 invoiceId: string;
+                method: import(".prisma/client").$Enums.PaymentMethod;
                 createdById: string | null;
                 rejectedReason: string | null;
             })[];
@@ -199,9 +199,9 @@ export declare class BookingsController {
         createdAt: Date;
         bookingId: string;
         unitPrice: number;
+        note: string | null;
         serviceName: string;
         quantity: number;
-        note: string | null;
         totalPrice: number;
         requestedById: string | null;
     }>;
@@ -215,9 +215,9 @@ export declare class BookingsController {
         createdAt: Date;
         bookingId: string;
         unitPrice: number;
+        note: string | null;
         serviceName: string;
         quantity: number;
-        note: string | null;
         totalPrice: number;
         requestedById: string | null;
     }>;
@@ -227,9 +227,9 @@ export declare class BookingsController {
         createdAt: Date;
         bookingId: string;
         unitPrice: number;
+        note: string | null;
         serviceName: string;
         quantity: number;
-        note: string | null;
         totalPrice: number;
         requestedById: string | null;
     }>;

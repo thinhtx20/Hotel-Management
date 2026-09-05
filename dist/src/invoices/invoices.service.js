@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.InvoicesService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
+const query_invoices_dto_1 = require("./dto/query-invoices.dto");
 const pagination_util_1 = require("../common/utils/pagination.util");
 const client_1 = require("@prisma/client");
 const revenue_util_1 = require("../common/utils/revenue.util");
@@ -151,25 +152,116 @@ let InvoicesService = class InvoicesService {
             canRequestPayment: remainingAmount > 0 && pendingPayments.length === 0,
         };
     }
-    async findAll(queryOrStatus) {
+    resolveInvoiceTimeFilter(query, userRole) {
+        const isExplicitNonAdmin = Boolean(userRole && userRole !== client_1.Role.ADMIN);
+        const hasAdminFilter = Boolean(query.fromMonth ||
+            query.toMonth ||
+            query.year ||
+            query.month ||
+            query.startDate ||
+            query.endDate ||
+            (query.filterType && query.filterType !== query_invoices_dto_1.InvoiceTimeFilterType.WEEK));
+        if (isExplicitNonAdmin && hasAdminFilter) {
+            throw new common_1.ForbiddenException('Lễ tân chỉ có quyền tra cứu hóa đơn theo tuần. Bộ lọc theo tháng hoặc năm chỉ dành cho Quản trị viên (Admin).');
+        }
+        const now = new Date();
+        let filterType = query.filterType;
+        if (!filterType) {
+            if (query.fromMonth || query.toMonth || query.month) {
+                filterType = query_invoices_dto_1.InvoiceTimeFilterType.MONTH_RANGE;
+            }
+            else if (query.year) {
+                filterType = query_invoices_dto_1.InvoiceTimeFilterType.YEAR;
+            }
+            else if (query.startDate || query.endDate) {
+                filterType = query_invoices_dto_1.InvoiceTimeFilterType.CUSTOM;
+            }
+            else {
+                filterType = query_invoices_dto_1.InvoiceTimeFilterType.WEEK;
+            }
+        }
+        if (filterType === query_invoices_dto_1.InvoiceTimeFilterType.MONTH_RANGE) {
+            const targetYear = query.year ? Number(query.year) : now.getFullYear();
+            const fromM = Number(query.fromMonth || query.month || 1);
+            const toM = Number(query.toMonth || query.month || fromM);
+            const actualFrom = Math.min(Math.max(1, fromM), 12);
+            const actualTo = Math.min(Math.max(1, toM), 12);
+            const minMonth = Math.min(actualFrom, actualTo);
+            const maxMonth = Math.max(actualFrom, actualTo);
+            const startDate = new Date(targetYear, minMonth - 1, 1, 0, 0, 0, 0);
+            const endDate = new Date(targetYear, maxMonth, 0, 23, 59, 59, 999);
+            const label = minMonth === maxMonth
+                ? `Tháng ${minMonth}/${targetYear}`
+                : `Từ T${minMonth} đến T${maxMonth}/${targetYear}`;
+            return { filterType, startDate, endDate, label };
+        }
+        if (filterType === query_invoices_dto_1.InvoiceTimeFilterType.YEAR) {
+            const targetYear = query.year ? Number(query.year) : now.getFullYear();
+            const startDate = new Date(targetYear, 0, 1, 0, 0, 0, 0);
+            const endDate = new Date(targetYear, 11, 31, 23, 59, 59, 999);
+            const label = `Năm ${targetYear}`;
+            return { filterType, startDate, endDate, label };
+        }
+        if (filterType === query_invoices_dto_1.InvoiceTimeFilterType.CUSTOM && (query.startDate || query.endDate)) {
+            const startDate = query.startDate ? (0, revenue_util_1.startOfDay)(new Date(query.startDate)) : (0, revenue_util_1.startOfDay)(now);
+            const endDate = query.endDate ? (0, revenue_util_1.endOfDay)(new Date(query.endDate)) : (0, revenue_util_1.endOfDay)(now);
+            const label = `${(0, revenue_util_1.formatLocalDate)(startDate)} - ${(0, revenue_util_1.formatLocalDate)(endDate)}`;
+            return { filterType, startDate, endDate, label };
+        }
+        const offset = Number(query.weekOffset || 0);
+        const baseDate = new Date(now);
+        if (offset !== 0) {
+            baseDate.setDate(baseDate.getDate() + offset * 7);
+        }
+        const day = baseDate.getDay();
+        const diffToMonday = (day === 0 ? -6 : 1) - day;
+        const monday = new Date(baseDate);
+        monday.setDate(baseDate.getDate() + diffToMonday);
+        monday.setHours(0, 0, 0, 0);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        sunday.setHours(23, 59, 59, 999);
+        const label = offset === 0
+            ? `Tuần này (${String(monday.getDate()).padStart(2, '0')}/${String(monday.getMonth() + 1).padStart(2, '0')} - ${String(sunday.getDate()).padStart(2, '0')}/${String(sunday.getMonth() + 1).padStart(2, '0')}/${sunday.getFullYear()})`
+            : `Tuần ${String(monday.getDate()).padStart(2, '0')}/${String(monday.getMonth() + 1).padStart(2, '0')} - ${String(sunday.getDate()).padStart(2, '0')}/${String(sunday.getMonth() + 1).padStart(2, '0')}/${sunday.getFullYear()}`;
+        return {
+            filterType: query_invoices_dto_1.InvoiceTimeFilterType.WEEK,
+            startDate: monday,
+            endDate: sunday,
+            label,
+        };
+    }
+    async findAll(queryOrStatus, userRole) {
         const query = typeof queryOrStatus === 'string'
             ? { status: queryOrStatus }
             : (queryOrStatus ?? {});
+        const timeFilter = this.resolveInvoiceTimeFilter(query, userRole);
         const where = {};
         if (query.status) {
             where.paymentStatus = query.status;
         }
+        const conditions = [
+            {
+                OR: [
+                    { createdAt: { gte: timeFilter.startDate, lte: timeFilter.endDate } },
+                    { paidAt: { gte: timeFilter.startDate, lte: timeFilter.endDate } },
+                ],
+            },
+        ];
         if (query.search) {
             const search = query.search.trim();
             const insensitive = 'insensitive';
-            where.OR = [
-                { invoiceCode: { contains: search, mode: insensitive } },
-                { booking: { customer: { fullName: { contains: search, mode: insensitive } } } },
-                { booking: { customer: { phone: { contains: search, mode: insensitive } } } },
-                { booking: { customer: { email: { contains: search, mode: insensitive } } } },
-                { booking: { room: { roomNumber: { contains: search, mode: insensitive } } } },
-            ];
+            conditions.push({
+                OR: [
+                    { invoiceCode: { contains: search, mode: insensitive } },
+                    { booking: { customer: { fullName: { contains: search, mode: insensitive } } } },
+                    { booking: { customer: { phone: { contains: search, mode: insensitive } } } },
+                    { booking: { customer: { email: { contains: search, mode: insensitive } } } },
+                    { booking: { room: { roomNumber: { contains: search, mode: insensitive } } } },
+                ],
+            });
         }
+        where.AND = conditions;
         const { isPaginated, page, limit, skip, take } = (0, pagination_util_1.calculatePagination)(query);
         const [total, list] = await this.prisma.$transaction([
             this.prisma.invoice.count({ where }),
@@ -181,7 +273,19 @@ let InvoicesService = class InvoicesService {
             }),
         ]);
         const data = list.map((inv) => this.toInvoiceResponse(inv));
-        return (0, pagination_util_1.buildPaginatedResult)(data, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
+        const paginated = (0, pagination_util_1.buildPaginatedResult)(data, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
+        return {
+            ...paginated,
+            meta: {
+                ...paginated.meta,
+                timeFilter: {
+                    type: timeFilter.filterType,
+                    startDate: timeFilter.startDate.toISOString(),
+                    endDate: timeFilter.endDate.toISOString(),
+                    label: timeFilter.label,
+                },
+            },
+        };
     }
     async findMyInvoices(customerId, queryOrStatus) {
         const query = typeof queryOrStatus === 'string'

@@ -141,8 +141,8 @@ let InvoicesController = class InvoicesController {
     create(dto, cashierId) {
         return this.invoicesService.create(dto, cashierId);
     }
-    findAll(query) {
-        return this.invoicesService.findAll(query);
+    findAll(query, userRole) {
+        return this.invoicesService.findAll(query, userRole);
     }
     findOne(id, userId, userRole) {
         return this.invoicesService.findOne(id, userId, userRole);
@@ -301,9 +301,11 @@ __decorate([
     (0, common_1.Get)(),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, swagger_1.ApiOperation)({
-        summary: 'Lấy danh sách hóa đơn theo trạng thái thanh toán & phân trang',
-        description: 'Response luôn có dạng { data: [...], meta: { total, page, limit, totalPages } }; ' +
-            'không truyền page/limit thì trả về toàn bộ kết quả trong data.',
+        summary: 'Lấy danh sách hóa đơn theo tuần (Lễ tân/mặc định) hoặc theo tháng/năm (Admin)',
+        description: 'Mặc định (và đối với Lễ tân): trả về hóa đơn trong tuần hiện tại (Thứ 2 đến Chủ nhật). ' +
+            'Admin có quyền truyền các tham số lọc: fromMonth & toMonth (khoảng tháng), month (1 tháng), ' +
+            'year (cả năm), startDate & endDate. Lễ tân nếu truyền tháng/năm sẽ nhận lỗi 403 Forbidden. ' +
+            'Response luôn có dạng { data: [...], meta: { total, page, limit, totalPages, timeFilter } }.',
     }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
@@ -311,8 +313,9 @@ __decorate([
         exampleData: SAMPLE_PAGINATED_INVOICES,
     }),
     __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)('role')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [query_invoices_dto_1.QueryInvoicesDto]),
+    __metadata("design:paramtypes", [query_invoices_dto_1.QueryInvoicesDto, String]),
     __metadata("design:returntype", void 0)
 ], InvoicesController.prototype, "findAll", null);
 __decorate([
