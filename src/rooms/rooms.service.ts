@@ -382,7 +382,9 @@ export class RoomsService {
         roomType: true,
         bookings: {
           where: { status: { in: [BookingStatus.CHECKED_IN, BookingStatus.CONFIRMED] } },
-          select: { status: true, checkOutDate: true },
+          // checkInDate là bắt buộc: thiếu nó, đơn CONFIRMED của kỳ nghỉ sau
+          // cũng bị coi là đang giữ phòng hôm nay và phòng bị ghi nhầm thành RESERVED.
+          select: { status: true, checkInDate: true, checkOutDate: true },
         },
       },
       orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],

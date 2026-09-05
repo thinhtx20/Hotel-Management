@@ -76,7 +76,9 @@ export class BookingsService {
       include: {
         bookings: {
           where: { status: { in: [BookingStatus.CHECKED_IN, BookingStatus.CONFIRMED] } },
-          select: { status: true, checkOutDate: true },
+          // checkInDate là bắt buộc: thiếu nó, đơn CONFIRMED của kỳ nghỉ sau
+          // cũng bị coi là đang giữ phòng hôm nay và phòng bị ghi nhầm thành RESERVED.
+          select: { status: true, checkInDate: true, checkOutDate: true },
         },
       },
     });
@@ -820,23 +822,6 @@ export class BookingsService {
       throw new BadRequestException('Phòng mới phải khác phòng hiện tại đang ở');
     }
 
-    const newRoom = await this.prisma.room.findUnique({
-      where: { id: dto.newRoomId },
-      include: { roomType: true },
-    });
-
-    if (!newRoom) {
-      throw new NotFoundException(`Không tìm thấy phòng mới với ID: ${dto.newRoomId}`);
-    }
-
-    if (newRoom.status === RoomStatus.MAINTENANCE) {
-      throw new BadRequestException('Phòng mới hiện đang bảo trì, không thể chuyển vào');
-    }
-
-    if (newRoom.status !== RoomStatus.AVAILABLE) {
-      throw new BadRequestException(`Phòng mới hiện không khả dụng (Trạng thái: ${newRoom.status})`);
-    }
-
     const lockKey = `lock:room:${dto.newRoomId}`;
     const lockToken = await this.redis.acquireLock(lockKey, 5000);
     if (!lockToken) {
@@ -845,20 +830,71 @@ export class BookingsService {
 
     try {
       const now = new Date();
-      const conflictBooking = await this.prisma.booking.findFirst({
-        where: {
-          roomId: dto.newRoomId,
-          status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN] },
-          checkOutDate: { gt: now },
-          AND: [
-            { checkInDate: { lt: booking.checkOutDate } },
-            { checkOutDate: { gt: now } },
-          ],
+
+      // Lấy kèm các đơn còn hiệu lực để suy ra trạng thái THỰC TẾ của phòng mới.
+      // Cột `room.status` có thể đã lệch (ví dụ vẫn còn OCCUPIED sau khi khách cũ
+      // đã trả phòng / đơn bị hủy), nên không được dùng trực tiếp để chặn đổi phòng —
+      // lễ tân nhìn thấy phòng trống trên sơ đồ nhưng lại bị báo "Phòng không khả dụng".
+      const newRoom = await this.prisma.room.findUnique({
+        where: { id: dto.newRoomId },
+        include: {
+          roomType: true,
+          bookings: {
+            where: { status: { in: [BookingStatus.CHECKED_IN, BookingStatus.CONFIRMED] } },
+            select: { status: true, checkInDate: true, checkOutDate: true },
+          },
         },
       });
 
+      if (!newRoom) {
+        throw new NotFoundException(`Không tìm thấy phòng mới với ID: ${dto.newRoomId}`);
+      }
+
+      const effectiveStatus = deriveRoomStatus(newRoom.status, newRoom.bookings, now);
+
+      // Cột trạng thái đã lệch: chữa lại ngay để sơ đồ phòng không tiếp tục hiển thị sai
+      if (effectiveStatus !== newRoom.status) {
+        await this.syncRoomStatus(dto.newRoomId);
+      }
+
+      if (effectiveStatus === RoomStatus.MAINTENANCE) {
+        throw new BadRequestException(`Phòng ${newRoom.roomNumber} đang bảo trì, không thể chuyển vào`);
+      }
+
+      if (
+        effectiveStatus === RoomStatus.PENDING_APPROVAL ||
+        effectiveStatus === RoomStatus.REJECTED
+      ) {
+        throw new BadRequestException(
+          `Phòng ${newRoom.roomNumber} chưa được duyệt đưa vào khai thác, không thể chuyển khách vào`,
+        );
+      }
+
+      if (effectiveStatus === RoomStatus.CLEANING) {
+        throw new BadRequestException(
+          `Phòng ${newRoom.roomNumber} đang được dọn dẹp, vui lòng chờ buồng phòng hoàn tất`,
+        );
+      }
+
+      // OCCUPIED / RESERVED không bị chặn cứng theo trạng thái: chỉ chặn khi thực sự có đơn
+      // chồng lấn khoảng lưu trú còn lại (từ bây giờ tới ngày trả phòng của khách).
+      const conflictBooking = await this.prisma.booking.findFirst({
+        where: {
+          id: { not: id },
+          roomId: dto.newRoomId,
+          status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN] },
+          checkInDate: { lt: booking.checkOutDate },
+          checkOutDate: { gt: now },
+        },
+        orderBy: { checkInDate: 'asc' },
+      });
+
       if (conflictBooking) {
-        throw new ConflictException('Phòng mới đã có lịch đặt trong khoảng thời gian lưu trú còn lại');
+        throw new ConflictException(
+          conflictBooking.status === BookingStatus.CHECKED_IN
+            ? `Phòng ${newRoom.roomNumber} đang có khách lưu trú, không thể chuyển vào`
+            : `Phòng ${newRoom.roomNumber} đã có lịch đặt từ ${new Date(conflictBooking.checkInDate).toLocaleString('vi-VN')} trong khoảng lưu trú còn lại`,
+        );
       }
 
       let newTotalAmount = booking.totalAmount;
@@ -935,7 +971,7 @@ export class BookingsService {
         roomNumber: newRoom.roomNumber,
         floor: newRoom.floor,
         status: RoomStatus.OCCUPIED,
-        previousStatus: newRoom.status,
+        previousStatus: effectiveStatus,
         roomTypeId: newRoom.roomTypeId,
         roomTypeName: newRoom.roomType?.name,
         roomTypeCode: newRoom.roomType?.code,
