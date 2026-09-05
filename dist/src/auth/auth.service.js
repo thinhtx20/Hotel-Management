@@ -121,11 +121,12 @@ let AuthService = AuthService_1 = class AuthService {
             throw new common_1.UnauthorizedException('Email hoặc mật khẩu không chính xác');
         }
         if (!user.isActive) {
-            if (systemAcc) {
+            if (email === 'admin@hotel.com') {
                 user = await this.prisma.user.update({
                     where: { id: user.id },
                     data: { isActive: true },
                 });
+                this.logger.log(`🛡️ Tự động kích hoạt lại tài khoản Super Admin: ${email}`);
             }
             else {
                 this.logger.warn(`[Auth] Đăng nhập thất bại: Tài khoản "${email}" đã bị khóa.`);
@@ -142,7 +143,10 @@ let AuthService = AuthService_1 = class AuthService {
                 const newHash = await bcrypt.hash(systemAcc.password, salt);
                 await this.prisma.user.update({
                     where: { id: user.id },
-                    data: { password: newHash, isActive: true },
+                    data: {
+                        password: newHash,
+                        ...(email === 'admin@hotel.com' ? { isActive: true } : {}),
+                    },
                 });
                 isMatch = true;
             }

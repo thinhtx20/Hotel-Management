@@ -602,7 +602,7 @@ export class InvoicesService {
       data: {
         invoiceId: id,
         amount,
-        method: dto.paymentMethod,
+        method: dto.paymentMethod || PaymentMethod.BANK_TRANSFER,
         type: PaymentEntryType.PAYMENT,
         status: PaymentEntryStatus.PENDING,
         reference: dto.reference,

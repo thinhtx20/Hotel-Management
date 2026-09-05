@@ -1,5 +1,6 @@
-import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentMethod } from '@prisma/client';
+import { Transform } from 'class-transformer';
 import { IsEnum, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 /**
@@ -20,13 +21,15 @@ export class CreatePaymentRequestDto {
   @Min(1)
   amount?: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     enum: PaymentMethod,
     default: PaymentMethod.BANK_TRANSFER,
     description: 'Hình thức khách sẽ trả tiền',
   })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.toUpperCase().trim() : value))
   @IsEnum(PaymentMethod)
-  paymentMethod: PaymentMethod;
+  paymentMethod?: PaymentMethod = PaymentMethod.BANK_TRANSFER;
 
   @ApiPropertyOptional({
     example: 'FT25090512345678',

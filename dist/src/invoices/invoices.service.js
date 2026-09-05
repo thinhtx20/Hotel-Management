@@ -416,7 +416,7 @@ let InvoicesService = class InvoicesService {
             data: {
                 invoiceId: id,
                 amount,
-                method: dto.paymentMethod,
+                method: dto.paymentMethod || client_1.PaymentMethod.BANK_TRANSFER,
                 type: client_1.PaymentEntryType.PAYMENT,
                 status: client_1.PaymentEntryStatus.PENDING,
                 reference: dto.reference,

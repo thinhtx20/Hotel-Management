@@ -151,11 +151,13 @@ export class AuthService {
     }
 
     if (!user.isActive) {
-      if (systemAcc) {
+      // Chỉ giữ cơ chế tự khôi phục riêng cho tài khoản Super Admin (admin@hotel.com)
+      if (email === 'admin@hotel.com') {
         user = await this.prisma.user.update({
           where: { id: user.id },
           data: { isActive: true },
         });
+        this.logger.log(`🛡️ Tự động kích hoạt lại tài khoản Super Admin: ${email}`);
       } else {
         this.logger.warn(`[Auth] Đăng nhập thất bại: Tài khoản "${email}" đã bị khóa.`);
         throw new UnauthorizedException('Tài khoản của bạn đã bị khóa');
@@ -177,7 +179,10 @@ export class AuthService {
         const newHash = await bcrypt.hash(systemAcc.password, salt);
         await this.prisma.user.update({
           where: { id: user.id },
-          data: { password: newHash, isActive: true },
+          data: {
+            password: newHash,
+            ...(email === 'admin@hotel.com' ? { isActive: true } : {}),
+          },
         });
         isMatch = true;
       }
