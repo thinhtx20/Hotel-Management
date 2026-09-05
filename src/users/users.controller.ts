@@ -22,6 +22,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { QueryUsersDto } from './dto/query-users.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -89,15 +90,22 @@ export class UsersController {
 
   @Get()
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
-  @ApiOperation({ summary: 'Lấy danh sách người dùng (Admin & Receptionist)' })
-  @ApiQuery({ name: 'role', enum: Role, required: false, description: 'Lọc theo vai trò' })
+  @ApiOperation({
+    summary: 'Lấy danh sách người dùng & phân trang (Admin & Receptionist)',
+    description:
+      'Response luôn có dạng { data: [...], meta: { total, page, limit, totalPages } }; ' +
+      'không truyền page/limit thì trả về toàn bộ kết quả trong data.',
+  })
   @ApiSuccessResponse({
     status: 200,
     description: 'Lấy danh sách người dùng thành công',
-    exampleData: [SAMPLE_USER],
+    exampleData: {
+      data: [SAMPLE_USER],
+      meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+    },
   })
-  findAll(@Query('role') role?: Role) {
-    return this.usersService.findAll(role);
+  findAll(@Query() query: QueryUsersDto) {
+    return this.usersService.findAll(query);
   }
 
   @Sse('stream')

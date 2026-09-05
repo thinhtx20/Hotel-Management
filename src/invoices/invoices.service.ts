@@ -7,8 +7,20 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { CreatePaymentRequestDto } from './dto/create-payment-request.dto';
+import { ConfirmPaymentDto, RejectPaymentDto } from './dto/review-payment.dto';
 import { RefundDto } from './dto/refund.dto';
-import { PaymentMethod, PaymentStatus, Role } from '@prisma/client';
+import { QueryInvoicesDto } from './dto/query-invoices.dto';
+import { QueryPaymentRequestsDto } from './dto/query-payment-requests.dto';
+import { buildPaginatedResult, calculatePagination } from '../common/utils/pagination.util';
+import {
+  PaymentEntryStatus,
+  PaymentEntryType,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+  Role,
+} from '@prisma/client';
 import {
   collectedRevenueWhere,
   endOfDay,
@@ -17,9 +29,100 @@ import {
   startOfDay,
 } from '../common/utils/revenue.util';
 
+/** Quan hệ cần nạp kèm để dựng đủ response hóa đơn cho FE. */
+const INVOICE_INCLUDE = {
+  booking: {
+    include: {
+      customer: { select: { id: true, fullName: true, phone: true, email: true } },
+      room: { select: { roomNumber: true } },
+      serviceOrders: true,
+    },
+  },
+  issuedBy: { select: { fullName: true, email: true, role: true } },
+  payments: {
+    include: {
+      createdBy: { select: { id: true, fullName: true, role: true } },
+      confirmedBy: { select: { id: true, fullName: true, role: true } },
+    },
+    orderBy: { createdAt: 'asc' as const },
+  },
+} satisfies Prisma.InvoiceInclude;
+
 @Injectable()
 export class InvoicesService {
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * Tính lại `paidAmount` / `paymentStatus` / `paidAt` của hóa đơn từ sổ thu tiền.
+   *
+   * Đây là NƠI DUY NHẤT được phép đổi số tiền đã thu của hóa đơn. Mọi nghiệp vụ
+   * (thu tại quầy, khách trả qua app, hoàn tiền, check-out) chỉ ghi thêm một dòng
+   * vào bảng `payments` rồi gọi hàm này, nên tổng tiền không bao giờ lệch với
+   * lịch sử giao dịch.
+   *
+   * Public vì `BookingsService.checkOut` cũng phải chốt lại hóa đơn trong cùng
+   * transaction với việc đổi trạng thái đơn và phòng.
+   */
+  async recalculateInvoiceTotals(
+    tx: Prisma.TransactionClient,
+    invoiceId: string,
+  ) {
+    const invoice = await tx.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { finalAmount: true, paymentMethod: true },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException(`Không tìm thấy hóa đơn ID: ${invoiceId}`);
+    }
+
+    const entries = await tx.payment.findMany({
+      where: { invoiceId, status: PaymentEntryStatus.CONFIRMED },
+      orderBy: { confirmedAt: 'asc' },
+    });
+
+    let collected = 0;
+    let refunded = 0;
+    let lastPaidAt: Date | null = null;
+    let lastMethod: PaymentMethod = invoice.paymentMethod;
+
+    for (const entry of entries) {
+      if (entry.type === PaymentEntryType.REFUND) {
+        refunded += entry.amount;
+      } else {
+        // PAYMENT và DEPOSIT đều là tiền đã vào két
+        collected += entry.amount;
+        lastMethod = entry.method;
+      }
+      const stamp = entry.confirmedAt ?? entry.createdAt;
+      if (!lastPaidAt || stamp > lastPaidAt) {
+        lastPaidAt = stamp;
+      }
+    }
+
+    const paidAmount = roundMoney(collected - refunded);
+
+    let paymentStatus: PaymentStatus;
+    if (paidAmount <= 0) {
+      // Đã thu rồi hoàn lại hết là REFUNDED; chưa thu đồng nào là UNPAID.
+      paymentStatus = refunded > 0 ? PaymentStatus.REFUNDED : PaymentStatus.UNPAID;
+    } else if (paidAmount >= roundMoney(invoice.finalAmount)) {
+      paymentStatus = PaymentStatus.PAID;
+    } else {
+      paymentStatus = PaymentStatus.PARTIAL;
+    }
+
+    return tx.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        paidAmount,
+        paymentStatus,
+        paymentMethod: lastMethod,
+        paidAt: paidAmount > 0 ? lastPaidAt : null,
+      },
+      include: INVOICE_INCLUDE,
+    });
+  }
 
   /**
    * Helper ánh xạ và bổ sung các trường hiển thị theo yêu cầu FE (Mục 04)
@@ -28,6 +131,7 @@ export class InvoicesService {
     const customer = invoice.booking?.customer;
     const room = invoice.booking?.room;
     const serviceOrders = invoice.booking?.serviceOrders || [];
+    const ledger = invoice.payments || [];
 
     // Tạo danh sách items chi tiết (tiền phòng + từng dịch vụ phụ trợ)
     const items: Array<{
@@ -55,91 +159,143 @@ export class InvoicesService {
       });
     }
 
-    // Danh sách lịch sử thanh toán
-    const payments: Array<{
-      amount: number;
-      paymentMethod: string;
-      paidAt: Date | null;
-      cashierName: string;
-    }> = [];
+    // Lịch sử thu tiền có thật, lấy từ sổ thu tiền thay vì suy ra từ số tổng
+    const payments = ledger
+      .filter((p: any) => p.status === PaymentEntryStatus.CONFIRMED)
+      .map((p: any) => ({
+        id: p.id,
+        amount: p.type === PaymentEntryType.REFUND ? -p.amount : p.amount,
+        type: p.type,
+        paymentMethod: p.method,
+        paidAt: p.confirmedAt ?? p.createdAt,
+        reference: p.reference,
+        note: p.note,
+        cashierName: p.confirmedBy?.fullName || invoice.issuedBy?.fullName || 'Thu ngân ca trực',
+      }));
 
-    if (invoice.paidAmount > 0) {
-      payments.push({
-        amount: invoice.paidAmount,
-        paymentMethod: invoice.paymentMethod,
-        paidAt: invoice.paidAt,
-        cashierName: invoice.issuedBy?.fullName || 'Thu ngân ca trực',
-      });
-    }
+    // Yêu cầu khách đã gửi nhưng thu ngân chưa đối chiếu xong
+    const pendingPayments = ledger
+      .filter((p: any) => p.status === PaymentEntryStatus.PENDING)
+      .map((p: any) => ({
+        id: p.id,
+        amount: p.amount,
+        paymentMethod: p.method,
+        reference: p.reference,
+        note: p.note,
+        requestedAt: p.createdAt,
+        requestedByName: p.createdBy?.fullName || customer?.fullName || null,
+      }));
+
+    const finalAmount = roundMoney(invoice.finalAmount);
+    const paidAmount = roundMoney(invoice.paidAmount);
+    const remainingAmount = Math.max(0, finalAmount - paidAmount);
+    const pendingAmount = roundMoney(
+      pendingPayments.reduce((sum: number, p: any) => sum + p.amount, 0),
+    );
 
     return {
       ...invoice,
+      payments,
+      pendingPayments,
       roomNumber: room?.roomNumber || 'N/A',
       customerName: customer?.fullName || 'Khách vãng lai',
       customerPhone: customer?.phone || null,
       items,
-      payments,
+
+      // Tiền cọc đã thu lúc lễ tân duyệt đơn (đã nằm trong paidAmount)
+      depositAmount: roundMoney(invoice.booking?.depositAmount || 0),
+      /** Số tiền khách còn phải trả — FE dùng trực tiếp cho dòng "Còn thiếu". */
+      remainingAmount,
+      /** Tổng các yêu cầu thanh toán đang chờ thu ngân xác nhận. */
+      pendingAmount,
+      hasPendingPaymentRequest: pendingPayments.length > 0,
+      /** Khách chỉ được bấm thanh toán khi còn nợ và chưa có yêu cầu nào treo. */
+      canRequestPayment: remainingAmount > 0 && pendingPayments.length === 0,
     };
   }
 
-  async findAll(status?: PaymentStatus) {
-    const list = await this.prisma.invoice.findMany({
-      where: status ? { paymentStatus: status } : undefined,
-      include: {
-        booking: {
-          include: {
-            customer: { select: { fullName: true, phone: true, email: true } },
-            room: { select: { roomNumber: true } },
-            serviceOrders: true,
-          },
-        },
-        issuedBy: { select: { fullName: true, role: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+  async findAll(queryOrStatus?: QueryInvoicesDto | PaymentStatus) {
+    const query: QueryInvoicesDto =
+      typeof queryOrStatus === 'string'
+        ? { status: queryOrStatus }
+        : (queryOrStatus ?? {});
 
-    return list.map((inv) => this.toInvoiceResponse(inv));
+    const where: Prisma.InvoiceWhereInput = {};
+    if (query.status) {
+      where.paymentStatus = query.status;
+    }
+    if (query.search) {
+      const search = query.search.trim();
+      const insensitive = 'insensitive' as const;
+      where.OR = [
+        { invoiceCode: { contains: search, mode: insensitive } },
+        { booking: { customer: { fullName: { contains: search, mode: insensitive } } } },
+        { booking: { customer: { phone: { contains: search, mode: insensitive } } } },
+        { booking: { customer: { email: { contains: search, mode: insensitive } } } },
+        { booking: { room: { roomNumber: { contains: search, mode: insensitive } } } },
+      ];
+    }
+
+    const { isPaginated, page, limit, skip, take } = calculatePagination(query);
+
+    const [total, list] = await this.prisma.$transaction([
+      this.prisma.invoice.count({ where }),
+      this.prisma.invoice.findMany({
+        where,
+        include: INVOICE_INCLUDE,
+        orderBy: { createdAt: 'desc' },
+        ...(isPaginated ? { skip, take } : {}),
+      }),
+    ]);
+
+    const data = list.map((inv) => this.toInvoiceResponse(inv));
+    return buildPaginatedResult(data, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
   }
 
   /**
    * Hóa đơn của chính khách hàng đang đăng nhập (màn "Hóa đơn của tôi").
    * Lọc theo chủ đơn đặt phòng, khách không bao giờ thấy hóa đơn của người khác.
    */
-  async findMyInvoices(customerId: string, status?: PaymentStatus) {
-    const list = await this.prisma.invoice.findMany({
-      where: {
-        booking: { customerId },
-        ...(status ? { paymentStatus: status } : {}),
-      },
-      include: {
-        booking: {
-          include: {
-            customer: { select: { fullName: true, phone: true, email: true } },
-            room: { select: { roomNumber: true } },
-            serviceOrders: true,
-          },
-        },
-        issuedBy: { select: { fullName: true, role: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+  async findMyInvoices(customerId: string, queryOrStatus?: QueryInvoicesDto | PaymentStatus) {
+    const query: QueryInvoicesDto =
+      typeof queryOrStatus === 'string'
+        ? { status: queryOrStatus }
+        : (queryOrStatus ?? {});
 
-    return list.map((inv) => this.toInvoiceResponse(inv));
+    const where: Prisma.InvoiceWhereInput = {
+      booking: { customerId },
+      ...(query.status ? { paymentStatus: query.status } : {}),
+    };
+
+    if (query.search) {
+      const search = query.search.trim();
+      const insensitive = 'insensitive' as const;
+      where.OR = [
+        { invoiceCode: { contains: search, mode: insensitive } },
+        { booking: { room: { roomNumber: { contains: search, mode: insensitive } } } },
+      ];
+    }
+
+    const { isPaginated, page, limit, skip, take } = calculatePagination(query);
+
+    const [total, list] = await this.prisma.$transaction([
+      this.prisma.invoice.count({ where }),
+      this.prisma.invoice.findMany({
+        where,
+        include: INVOICE_INCLUDE,
+        orderBy: { createdAt: 'desc' },
+        ...(isPaginated ? { skip, take } : {}),
+      }),
+    ]);
+
+    const data = list.map((inv) => this.toInvoiceResponse(inv));
+    return buildPaginatedResult(data, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
   }
 
   async findOne(id: string, currentUserId?: string, currentUserRole?: Role) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
-      include: {
-        booking: {
-          include: {
-            customer: true,
-            room: { include: { roomType: true } },
-            serviceOrders: true,
-          },
-        },
-        issuedBy: { select: { fullName: true, email: true, role: true } },
-      },
+      include: INVOICE_INCLUDE,
     });
 
     if (!invoice) {
@@ -159,17 +315,96 @@ export class InvoicesService {
     return this.toInvoiceResponse(invoice);
   }
 
+  /**
+   * Thu ngân thu tiền trực tiếp tại quầy (S2 - P1).
+   * Ghi thẳng một dòng CONFIRMED vào sổ thu tiền vì tiền đã vào két ngay lúc đó.
+   */
   async recordPayment(id: string, dto: RecordPaymentDto, cashierId: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
-      include: {
-        booking: {
-          include: {
-            customer: true,
-            room: { include: { roomType: true } },
-            serviceOrders: true,
-          },
+      select: { id: true, finalAmount: true, paidAmount: true, paymentStatus: true },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException(`Không tìm thấy hóa đơn ID: ${id}`);
+    }
+
+    if (dto.amount <= 0) {
+      throw new BadRequestException('Số tiền thu phải lớn hơn 0');
+    }
+
+    const remaining = Math.max(
+      0,
+      roundMoney(invoice.finalAmount) - roundMoney(invoice.paidAmount),
+    );
+
+    if (remaining <= 0) {
+      throw new BadRequestException('Hóa đơn này đã được thanh toán đủ toàn bộ');
+    }
+
+    if (roundMoney(dto.amount) > remaining) {
+      throw new BadRequestException(
+        `Số tiền thu (${dto.amount.toLocaleString('vi-VN')}đ) vượt quá số còn phải thu ` +
+          `(${remaining.toLocaleString('vi-VN')}đ). Nếu khách trả dư, hãy thu đúng số còn lại và trả lại tiền thừa.`,
+      );
+    }
+
+    const now = new Date();
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.payment.create({
+        data: {
+          invoiceId: id,
+          amount: roundMoney(dto.amount),
+          method: dto.paymentMethod,
+          type: PaymentEntryType.PAYMENT,
+          status: PaymentEntryStatus.CONFIRMED,
+          note: dto.notes,
+          createdById: cashierId,
+          confirmedById: cashierId,
+          confirmedAt: now,
         },
+      });
+
+      if (dto.notes) {
+        const current = await tx.invoice.findUnique({
+          where: { id },
+          select: { notes: true },
+        });
+        await tx.invoice.update({
+          where: { id },
+          data: {
+            notes: `${current?.notes || ''}\n${dto.notes}`.trim(),
+            issuedById: cashierId,
+          },
+        });
+      } else {
+        await tx.invoice.update({ where: { id }, data: { issuedById: cashierId } });
+      }
+
+      return this.recalculateInvoiceTotals(tx, id);
+    });
+
+    return this.toInvoiceResponse(updated);
+  }
+
+  /**
+   * Khách hàng bấm "Thanh toán" trên app.
+   *
+   * Không cộng tiền ngay — chỉ tạo một yêu cầu PENDING để thu ngân đối chiếu.
+   * Bỏ trống `amount` nghĩa là khách trả toàn bộ số còn lại.
+   */
+  async createPaymentRequest(
+    id: string,
+    dto: CreatePaymentRequestDto,
+    userId: string,
+    userRole: Role,
+  ) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id },
+      include: {
+        booking: { select: { customerId: true } },
+        payments: { where: { status: PaymentEntryStatus.PENDING } },
       },
     });
 
@@ -177,37 +412,303 @@ export class InvoicesService {
       throw new NotFoundException(`Không tìm thấy hóa đơn ID: ${id}`);
     }
 
-    const newPaidAmount = invoice.paidAmount + dto.amount;
-    const isFullyPaid = newPaidAmount >= invoice.finalAmount;
+    if (userRole === Role.CUSTOMER && invoice.booking?.customerId !== userId) {
+      throw new ForbiddenException(
+        'Bạn chỉ có thể thanh toán hóa đơn thuộc đơn đặt phòng của chính mình',
+      );
+    }
 
-    const updated = await this.prisma.invoice.update({
-      where: { id },
+    const remaining = Math.max(
+      0,
+      roundMoney(invoice.finalAmount) - roundMoney(invoice.paidAmount),
+    );
+
+    if (remaining <= 0) {
+      throw new BadRequestException('Hóa đơn này đã được thanh toán đủ, không cần trả thêm');
+    }
+
+    if (invoice.payments.length > 0) {
+      const pending = roundMoney(
+        invoice.payments.reduce((sum, p) => sum + p.amount, 0),
+      );
+      throw new BadRequestException(
+        `Bạn đang có yêu cầu thanh toán ${pending.toLocaleString('vi-VN')}đ chờ lễ tân xác nhận. ` +
+          'Vui lòng đợi lễ tân đối chiếu xong hoặc hủy yêu cầu cũ trước khi tạo yêu cầu mới.',
+      );
+    }
+
+    // Không truyền amount = trả hết phần còn lại (đúng nút "Thanh toán toàn bộ")
+    const amount = dto.amount !== undefined ? roundMoney(dto.amount) : remaining;
+
+    if (amount > remaining) {
+      throw new BadRequestException(
+        `Số tiền thanh toán (${amount.toLocaleString('vi-VN')}đ) vượt quá số còn lại của hóa đơn ` +
+          `(${remaining.toLocaleString('vi-VN')}đ)`,
+      );
+    }
+
+    const payment = await this.prisma.payment.create({
       data: {
-        paidAmount: newPaidAmount,
-        paymentMethod: dto.paymentMethod,
-        paymentStatus: isFullyPaid
-          ? PaymentStatus.PAID
-          : PaymentStatus.PARTIAL,
-        notes: dto.notes ? `${invoice.notes || ''}\n${dto.notes}`.trim() : invoice.notes,
-        issuedById: cashierId,
-        // Luôn đóng dấu thời điểm thu tiền, kể cả khi mới thu một phần.
-        // Trước đây hóa đơn PARTIAL để paidAt = null nên toàn bộ tiền đã thu
-        // không xuất hiện ở bất kỳ báo cáo doanh thu theo ngày nào.
-        paidAt: new Date(),
-      },
-      include: {
-        booking: {
-          include: {
-            customer: true,
-            room: { include: { roomType: true } },
-            serviceOrders: true,
-          },
-        },
-        issuedBy: { select: { fullName: true, email: true, role: true } },
+        invoiceId: id,
+        amount,
+        method: dto.paymentMethod,
+        type: PaymentEntryType.PAYMENT,
+        status: PaymentEntryStatus.PENDING,
+        reference: dto.reference,
+        note: dto.note,
+        createdById: userId,
       },
     });
 
-    return this.toInvoiceResponse(updated);
+    const refreshed = await this.prisma.invoice.findUnique({
+      where: { id },
+      include: INVOICE_INCLUDE,
+    });
+
+    return {
+      message:
+        amount >= remaining
+          ? 'Đã gửi yêu cầu thanh toán toàn bộ số tiền còn lại. Lễ tân sẽ xác nhận sau khi đối chiếu.'
+          : 'Đã gửi yêu cầu thanh toán. Lễ tân sẽ xác nhận sau khi đối chiếu.',
+      paymentId: payment.id,
+      amount,
+      remainingAfterConfirm: Math.max(0, remaining - amount),
+      invoice: this.toInvoiceResponse(refreshed),
+    };
+  }
+
+  /** Khách tự hủy yêu cầu thanh toán chưa được xác nhận (bấm nhầm, chuyển sang trả tại quầy...). */
+  async cancelPaymentRequest(
+    invoiceId: string,
+    paymentId: string,
+    userId: string,
+    userRole: Role,
+  ) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: { invoice: { include: { booking: { select: { customerId: true } } } } },
+    });
+
+    if (!payment || payment.invoiceId !== invoiceId) {
+      throw new NotFoundException(`Không tìm thấy yêu cầu thanh toán ID: ${paymentId}`);
+    }
+
+    if (
+      userRole === Role.CUSTOMER &&
+      payment.invoice.booking?.customerId !== userId
+    ) {
+      throw new ForbiddenException('Bạn chỉ có thể hủy yêu cầu thanh toán của chính mình');
+    }
+
+    if (payment.status !== PaymentEntryStatus.PENDING) {
+      throw new BadRequestException(
+        'Chỉ hủy được yêu cầu đang chờ xác nhận. Yêu cầu đã được lễ tân xử lý thì phải liên hệ quầy lễ tân.',
+      );
+    }
+
+    await this.prisma.payment.delete({ where: { id: paymentId } });
+
+    const refreshed = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: INVOICE_INCLUDE,
+    });
+
+    return {
+      message: 'Đã hủy yêu cầu thanh toán',
+      invoice: this.toInvoiceResponse(refreshed),
+    };
+  }
+
+  /** Danh sách yêu cầu thanh toán khách gửi lên, để thu ngân đối chiếu (mặc định PENDING). */
+  async findPaymentRequests(queryOrStatus?: QueryPaymentRequestsDto | PaymentEntryStatus) {
+    const query: QueryPaymentRequestsDto =
+      typeof queryOrStatus === 'string'
+        ? { status: queryOrStatus }
+        : (queryOrStatus ?? {});
+
+    const status = query.status;
+    if (status && !Object.values(PaymentEntryStatus).includes(status)) {
+      throw new BadRequestException(
+        `Trạng thái "${status}" không hợp lệ. Chỉ nhận: ${Object.values(PaymentEntryStatus).join(', ')}`,
+      );
+    }
+
+    const where: Prisma.PaymentWhereInput = {
+      status: status ?? PaymentEntryStatus.PENDING,
+    };
+
+    if (query.search) {
+      const search = query.search.trim();
+      const insensitive = 'insensitive' as const;
+      where.OR = [
+        { reference: { contains: search, mode: insensitive } },
+        { invoice: { invoiceCode: { contains: search, mode: insensitive } } },
+        { invoice: { booking: { customer: { fullName: { contains: search, mode: insensitive } } } } },
+        { invoice: { booking: { customer: { phone: { contains: search, mode: insensitive } } } } },
+        { invoice: { booking: { room: { roomNumber: { contains: search, mode: insensitive } } } } },
+      ];
+    }
+
+    const { isPaginated, page, limit, skip, take } = calculatePagination(query);
+
+    const [total, list] = await this.prisma.$transaction([
+      this.prisma.payment.count({ where }),
+      this.prisma.payment.findMany({
+        where,
+        include: {
+          createdBy: { select: { id: true, fullName: true, phone: true, role: true } },
+          confirmedBy: { select: { id: true, fullName: true } },
+          invoice: {
+            include: {
+              booking: {
+                include: {
+                  customer: { select: { fullName: true, phone: true } },
+                  room: { select: { roomNumber: true } },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        ...(isPaginated ? { skip, take } : {}),
+      }),
+    ]);
+
+    const data = list.map((p) => ({
+      id: p.id,
+      invoiceId: p.invoiceId,
+      invoiceCode: p.invoice.invoiceCode,
+      bookingCode: p.invoice.booking?.bookingCode,
+      roomNumber: p.invoice.booking?.room?.roomNumber || 'N/A',
+      customerName:
+        p.invoice.booking?.customer?.fullName || p.createdBy?.fullName || 'Khách vãng lai',
+      customerPhone: p.invoice.booking?.customer?.phone || p.createdBy?.phone || null,
+      amount: p.amount,
+      paymentMethod: p.method,
+      status: p.status,
+      reference: p.reference,
+      note: p.note,
+      requestedAt: p.createdAt,
+      confirmedAt: p.confirmedAt,
+      confirmedByName: p.confirmedBy?.fullName || null,
+      rejectedReason: p.rejectedReason,
+      invoiceFinalAmount: roundMoney(p.invoice.finalAmount),
+      invoicePaidAmount: roundMoney(p.invoice.paidAmount),
+      invoiceRemainingAmount: Math.max(
+        0,
+        roundMoney(p.invoice.finalAmount) - roundMoney(p.invoice.paidAmount),
+      ),
+    }));
+
+    return buildPaginatedResult(data, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
+  }
+
+  /** Thu ngân xác nhận đã nhận được tiền -> khoản này mới được cộng vào hóa đơn. */
+  async confirmPayment(paymentId: string, dto: ConfirmPaymentDto, cashierId: string) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: { invoice: { select: { id: true, finalAmount: true, paidAmount: true } } },
+    });
+
+    if (!payment) {
+      throw new NotFoundException(`Không tìm thấy yêu cầu thanh toán ID: ${paymentId}`);
+    }
+
+    if (payment.status !== PaymentEntryStatus.PENDING) {
+      throw new BadRequestException(
+        payment.status === PaymentEntryStatus.CONFIRMED
+          ? 'Yêu cầu thanh toán này đã được xác nhận trước đó'
+          : 'Yêu cầu thanh toán này đã bị từ chối, không thể xác nhận',
+      );
+    }
+
+    const amount = dto.amount !== undefined ? roundMoney(dto.amount) : payment.amount;
+
+    if (amount <= 0) {
+      throw new BadRequestException('Số tiền xác nhận phải lớn hơn 0');
+    }
+
+    const remaining = Math.max(
+      0,
+      roundMoney(payment.invoice.finalAmount) - roundMoney(payment.invoice.paidAmount),
+    );
+
+    if (amount > remaining) {
+      throw new BadRequestException(
+        `Số tiền xác nhận (${amount.toLocaleString('vi-VN')}đ) vượt quá số còn phải thu của hóa đơn ` +
+          `(${remaining.toLocaleString('vi-VN')}đ)`,
+      );
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id: paymentId },
+        data: {
+          amount,
+          method: dto.paymentMethod ?? payment.method,
+          status: PaymentEntryStatus.CONFIRMED,
+          confirmedById: cashierId,
+          confirmedAt: new Date(),
+          note: dto.note ? `${payment.note || ''}\n${dto.note}`.trim() : payment.note,
+        },
+      });
+
+      await tx.invoice.update({
+        where: { id: payment.invoiceId },
+        data: { issuedById: cashierId },
+      });
+
+      return this.recalculateInvoiceTotals(tx, payment.invoiceId);
+    });
+
+    const response = this.toInvoiceResponse(updated);
+
+    return {
+      message:
+        response.remainingAmount > 0
+          ? `Đã xác nhận thu ${amount.toLocaleString('vi-VN')}đ. Hóa đơn còn thiếu ${response.remainingAmount.toLocaleString('vi-VN')}đ.`
+          : `Đã xác nhận thu ${amount.toLocaleString('vi-VN')}đ. Hóa đơn đã thanh toán đủ.`,
+      paymentId,
+      amount,
+      invoice: response,
+    };
+  }
+
+  /** Thu ngân từ chối yêu cầu (không thấy giao dịch trên sao kê, sai số tiền...). */
+  async rejectPayment(paymentId: string, dto: RejectPaymentDto, cashierId: string) {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+
+    if (!payment) {
+      throw new NotFoundException(`Không tìm thấy yêu cầu thanh toán ID: ${paymentId}`);
+    }
+
+    if (payment.status !== PaymentEntryStatus.PENDING) {
+      throw new BadRequestException(
+        'Chỉ từ chối được yêu cầu đang chờ xác nhận. Khoản đã thu muốn trả lại thì dùng chức năng hoàn tiền.',
+      );
+    }
+
+    await this.prisma.payment.update({
+      where: { id: paymentId },
+      data: {
+        status: PaymentEntryStatus.REJECTED,
+        rejectedReason: dto.reason,
+        confirmedById: cashierId,
+        confirmedAt: new Date(),
+      },
+    });
+
+    const refreshed = await this.prisma.invoice.findUnique({
+      where: { id: payment.invoiceId },
+      include: INVOICE_INCLUDE,
+    });
+
+    return {
+      message: 'Đã từ chối yêu cầu thanh toán',
+      paymentId,
+      reason: dto.reason,
+      invoice: this.toInvoiceResponse(refreshed),
+    };
   }
 
   /**
@@ -257,16 +758,7 @@ export class InvoicesService {
         notes: dto.notes,
         issuedById: cashierId,
       },
-      include: {
-        booking: {
-          include: {
-            customer: true,
-            room: { include: { roomType: true } },
-            serviceOrders: true,
-          },
-        },
-        issuedBy: { select: { fullName: true, email: true, role: true } },
-      },
+      include: INVOICE_INCLUDE,
     });
 
     return this.toInvoiceResponse(newInvoice);
@@ -303,18 +795,18 @@ export class InvoicesService {
         }
       }
 
-      // Hóa đơn do nhân viên này lập hoặc thu tiền trong ngày
-      const staffInvoices = await this.prisma.invoice.findMany({
+      // Tiền thực nhận trong ca lấy thẳng từ sổ thu tiền: mỗi lần thu là một dòng
+      // có mốc thời gian riêng, nên khách trả làm nhiều lần / nhiều ngày vẫn được
+      // ghi nhận đúng vào ca của người thu.
+      const shiftEntries = await this.prisma.payment.findMany({
         where: {
-          issuedById: targetStaffId,
-          OR: [
-            { createdAt: { gte: dayStart, lte: dayEnd } },
-            { paidAt: { gte: dayStart, lte: dayEnd } },
-          ],
+          confirmedById: targetStaffId,
+          status: PaymentEntryStatus.CONFIRMED,
+          confirmedAt: { gte: dayStart, lte: dayEnd },
         },
+        select: { amount: true, method: true, type: true, invoiceId: true },
       });
 
-      const invoicesIssued = staffInvoices.length;
       let amountCollected = 0;
       const byMethod = {
         CASH: 0,
@@ -322,24 +814,32 @@ export class InvoicesService {
         BANK_TRANSFER: 0,
       };
 
-      for (const inv of staffInvoices) {
-        // Chỉ tính tiền nếu được thu trong khoảng ngày này
-        if (inv.paidAt && inv.paidAt >= dayStart && inv.paidAt <= dayEnd) {
-          amountCollected += inv.paidAmount;
-          if (inv.paymentMethod === PaymentMethod.CASH) {
-            byMethod.CASH += inv.paidAmount;
-          } else if (inv.paymentMethod === PaymentMethod.CREDIT_CARD) {
-            byMethod.CREDIT_CARD += inv.paidAmount;
-          } else if (inv.paymentMethod === PaymentMethod.BANK_TRANSFER) {
-            byMethod.BANK_TRANSFER += inv.paidAmount;
-          }
-        }
+      for (const entry of shiftEntries) {
+        const signed =
+          entry.type === PaymentEntryType.REFUND ? -entry.amount : entry.amount;
+        amountCollected += signed;
+        byMethod[entry.method] += signed;
       }
 
-      // Số hóa đơn chưa thanh toán trong ca của nhân viên
-      const unpaidLeftBehind = staffInvoices.filter(
-        (inv) => inv.paymentStatus === PaymentStatus.UNPAID || inv.paymentStatus === PaymentStatus.PARTIAL,
-      ).length;
+      const [invoicesIssued, unpaidLeftBehind, pendingRequests] = await Promise.all([
+        this.prisma.invoice.count({
+          where: {
+            issuedById: targetStaffId,
+            createdAt: { gte: dayStart, lte: dayEnd },
+          },
+        }),
+        // Hóa đơn lập trong ca mà hết ca vẫn chưa thu đủ
+        this.prisma.invoice.count({
+          where: {
+            issuedById: targetStaffId,
+            createdAt: { gte: dayStart, lte: dayEnd },
+            paymentStatus: {
+              in: [PaymentStatus.UNPAID, PaymentStatus.PARTIAL],
+            },
+          },
+        }),
+        this.prisma.payment.count({ where: { status: PaymentEntryStatus.PENDING } }),
+      ]);
 
       return {
         date: formatLocalDate(dayStart),
@@ -353,6 +853,8 @@ export class InvoicesService {
           BANK_TRANSFER: roundMoney(byMethod.BANK_TRANSFER),
         },
         unpaidLeftBehind,
+        /** Yêu cầu thanh toán của khách còn treo, ca sau phải đối chiếu nốt. */
+        pendingPaymentRequests: pendingRequests,
       };
     }
 
@@ -362,6 +864,8 @@ export class InvoicesService {
       paidInvoices,
       unpaidInvoices,
       partialInvoices,
+      pendingPaymentRequests,
+      outstandingAgg,
     ] = await Promise.all([
       this.prisma.invoice.aggregate({
         _sum: { paidAmount: true },
@@ -391,6 +895,13 @@ export class InvoicesService {
           paymentStatus: PaymentStatus.PARTIAL,
         },
       }),
+      this.prisma.payment.count({ where: { status: PaymentEntryStatus.PENDING } }),
+      this.prisma.invoice.aggregate({
+        _sum: { finalAmount: true, paidAmount: true },
+        where: {
+          paymentStatus: { in: [PaymentStatus.UNPAID, PaymentStatus.PARTIAL] },
+        },
+      }),
     ]);
 
     const todayRevenue = roundMoney(revenueTodayAgg._sum.paidAmount || 0);
@@ -402,6 +913,15 @@ export class InvoicesService {
       paidInvoices,
       unpaidInvoices,
       partialInvoices,
+      /** Yêu cầu thanh toán khách gửi từ app đang chờ lễ tân đối chiếu. */
+      pendingPaymentRequests,
+      /** Tổng công nợ khách sạn đang phải thu. */
+      outstandingAmount: Math.max(
+        0,
+        roundMoney(
+          (outstandingAgg._sum.finalAmount || 0) - (outstandingAgg._sum.paidAmount || 0),
+        ),
+      ),
     };
   }
 
@@ -412,16 +932,7 @@ export class InvoicesService {
   async refund(id: string, dto: RefundDto, staffId: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
-      include: {
-        booking: {
-          include: {
-            customer: true,
-            room: { include: { roomType: true } },
-            serviceOrders: true,
-          },
-        },
-        issuedBy: true,
-      },
+      select: { id: true, paidAmount: true, notes: true },
     });
 
     if (!invoice) {
@@ -438,29 +949,32 @@ export class InvoicesService {
       );
     }
 
-    const newPaidAmount = roundMoney(invoice.paidAmount - dto.amount);
-    const newStatus = newPaidAmount <= 0 ? PaymentStatus.REFUNDED : PaymentStatus.PARTIAL;
     const refundNote = `[Hoàn tiền: ${dto.amount.toLocaleString()}đ lúc ${new Date().toLocaleString('vi-VN')}. Lý do: ${dto.reason}]`;
     const updatedNotes = invoice.notes ? `${invoice.notes}\n${refundNote}` : refundNote;
 
-    const updated = await this.prisma.invoice.update({
-      where: { id },
-      data: {
-        paidAmount: newPaidAmount,
-        paymentStatus: newStatus,
-        notes: updatedNotes,
-        issuedById: staffId,
-      },
-      include: {
-        booking: {
-          include: {
-            customer: true,
-            room: { include: { roomType: true } },
-            serviceOrders: true,
-          },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Hoàn tiền cũng là một dòng của sổ thu tiền (mang dấu âm) để lịch sử
+      // giao dịch hiển thị cho khách luôn đầy đủ.
+      await tx.payment.create({
+        data: {
+          invoiceId: id,
+          amount: roundMoney(dto.amount),
+          method: dto.paymentMethod ?? PaymentMethod.CASH,
+          type: PaymentEntryType.REFUND,
+          status: PaymentEntryStatus.CONFIRMED,
+          note: `Hoàn tiền. Lý do: ${dto.reason}`,
+          createdById: staffId,
+          confirmedById: staffId,
+          confirmedAt: new Date(),
         },
-        issuedBy: { select: { fullName: true, email: true, role: true } },
-      },
+      });
+
+      await tx.invoice.update({
+        where: { id },
+        data: { notes: updatedNotes, issuedById: staffId },
+      });
+
+      return this.recalculateInvoiceTotals(tx, id);
     });
 
     return this.toInvoiceResponse(updated);

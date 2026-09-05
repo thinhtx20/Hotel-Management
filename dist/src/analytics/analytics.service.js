@@ -302,7 +302,7 @@ let AnalyticsService = class AnalyticsService {
             orderBy: { fullName: 'asc' },
         });
         const staffData = await Promise.all(staffUsers.map(async (user) => {
-            const [bookingsConfirmed, bookingsCancelled, invoicesIssued, paidAgg] = await Promise.all([
+            const [bookingsConfirmed, bookingsCancelled, invoicesIssued, collectedAgg, refundedAgg,] = await Promise.all([
                 this.prisma.booking.count({
                     where: {
                         confirmedById: user.id,
@@ -321,11 +321,22 @@ let AnalyticsService = class AnalyticsService {
                         createdAt: { gte: startDate, lte: endDate },
                     },
                 }),
-                this.prisma.invoice.aggregate({
-                    _sum: { paidAmount: true },
+                this.prisma.payment.aggregate({
+                    _sum: { amount: true },
                     where: {
-                        issuedById: user.id,
-                        paidAt: { gte: startDate, lte: endDate },
+                        confirmedById: user.id,
+                        status: client_1.PaymentEntryStatus.CONFIRMED,
+                        type: { in: [client_1.PaymentEntryType.PAYMENT, client_1.PaymentEntryType.DEPOSIT] },
+                        confirmedAt: { gte: startDate, lte: endDate },
+                    },
+                }),
+                this.prisma.payment.aggregate({
+                    _sum: { amount: true },
+                    where: {
+                        confirmedById: user.id,
+                        status: client_1.PaymentEntryStatus.CONFIRMED,
+                        type: client_1.PaymentEntryType.REFUND,
+                        confirmedAt: { gte: startDate, lte: endDate },
                     },
                 }),
             ]);
@@ -337,7 +348,7 @@ let AnalyticsService = class AnalyticsService {
                 bookingsConfirmed,
                 bookingsCancelled,
                 invoicesIssued,
-                amountCollected: (0, revenue_util_1.roundMoney)(paidAgg._sum.paidAmount || 0),
+                amountCollected: (0, revenue_util_1.roundMoney)((collectedAgg._sum.amount || 0) - (refundedAgg._sum.amount || 0)),
             };
         }));
         const totals = staffData.reduce((acc, curr) => ({

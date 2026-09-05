@@ -20,8 +20,19 @@ import { RequestServiceDto } from './dto/request-service.dto';
 import { UpdateServiceOrderStatusDto } from './dto/update-service-order-status.dto';
 import { roundMoney } from '../common/utils/revenue.util';
 import { deriveRoomStatus } from '../common/utils/room-status.util';
-import { BookingStatus, PaymentMethod, PaymentStatus, Prisma, Role, RoomStatus } from '@prisma/client';
+import { buildPaginatedResult, calculatePagination } from '../common/utils/pagination.util';
+import {
+  BookingStatus,
+  PaymentEntryStatus,
+  PaymentEntryType,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+  Role,
+  RoomStatus,
+} from '@prisma/client';
 import { RoomEventsService } from '../rooms/room-events.service';
+import { InvoicesService } from '../invoices/invoices.service';
 
 /** Include chuẩn dùng chung cho mọi response đơn đặt phòng */
 const BOOKING_INCLUDE = {
@@ -48,6 +59,7 @@ export class BookingsService {
     private redis: RedisService,
     private esService: ElasticsearchService,
     private roomEvents: RoomEventsService,
+    private invoices: InvoicesService,
   ) {}
 
   /**
@@ -324,11 +336,7 @@ export class BookingsService {
       ];
     }
 
-    // Chỉ phân trang khi client thực sự yêu cầu; không truyền page/limit
-    // thì trả về toàn bộ kết quả như hợp đồng API cũ.
-    const isPaginated = query.page !== undefined || query.limit !== undefined;
-    const page = Math.max(1, query.page ?? 1);
-    const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+    const { isPaginated, page, limit, skip, take } = calculatePagination(query);
 
     const [total, list] = await this.prisma.$transaction([
       this.prisma.booking.count({ where }),
@@ -337,21 +345,12 @@ export class BookingsService {
         include: BOOKING_INCLUDE,
         // Giữ nguyên thứ tự cũ (đơn mới nhất lên đầu) để các màn hiện có không đổi cách hiển thị
         orderBy: { createdAt: 'desc' },
-        ...(isPaginated ? { skip: (page - 1) * limit, take: limit } : {}),
+        ...(isPaginated ? { skip, take } : {}),
       }),
     ]);
 
     const data = list.map((b) => this.toBookingResponse(b, viewerRole));
-
-    return {
-      data,
-      meta: {
-        total,
-        page: isPaginated ? page : 1,
-        limit: isPaginated ? limit : total,
-        totalPages: isPaginated ? Math.max(1, Math.ceil(total / limit)) : 1,
-      },
-    };
+    return buildPaginatedResult(data, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
   }
 
   /**
@@ -453,8 +452,8 @@ export class BookingsService {
 
     const invoiceCode = `INV-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
 
-    const ops: any[] = [
-      this.prisma.booking.update({
+    const { updatedBooking, invoice } = await this.prisma.$transaction(async (tx) => {
+      const bookingRow = await tx.booking.update({
         where: { id },
         data: {
           status: BookingStatus.CONFIRMED,
@@ -465,44 +464,64 @@ export class BookingsService {
           confirmationNote: dto?.note ?? dto?.notes ?? null,
         },
         include: BOOKING_INCLUDE,
-      }),
-    ];
+      });
 
-    if (depositAmount > 0) {
-      const isPaid = depositAmount >= booking.totalAmount;
-      ops.push(
-        this.prisma.invoice.upsert({
-          where: { bookingId: id },
-          create: {
-            invoiceCode,
-            bookingId: id,
-            roomAmount: booking.totalAmount,
-            servicesAmount: 0,
-            discount: 0,
-            tax: 0,
-            finalAmount: booking.totalAmount,
-            paidAmount: depositAmount,
-            paymentMethod: dto?.paymentMethod || PaymentMethod.BANK_TRANSFER,
-            paymentStatus: isPaid ? PaymentStatus.PAID : PaymentStatus.PARTIAL,
-            notes: dto?.notes || 'Tiền cọc giữ chỗ khi duyệt phòng',
-            issuedById: currentUserId,
-            paidAt: new Date(),
-          },
-          update: {
-            paidAmount: depositAmount,
-            paymentStatus: isPaid ? PaymentStatus.PAID : PaymentStatus.PARTIAL,
-            paymentMethod: dto?.paymentMethod || PaymentMethod.BANK_TRANSFER,
-            notes: dto?.notes || 'Tiền cọc giữ chỗ khi duyệt phòng',
-            issuedById: currentUserId,
-            paidAt: new Date(),
-          },
-        }),
+      if (depositAmount <= 0) {
+        return { updatedBooking: bookingRow, invoice: bookingRow.invoice };
+      }
+
+      const invoiceRow = await tx.invoice.upsert({
+        where: { bookingId: id },
+        create: {
+          invoiceCode,
+          bookingId: id,
+          roomAmount: booking.totalAmount,
+          servicesAmount: 0,
+          discount: 0,
+          tax: 0,
+          finalAmount: booking.totalAmount,
+          paidAmount: 0,
+          paymentMethod: dto?.paymentMethod || PaymentMethod.BANK_TRANSFER,
+          paymentStatus: PaymentStatus.UNPAID,
+          notes: dto?.notes || 'Tiền cọc giữ chỗ khi duyệt phòng',
+          issuedById: currentUserId,
+        },
+        update: {
+          paymentMethod: dto?.paymentMethod || PaymentMethod.BANK_TRANSFER,
+          notes: dto?.notes || 'Tiền cọc giữ chỗ khi duyệt phòng',
+          issuedById: currentUserId,
+        },
+      });
+
+      // Tiền cọc phải nằm trên sổ thu tiền, nếu không nó sẽ biến mất ở lần
+      // tính lại hóa đơn kế tiếp (paidAmount luôn được dựng lại từ sổ này).
+      // deleteMany là chốt an toàn: đơn CONFIRMED không duyệt lại được nên bình
+      // thường không có dòng cọc cũ, nhưng nếu có thì phải thay chứ không cộng dồn.
+      await tx.payment.deleteMany({
+        where: { invoiceId: invoiceRow.id, type: PaymentEntryType.DEPOSIT },
+      });
+
+      await tx.payment.create({
+        data: {
+          invoiceId: invoiceRow.id,
+          amount: roundMoney(depositAmount),
+          method: dto?.paymentMethod || PaymentMethod.BANK_TRANSFER,
+          type: PaymentEntryType.DEPOSIT,
+          status: PaymentEntryStatus.CONFIRMED,
+          note: 'Tiền cọc giữ chỗ khi duyệt phòng',
+          createdById: currentUserId,
+          confirmedById: currentUserId,
+          confirmedAt: new Date(),
+        },
+      });
+
+      const settledInvoice = await this.invoices.recalculateInvoiceTotals(
+        tx,
+        invoiceRow.id,
       );
-    }
 
-    const results = await this.prisma.$transaction(ops);
-    const updatedBooking = results[0];
-    const invoice = results[1] || updatedBooking.invoice;
+      return { updatedBooking: bookingRow, invoice: settledInvoice };
+    });
 
     // Đơn đã xác nhận thì phòng phải đổi trạng thái theo: giữ chỗ RESERVED cho khách sắp tới.
     // Suy ra qua deriveRoomStatus thay vì ép cứng RESERVED, để không ghi đè phòng đang có
@@ -643,6 +662,108 @@ export class BookingsService {
     return this.toBookingResponse(updatedBooking);
   }
 
+  /**
+   * Tính bảng quyết toán của một đơn đang lưu trú.
+   *
+   * Dùng chung cho `checkoutPreview` (thu ngân xem trước) và `checkOut` (chốt thật)
+   * để hai con số không bao giờ lệch nhau.
+   */
+  private buildSettlement(booking: any, dto?: CheckOutDto) {
+    const confirmedServices = booking.serviceOrders.filter(
+      (s: any) => s.status === 'CONFIRMED' || !s.status,
+    );
+    const servicesTotal = roundMoney(
+      confirmedServices.reduce((sum: number, s: any) => sum + s.totalPrice, 0),
+    );
+
+    const roomAmount = roundMoney(booking.totalAmount);
+    const discount = roundMoney(dto?.discount ?? booking.invoice?.discount ?? 0);
+    const taxRate = dto?.taxRate !== undefined ? dto.taxRate : 0.1;
+    const taxableAmount = Math.max(0, roomAmount + servicesTotal - discount);
+    const tax = roundMoney(taxableAmount * taxRate);
+    const finalAmount = roundMoney(taxableAmount + tax);
+
+    // Tiền đã thực sự vào két: tiền cọc lúc duyệt đơn + các lần khách đã trả.
+    // Tất cả đều đã được cộng dồn sẵn trong invoice.paidAmount.
+    const alreadyPaid = roundMoney(booking.invoice?.paidAmount ?? 0);
+    const amountDue = Math.max(0, finalAmount - alreadyPaid);
+
+    return {
+      roomAmount,
+      servicesAmount: servicesTotal,
+      discount,
+      taxRate,
+      tax,
+      finalAmount,
+      depositAmount: roundMoney(booking.depositAmount || 0),
+      alreadyPaidAmount: alreadyPaid,
+      /** Số tiền thu ngân cần thu của khách lúc trả phòng. */
+      amountDue,
+      serviceItems: confirmedServices.map((s: any) => ({
+        id: s.id,
+        name: s.serviceName,
+        quantity: s.quantity,
+        unitPrice: s.unitPrice,
+        amount: s.totalPrice,
+      })),
+    };
+  }
+
+  /**
+   * Bảng quyết toán trước khi trả phòng (thu ngân bấm "Check-out" là thấy ngay
+   * phải thu bao nhiêu). Chỉ đọc — không đổi trạng thái đơn hay phòng.
+   */
+  async checkoutPreview(id: string) {
+    const booking = await this.findOne(id);
+
+    if (
+      booking.status !== BookingStatus.CHECKED_IN &&
+      booking.status !== BookingStatus.CHECKED_OUT
+    ) {
+      throw new BadRequestException(
+        'Chỉ xem được bảng quyết toán của đơn đang lưu trú (CHECKED_IN) hoặc đã trả phòng (CHECKED_OUT)',
+      );
+    }
+
+    const settlement = this.buildSettlement(booking);
+    const pendingRequests = booking.invoice
+      ? await this.prisma.payment.findMany({
+          where: { invoiceId: booking.invoice.id, status: PaymentEntryStatus.PENDING },
+          orderBy: { createdAt: 'desc' },
+        })
+      : [];
+
+    return {
+      bookingId: booking.id,
+      bookingCode: booking.bookingCode,
+      status: booking.status,
+      roomNumber: booking.room?.roomNumber,
+      customerName: booking.customer?.fullName,
+      customerPhone: booking.customer?.phone,
+      checkInDate: booking.checkInDate,
+      checkOutDate: booking.checkOutDate,
+      actualCheckIn: booking.actualCheckIn,
+      invoiceId: booking.invoice?.id ?? null,
+      invoiceCode: booking.invoice?.invoiceCode ?? null,
+      ...settlement,
+      /**
+       * Yêu cầu khách đã gửi qua app nhưng chưa đối chiếu xong. Thu ngân nên xử lý
+       * hết danh sách này trước khi thu tiền mặt để tránh thu trùng.
+       */
+      pendingPaymentRequests: pendingRequests.map((p) => ({
+        id: p.id,
+        amount: p.amount,
+        paymentMethod: p.method,
+        reference: p.reference,
+        note: p.note,
+        requestedAt: p.createdAt,
+      })),
+      pendingPaymentAmount: roundMoney(
+        pendingRequests.reduce((sum, p) => sum + p.amount, 0),
+      ),
+    };
+  }
+
   async checkOut(id: string, dto: CheckOutDto, cashierId: string) {
     const booking = await this.findOne(id);
 
@@ -650,62 +771,86 @@ export class BookingsService {
       throw new BadRequestException('Chỉ có thể check-out đơn đặt phòng đang ở trạng thái CHECKED_IN');
     }
 
-    const servicesTotal = booking.serviceOrders
-      .filter((s) => s.status === 'CONFIRMED' || !s.status)
-      .reduce((sum, s) => sum + s.totalPrice, 0);
+    const settlement = this.buildSettlement(booking, dto);
+    const collected = roundMoney(dto.amountCollected ?? 0);
 
-    const roomAmount = booking.totalAmount;
-    const discount = dto.discount || 0;
-    const taxRate = dto.taxRate !== undefined ? dto.taxRate : 0.1;
-    const taxableAmount = Math.max(0, roomAmount + servicesTotal - discount);
-    const tax = taxableAmount * taxRate;
-    const finalAmount = taxableAmount + tax;
+    if (collected > settlement.amountDue) {
+      throw new BadRequestException(
+        `Số tiền thu (${collected.toLocaleString('vi-VN')}đ) vượt quá số còn phải thu ` +
+          `(${settlement.amountDue.toLocaleString('vi-VN')}đ). ` +
+          'Gọi GET /bookings/:id/checkout-preview để lấy đúng số cần thu.',
+      );
+    }
 
+    const now = new Date();
     const invoiceCode = `INV-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
 
-    const [updatedBooking, invoice] = await this.prisma.$transaction([
-      this.prisma.booking.update({
+    const { updatedBooking, invoice } = await this.prisma.$transaction(async (tx) => {
+      const bookingRow = await tx.booking.update({
         where: { id },
         data: {
           status: BookingStatus.CHECKED_OUT,
-          actualCheckOut: new Date(),
+          actualCheckOut: now,
         },
         include: BOOKING_INCLUDE,
-      }),
-      this.prisma.room.update({
+      });
+
+      await tx.room.update({
         where: { id: booking.roomId },
         data: { status: RoomStatus.CLEANING },
-      }),
-      this.prisma.invoice.upsert({
+      });
+
+      // Hóa đơn chỉ chốt SỐ TIỀN PHẢI TRẢ. Số đã thu tuyệt đối không ghi đè ở đây:
+      // nó được tính lại từ sổ thu tiền, nên tiền cọc và các lần khách đã trả qua
+      // app vẫn còn nguyên, và phần còn thiếu hiện đúng trong "Hóa đơn của tôi".
+      const invoiceRow = await tx.invoice.upsert({
         where: { bookingId: id },
         create: {
           invoiceCode,
           bookingId: id,
-          roomAmount,
-          servicesAmount: servicesTotal,
-          discount,
-          tax,
-          finalAmount,
-          paidAmount: finalAmount,
+          roomAmount: settlement.roomAmount,
+          servicesAmount: settlement.servicesAmount,
+          discount: settlement.discount,
+          tax: settlement.tax,
+          finalAmount: settlement.finalAmount,
+          paidAmount: 0,
           paymentMethod: dto.paymentMethod || PaymentMethod.CASH,
-          paymentStatus: PaymentStatus.PAID,
+          paymentStatus: PaymentStatus.UNPAID,
           issuedById: cashierId,
-          paidAt: new Date(),
         },
         update: {
-          roomAmount,
-          servicesAmount: servicesTotal,
-          discount,
-          tax,
-          finalAmount,
-          paidAmount: finalAmount,
-          paymentMethod: dto.paymentMethod || PaymentMethod.CASH,
-          paymentStatus: PaymentStatus.PAID,
+          roomAmount: settlement.roomAmount,
+          servicesAmount: settlement.servicesAmount,
+          discount: settlement.discount,
+          tax: settlement.tax,
+          finalAmount: settlement.finalAmount,
           issuedById: cashierId,
-          paidAt: new Date(),
         },
-      }),
-    ]);
+      });
+
+      if (collected > 0) {
+        await tx.payment.create({
+          data: {
+            invoiceId: invoiceRow.id,
+            amount: collected,
+            method: dto.paymentMethod || PaymentMethod.CASH,
+            type: PaymentEntryType.PAYMENT,
+            status: PaymentEntryStatus.CONFIRMED,
+            note: dto.note || 'Thu tiền tại quầy khi khách trả phòng',
+            createdById: cashierId,
+            confirmedById: cashierId,
+            confirmedAt: now,
+          },
+        });
+      }
+
+      const settledInvoice = await this.invoices.recalculateInvoiceTotals(
+        tx,
+        invoiceRow.id,
+      );
+
+      return { updatedBooking: bookingRow, invoice: settledInvoice };
+    });
 
     // Khách đã trả phòng: phòng sang CLEANING chờ buồng phòng dọn xong
     // (không suy diễn lại từ lịch đặt, tránh nhảy thẳng sang RESERVED khi còn đơn đặt sau đó).
@@ -728,9 +873,23 @@ export class BookingsService {
       });
     }
 
+    const remainingAmount = Math.max(
+      0,
+      roundMoney(invoice.finalAmount) - roundMoney(invoice.paidAmount),
+    );
+
     return {
-      message: 'Check-out và thanh toán hóa đơn thành công',
+      message:
+        remainingAmount > 0
+          ? `Check-out thành công. Hóa đơn còn thiếu ${remainingAmount.toLocaleString('vi-VN')}đ ` +
+            'đã được gửi về mục "Hóa đơn của tôi" để khách thanh toán nốt.'
+          : 'Check-out và thanh toán hóa đơn thành công',
       invoiceId: invoice.id,
+      /** Số thu ngân vừa thu tại quầy. */
+      amountCollected: collected,
+      /** Số khách còn nợ sau khi trả phòng — 0 nghĩa là đã thanh toán đủ. */
+      remainingAmount,
+      settlement,
       booking: this.toBookingResponse({
         ...updatedBooking,
         invoice,

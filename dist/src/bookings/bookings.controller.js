@@ -114,6 +114,9 @@ let BookingsController = class BookingsController {
     checkIn(id) {
         return this.bookingsService.checkIn(id);
     }
+    checkoutPreview(id) {
+        return this.bookingsService.checkoutPreview(id);
+    }
     checkOut(id, checkOutDto, cashierId) {
         return this.bookingsService.checkOut(id, checkOutDto, cashierId);
     }
@@ -397,23 +400,103 @@ __decorate([
 ], BookingsController.prototype, "checkIn", null);
 __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
+    (0, common_1.Get)(':id/checkout-preview'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Bảng quyết toán trước khi trả phòng — thu ngân xem phải thu bao nhiêu',
+        description: 'Chỉ đọc, KHÔNG đổi trạng thái đơn hay phòng. Trả về tiền phòng, bảng kê dịch vụ, ' +
+            'thuế, tiền cọc, số đã thu và `amountDue` — chính là số tiền còn phải thu của khách. ' +
+            'Gọi endpoint này khi thu ngân bấm "Check-out", rồi truyền `amountCollected` vào ' +
+            'POST /bookings/:id/check-out theo đúng số tiền thực nhận. ' +
+            '`pendingPaymentRequests` là các yêu cầu khách đã gửi qua app nhưng chưa đối chiếu — ' +
+            'nên xử lý hết trước khi thu tiền mặt để tránh thu trùng.',
+    }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Lấy bảng quyết toán thành công',
+        exampleData: {
+            bookingId: 'b1e4c7a2-9d3f-4e8b-8a21-72948e9102c1',
+            bookingCode: 'BK-2026-0829',
+            status: 'CHECKED_IN',
+            roomNumber: '103',
+            customerName: 'Nguyễn Văn A',
+            customerPhone: '0912345678',
+            invoiceId: 'inv-1234',
+            invoiceCode: 'INV-2025-0289',
+            roomAmount: 5000000,
+            servicesAmount: 300000,
+            discount: 0,
+            taxRate: 0.1,
+            tax: 530000,
+            finalAmount: 5830000,
+            depositAmount: 1000000,
+            alreadyPaidAmount: 3268000,
+            amountDue: 2562000,
+            serviceItems: [
+                { id: 'svc-1', name: 'Minibar trọn gói', quantity: 1, unitPrice: 300000, amount: 300000 },
+            ],
+            pendingPaymentRequests: [],
+            pendingPaymentAmount: 0,
+        },
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 400,
+        message: 'Chỉ xem được bảng quyết toán của đơn đang lưu trú (CHECKED_IN) hoặc đã trả phòng (CHECKED_OUT)',
+        error: 'Bad Request',
+        path: '/api/v1/bookings/:id/checkout-preview',
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], BookingsController.prototype, "checkoutPreview", null);
+__decorate([
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, common_1.Post)(':id/check-out'),
-    (0, swagger_1.ApiOperation)({ summary: 'Check-out trả phòng, tính tiền dịch vụ và xuất hóa đơn' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Check-out trả phòng, tính tiền dịch vụ và xuất hóa đơn',
+        description: 'Chốt hóa đơn theo đúng bảng quyết toán của GET /bookings/:id/checkout-preview. ' +
+            'Truyền `amountCollected` bằng số tiền thu ngân THỰC NHẬN tại quầy — bỏ trống nghĩa là ' +
+            'không thu thêm đồng nào. Tiền cọc và các lần khách đã trả trước vẫn được giữ nguyên, ' +
+            'không bị ghi đè. Nếu sau check-out vẫn còn thiếu, hóa đơn ở trạng thái PARTIAL/UNPAID ' +
+            'và tự động hiện trong mục "Hóa đơn của tôi" của khách để khách thanh toán nốt qua ' +
+            'POST /invoices/:id/payment-requests.',
+    }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Check-out và xuất hóa đơn thành công',
         exampleData: {
+            message: 'Check-out thành công. Hóa đơn còn thiếu 2.562.000đ đã được gửi về mục "Hóa đơn của tôi" để khách thanh toán nốt.',
+            invoiceId: 'inv-1234',
+            amountCollected: 0,
+            remainingAmount: 2562000,
+            settlement: {
+                roomAmount: 5000000,
+                servicesAmount: 300000,
+                discount: 0,
+                taxRate: 0.1,
+                tax: 530000,
+                finalAmount: 5830000,
+                depositAmount: 1000000,
+                alreadyPaidAmount: 3268000,
+                amountDue: 2562000,
+            },
             booking: { ...SAMPLE_BOOKING, status: 'CHECKED_OUT', actualCheckOut: '2026-09-08T11:45:00.000Z' },
             invoice: {
                 id: 'inv-1234',
                 invoiceCode: 'INV-2026-0045',
-                roomAmount: 3600000,
-                servicesAmount: 250000,
-                finalAmount: 3850000,
-                paidAmount: 1000000,
+                roomAmount: 5000000,
+                servicesAmount: 300000,
+                finalAmount: 5830000,
+                paidAmount: 3268000,
                 paymentStatus: 'PARTIAL',
             },
         },
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 400,
+        message: 'Số tiền thu vượt quá số còn phải thu',
+        error: 'Bad Request',
+        path: '/api/v1/bookings/:id/check-out',
     }),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),

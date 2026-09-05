@@ -23,6 +23,7 @@ const room_events_service_1 = require("./room-events.service");
 const create_room_dto_1 = require("./dto/create-room.dto");
 const update_room_dto_1 = require("./dto/update-room.dto");
 const query_available_rooms_dto_1 = require("./dto/query-available-rooms.dto");
+const query_rooms_dto_1 = require("./dto/query-rooms.dto");
 const search_room_dto_1 = require("./dto/search-room.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
@@ -96,9 +97,9 @@ let RoomsController = class RoomsController {
         const isStaff = user?.role === client_1.Role.ADMIN || user?.role === client_1.Role.RECEPTIONIST;
         return this.roomsService.findAvailable(query, isStaff);
     }
-    findAll(status, floor, roomTypeId, user) {
+    findAll(query, user) {
         const isStaff = user?.role === client_1.Role.ADMIN || user?.role === client_1.Role.RECEPTIONIST;
-        return this.roomsService.findAll(status, floor ? Number(floor) : undefined, roomTypeId, isStaff);
+        return this.roomsService.findAll(query, isStaff);
     }
     findOne(id, user) {
         const isStaff = user?.role === client_1.Role.ADMIN || user?.role === client_1.Role.RECEPTIONIST;
@@ -226,24 +227,24 @@ __decorate([
     (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.Get)(),
     (0, swagger_1.ApiOperation)({
-        summary: 'Lấy danh sách tất cả phòng kèm bộ lọc trạng thái/tầng (Công khai cho khách vãng lai)',
+        summary: 'Lấy danh sách tất cả phòng kèm bộ lọc trạng thái/tầng/hạng phòng & phân trang',
         description: 'Khách vãng lai và khách hàng chỉ thấy phòng đang vận hành. Phòng ở trạng thái ' +
-            'PENDING_APPROVAL / REJECTED chỉ hiện với ADMIN và RECEPTIONIST (gửi kèm Bearer token).',
+            'PENDING_APPROVAL / REJECTED chỉ hiện với ADMIN và RECEPTIONIST (gửi kèm Bearer token). ' +
+            'Response luôn có dạng { data: [...], meta: { total, page, limit, totalPages } }; ' +
+            'không truyền page/limit thì trả về toàn bộ kết quả trong data.',
     }),
-    (0, swagger_1.ApiQuery)({ name: 'status', enum: client_1.RoomStatus, required: false }),
-    (0, swagger_1.ApiQuery)({ name: 'floor', type: Number, required: false }),
-    (0, swagger_1.ApiQuery)({ name: 'roomTypeId', type: String, required: false }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Lấy danh sách tất cả phòng thành công',
-        exampleData: [SAMPLE_ROOM],
+        exampleData: {
+            data: [SAMPLE_ROOM],
+            meta: { total: 20, page: 1, limit: 20, totalPages: 1 },
+        },
     }),
-    __param(0, (0, common_1.Query)('status')),
-    __param(1, (0, common_1.Query)('floor')),
-    __param(2, (0, common_1.Query)('roomTypeId')),
-    __param(3, (0, current_user_decorator_1.CurrentUser)()),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Number, String, Object]),
+    __metadata("design:paramtypes", [query_rooms_dto_1.QueryRoomsDto, Object]),
     __metadata("design:returntype", void 0)
 ], RoomsController.prototype, "findAll", null);
 __decorate([

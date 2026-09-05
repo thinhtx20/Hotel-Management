@@ -8,7 +8,7 @@ import {
   PaymentStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { syncDatabaseSchema } from './schema-sync';
+import { backfillInvoicePaymentLedger, syncDatabaseSchema } from './schema-sync';
 import { HISTORY_YEARS, seedHistoricalYears } from './history-seed';
 
 function formatDatabaseUrl(): string | undefined {
@@ -56,6 +56,12 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         // khi `prisma db push` lúc deploy bị bỏ qua vì cảnh báo mất dữ liệu.
         await syncDatabaseSchema((sql) => this.$executeRawUnsafe(sql), this.logger);
         await this.ensureInitialSeed();
+        // Chạy SAU seed: hóa đơn mẫu vừa được tạo cũng cần có dòng thu tương ứng,
+        // nếu không `paidAmount` của chúng sẽ về 0 ở lần tính lại đầu tiên.
+        await backfillInvoicePaymentLedger(
+          (sql) => this.$executeRawUnsafe(sql),
+          this.logger,
+        );
         return;
       } catch (error: any) {
         if (attempt < maxRetries) {

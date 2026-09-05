@@ -43,4 +43,31 @@ export class CheckOutDto {
   @IsNumber()
   @Min(0)
   taxRate?: number;
+
+  /**
+   * Tiền thu ngân thực nhận tại quầy lúc trả phòng.
+   *
+   * Bỏ trống = không thu thêm đồng nào: hóa đơn giữ nguyên số đã thu trước đó
+   * (tiền cọc, các lần khách trả qua app) và phần còn thiếu sẽ hiện trong
+   * "Hóa đơn của tôi" để khách thanh toán nốt.
+   */
+  @ApiPropertyOptional({
+    example: 2564000,
+    description:
+      'Số tiền thu ngân thực nhận tại quầy khi trả phòng (VND). ' +
+      'Bỏ trống nếu khách không trả thêm — phần còn thiếu sẽ được đẩy về app cho khách tự thanh toán. ' +
+      'Gọi GET /bookings/:id/checkout-preview trước để biết chính xác số phải thu.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  amountCollected?: number;
+
+  @ApiPropertyOptional({
+    example: 'Khách trả nốt bằng tiền mặt tại quầy',
+    description: 'Ghi chú của thu ngân cho khoản thu lúc trả phòng',
+  })
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

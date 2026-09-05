@@ -19,6 +19,7 @@ const room_response_dto_1 = require("./dto/room-response.dto");
 const room_status_util_1 = require("../common/utils/room-status.util");
 const client_1 = require("@prisma/client");
 const room_events_service_1 = require("./room-events.service");
+const pagination_util_1 = require("../common/utils/pagination.util");
 let RoomsService = class RoomsService {
     constructor(prisma, redis, esService, roomEvents) {
         this.prisma = prisma;
@@ -124,34 +125,64 @@ let RoomsService = class RoomsService {
         this.roomEvents.emitStatusChanged(roomPayload);
         return (0, room_response_dto_1.toRoomResponse)(room, true);
     }
-    async findAll(status, floor, roomTypeId, isStaff = false) {
+    async findAll(queryOrStatus, floorParam, roomTypeIdParam, isStaffParam = false) {
+        let query;
+        let isStaff = isStaffParam;
+        if (queryOrStatus && typeof queryOrStatus === 'object') {
+            query = queryOrStatus;
+            if (typeof floorParam === 'boolean') {
+                isStaff = floorParam;
+            }
+        }
+        else {
+            query = {
+                status: queryOrStatus,
+                floor: typeof floorParam === 'number' ? floorParam : undefined,
+                roomTypeId: roomTypeIdParam,
+            };
+        }
         const internalStatuses = [
             client_1.RoomStatus.PENDING_APPROVAL,
             client_1.RoomStatus.REJECTED,
         ];
-        const isInternalStatus = status ? internalStatuses.includes(status) : false;
+        const isInternalStatus = query.status ? internalStatuses.includes(query.status) : false;
         if (!isStaff && isInternalStatus) {
-            return [];
+            return (0, pagination_util_1.buildPaginatedResult)([], 0, query.page, query.limit);
         }
-        const rooms = await this.prisma.room.findMany({
-            where: {
-                ...(status ? { status } : {}),
-                ...(!isStaff && !status ? { status: { notIn: internalStatuses } } : {}),
-                ...(floor ? { floor } : {}),
-                ...(roomTypeId ? { roomTypeId } : {}),
-            },
-            include: {
-                roomType: true,
-                bookings: {
-                    where: { status: { in: [client_1.BookingStatus.CHECKED_IN, client_1.BookingStatus.CONFIRMED] } },
-                    orderBy: { checkInDate: 'asc' },
-                    take: 2,
-                    include: { customer: { select: { fullName: true, phone: true } } },
+        const where = {
+            ...(query.status ? { status: query.status } : {}),
+            ...(!isStaff && !query.status ? { status: { notIn: internalStatuses } } : {}),
+            ...(query.floor ? { floor: query.floor } : {}),
+            ...(query.roomTypeId ? { roomTypeId: query.roomTypeId } : {}),
+        };
+        if (query.search) {
+            const search = query.search.trim();
+            const insensitive = 'insensitive';
+            where.OR = [
+                { roomNumber: { contains: search, mode: insensitive } },
+                { roomType: { name: { contains: search, mode: insensitive } } },
+            ];
+        }
+        const { isPaginated, page, limit, skip, take } = (0, pagination_util_1.calculatePagination)(query);
+        const [total, rooms] = await this.prisma.$transaction([
+            this.prisma.room.count({ where }),
+            this.prisma.room.findMany({
+                where,
+                include: {
+                    roomType: true,
+                    bookings: {
+                        where: { status: { in: [client_1.BookingStatus.CHECKED_IN, client_1.BookingStatus.CONFIRMED] } },
+                        orderBy: { checkInDate: 'asc' },
+                        take: 2,
+                        include: { customer: { select: { fullName: true, phone: true } } },
+                    },
                 },
-            },
-            orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
-        });
-        return rooms.map((r) => (0, room_response_dto_1.toRoomResponse)(r, isStaff));
+                orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
+                ...(isPaginated ? { skip, take } : {}),
+            }),
+        ]);
+        const data = rooms.map((r) => (0, room_response_dto_1.toRoomResponse)(r, isStaff));
+        return (0, pagination_util_1.buildPaginatedResult)(data, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
     }
     async findOne(id, includeNotes = false) {
         const room = await this.prisma.room.findUnique({
@@ -304,7 +335,7 @@ let RoomsService = class RoomsService {
                 roomType: true,
                 bookings: {
                     where: { status: { in: [client_1.BookingStatus.CHECKED_IN, client_1.BookingStatus.CONFIRMED] } },
-                    select: { status: true, checkOutDate: true },
+                    select: { status: true, checkInDate: true, checkOutDate: true },
                 },
             },
             orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],

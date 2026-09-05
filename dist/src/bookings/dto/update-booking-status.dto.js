@@ -66,4 +66,25 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], CheckOutDto.prototype, "taxRate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 2564000,
+        description: 'Số tiền thu ngân thực nhận tại quầy khi trả phòng (VND). ' +
+            'Bỏ trống nếu khách không trả thêm — phần còn thiếu sẽ được đẩy về app cho khách tự thanh toán. ' +
+            'Gọi GET /bookings/:id/checkout-preview trước để biết chính xác số phải thu.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], CheckOutDto.prototype, "amountCollected", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 'Khách trả nốt bằng tiền mặt tại quầy',
+        description: 'Ghi chú của thu ngân cho khoản thu lúc trả phòng',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CheckOutDto.prototype, "note", void 0);
 //# sourceMappingURL=update-booking-status.dto.js.map

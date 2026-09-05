@@ -3,8 +3,10 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { QueryUsersDto } from './dto/query-users.dto';
 import { UserEventsService } from './user-events.service';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
+import { buildPaginatedResult, calculatePagination } from '../common/utils/pagination.util';
 
 @Injectable()
 export class UsersService {
@@ -55,24 +57,51 @@ export class UsersService {
     return created;
   }
 
-  async findAll(role?: Role) {
-    return this.prisma.user.findMany({
-      where: role ? { role } : undefined,
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        phone: true,
-        avatar: true,
-        role: true,
-        isActive: true,
-        createdAt: true,
-        _count: {
-          select: { bookings: true },
+  async findAll(queryOrRole?: QueryUsersDto | Role) {
+    const query: QueryUsersDto =
+      typeof queryOrRole === 'string'
+        ? { role: queryOrRole }
+        : (queryOrRole ?? {});
+
+    const where: Prisma.UserWhereInput = {};
+    if (query.role) {
+      where.role = query.role;
+    }
+    if (query.search) {
+      const search = query.search.trim();
+      const insensitive = 'insensitive' as const;
+      where.OR = [
+        { fullName: { contains: search, mode: insensitive } },
+        { email: { contains: search, mode: insensitive } },
+        { phone: { contains: search, mode: insensitive } },
+      ];
+    }
+
+    const { isPaginated, page, limit, skip, take } = calculatePagination(query);
+
+    const [total, list] = await this.prisma.$transaction([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+          phone: true,
+          avatar: true,
+          role: true,
+          isActive: true,
+          createdAt: true,
+          _count: {
+            select: { bookings: true },
+          },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+        ...(isPaginated ? { skip, take } : {}),
+      }),
+    ]);
+
+    return buildPaginatedResult(list, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
   }
 
   async findOne(id: string) {

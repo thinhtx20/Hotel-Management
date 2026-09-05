@@ -24,6 +24,7 @@ const current_user_decorator_1 = require("../common/decorators/current-user.deco
 const update_user_dto_1 = require("./dto/update-user.dto");
 const create_user_dto_1 = require("./dto/create-user.dto");
 const update_me_dto_1 = require("./dto/update-me.dto");
+const query_users_dto_1 = require("./dto/query-users.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
@@ -51,8 +52,8 @@ let UsersController = class UsersController {
     create(dto) {
         return this.usersService.create(dto);
     }
-    findAll(role) {
-        return this.usersService.findAll(role);
+    findAll(query) {
+        return this.usersService.findAll(query);
     }
     stream() {
         const ready$ = (0, rxjs_1.of)({
@@ -125,16 +126,22 @@ __decorate([
 __decorate([
     (0, common_1.Get)(),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
-    (0, swagger_1.ApiOperation)({ summary: 'Lấy danh sách người dùng (Admin & Receptionist)' }),
-    (0, swagger_1.ApiQuery)({ name: 'role', enum: client_1.Role, required: false, description: 'Lọc theo vai trò' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Lấy danh sách người dùng & phân trang (Admin & Receptionist)',
+        description: 'Response luôn có dạng { data: [...], meta: { total, page, limit, totalPages } }; ' +
+            'không truyền page/limit thì trả về toàn bộ kết quả trong data.',
+    }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Lấy danh sách người dùng thành công',
-        exampleData: [SAMPLE_USER],
+        exampleData: {
+            data: [SAMPLE_USER],
+            meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        },
     }),
-    __param(0, (0, common_1.Query)('role')),
+    __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [query_users_dto_1.QueryUsersDto]),
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "findAll", null);
 __decorate([

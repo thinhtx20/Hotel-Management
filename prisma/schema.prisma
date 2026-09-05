@@ -48,6 +48,25 @@ enum PaymentStatus {
   REFUNDED
 }
 
+/// Một dòng trên sổ thu tiền là khoản thu, tiền cọc hay khoản hoàn trả.
+/// DEPOSIT được tách riêng khỏi PAYMENT để lần duyệt đơn sau ghi đè đúng dòng
+/// tiền cọc cũ thay vì cộng dồn thành hai lần thu.
+enum PaymentEntryType {
+  PAYMENT
+  DEPOSIT
+  REFUND
+}
+
+/// Vòng đời một dòng thu tiền.
+/// PENDING: khách bấm thanh toán trên app, tiền CHƯA vào két, chờ thu ngân đối chiếu.
+/// CONFIRMED: thu ngân xác nhận đã nhận tiền, khoản này mới được cộng vào paidAmount.
+/// REJECTED: thu ngân không tìm thấy giao dịch, khoản này không bao giờ được tính tiền.
+enum PaymentEntryStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
 model User {
   id             String    @id @default(uuid())
   email          String    @unique
@@ -71,6 +90,8 @@ model User {
   confirmedBookings Booking[] @relation("BookingConfirmedBy")
   cancelledBookings Booking[] @relation("BookingCancelledBy")
   serviceRequests   ExtraServiceOrder[] @relation("ServiceRequestedBy")
+  createdPayments   Payment[] @relation("PaymentCreatedBy")
+  confirmedPayments Payment[] @relation("PaymentConfirmedBy")
 
   @@map("users")
 }
@@ -171,7 +192,47 @@ model Invoice {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
+  payments       Payment[]
+
   @@map("invoices")
+}
+
+/// Sổ thu tiền chi tiết của hóa đơn.
+///
+/// `Invoice.paidAmount` KHÔNG còn được cộng/trừ thủ công ở từng chỗ nữa mà luôn
+/// được tính lại bằng tổng các dòng CONFIRMED của bảng này (thu cộng, hoàn trừ).
+/// Nhờ vậy màn "Hóa đơn của tôi" hiển thị đúng từng lần khách trả, và số
+/// "còn thiếu" của thu ngân lúc check-out luôn khớp với tiền thực tế đã vào két.
+model Payment {
+  id             String             @id @default(uuid())
+  invoiceId      String
+  invoice        Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount         Float
+  method         PaymentMethod      @default(CASH)
+  type           PaymentEntryType   @default(PAYMENT)
+  status         PaymentEntryStatus @default(CONFIRMED)
+
+  /// Mã giao dịch khách nhập khi chuyển khoản, để thu ngân đối chiếu sao kê.
+  reference      String?
+  note           String?
+
+  /// Người tạo dòng thu: khách hàng (yêu cầu thanh toán) hoặc thu ngân (thu tại quầy).
+  createdById    String?
+  createdBy      User?              @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+
+  /// Thu ngân xác nhận đã nhận được tiền.
+  confirmedById  String?
+  confirmedBy    User?              @relation("PaymentConfirmedBy", fields: [confirmedById], references: [id])
+  confirmedAt    DateTime?
+  rejectedReason String?
+
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([invoiceId])
+  @@index([status])
+  @@index([confirmedAt])
+  @@map("payments")
 }
 
 model ExtraServiceOrder {

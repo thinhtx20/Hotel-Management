@@ -11,10 +11,12 @@ import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { QueryAvailableRoomsDto } from './dto/query-available-rooms.dto';
 import { RoomSortOption, SearchRoomDto } from './dto/search-room.dto';
+import { QueryRoomsDto } from './dto/query-rooms.dto';
 import { toRoomResponse } from './dto/room-response.dto';
 import { deriveRoomStatus } from '../common/utils/room-status.util';
-import { BookingStatus, RoomStatus } from '@prisma/client';
+import { BookingStatus, Prisma, RoomStatus } from '@prisma/client';
 import { RoomEventsService } from './room-events.service';
+import { buildPaginatedResult, calculatePagination } from '../common/utils/pagination.util';
 
 @Injectable()
 export class RoomsService {
@@ -141,39 +143,78 @@ export class RoomsService {
     return toRoomResponse(room, true);
   }
 
-  async findAll(status?: RoomStatus, floor?: number, roomTypeId?: string, isStaff = false) {
+  async findAll(
+    queryOrStatus?: QueryRoomsDto | RoomStatus,
+    floorParam?: number | boolean,
+    roomTypeIdParam?: string,
+    isStaffParam = false,
+  ) {
+    let query: QueryRoomsDto;
+    let isStaff = isStaffParam;
+
+    if (queryOrStatus && typeof queryOrStatus === 'object') {
+      query = queryOrStatus;
+      if (typeof floorParam === 'boolean') {
+        isStaff = floorParam;
+      }
+    } else {
+      query = {
+        status: queryOrStatus as RoomStatus | undefined,
+        floor: typeof floorParam === 'number' ? floorParam : undefined,
+        roomTypeId: roomTypeIdParam,
+      };
+    }
+
     // Phòng chờ duyệt / bị từ chối là dữ liệu vận hành nội bộ:
     // khách hàng và khách vãng lai không được thấy trên sơ đồ phòng.
     const internalStatuses: RoomStatus[] = [
       RoomStatus.PENDING_APPROVAL,
       RoomStatus.REJECTED,
     ];
-    const isInternalStatus = status ? internalStatuses.includes(status) : false;
+    const isInternalStatus = query.status ? internalStatuses.includes(query.status) : false;
 
     if (!isStaff && isInternalStatus) {
-      return [];
+      return buildPaginatedResult([], 0, query.page, query.limit);
     }
 
-    const rooms = await this.prisma.room.findMany({
-      where: {
-        ...(status ? { status } : {}),
-        ...(!isStaff && !status ? { status: { notIn: internalStatuses } } : {}),
-        ...(floor ? { floor } : {}),
-        ...(roomTypeId ? { roomTypeId } : {}),
-      },
-      include: {
-        roomType: true,
-        bookings: {
-          where: { status: { in: [BookingStatus.CHECKED_IN, BookingStatus.CONFIRMED] } },
-          orderBy: { checkInDate: 'asc' },
-          take: 2,
-          include: { customer: { select: { fullName: true, phone: true } } },
-        },
-      },
-      orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
-    });
+    const where: Prisma.RoomWhereInput = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(!isStaff && !query.status ? { status: { notIn: internalStatuses } } : {}),
+      ...(query.floor ? { floor: query.floor } : {}),
+      ...(query.roomTypeId ? { roomTypeId: query.roomTypeId } : {}),
+    };
 
-    return rooms.map((r) => toRoomResponse(r, isStaff));
+    if (query.search) {
+      const search = query.search.trim();
+      const insensitive = 'insensitive' as const;
+      where.OR = [
+        { roomNumber: { contains: search, mode: insensitive } },
+        { roomType: { name: { contains: search, mode: insensitive } } },
+      ];
+    }
+
+    const { isPaginated, page, limit, skip, take } = calculatePagination(query);
+
+    const [total, rooms] = await this.prisma.$transaction([
+      this.prisma.room.count({ where }),
+      this.prisma.room.findMany({
+        where,
+        include: {
+          roomType: true,
+          bookings: {
+            where: { status: { in: [BookingStatus.CHECKED_IN, BookingStatus.CONFIRMED] } },
+            orderBy: { checkInDate: 'asc' },
+            take: 2,
+            include: { customer: { select: { fullName: true, phone: true } } },
+          },
+        },
+        orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
+        ...(isPaginated ? { skip, take } : {}),
+      }),
+    ]);
+
+    const data = rooms.map((r) => toRoomResponse(r, isStaff));
+    return buildPaginatedResult(data, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
   }
 
   async findOne(id: string, includeNotes = false) {

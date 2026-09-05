@@ -39,13 +39,13 @@ export declare class RoomTypesService {
     findOne(id: string): Promise<{
         rooms: {
             id: string;
-            createdAt: Date;
-            updatedAt: Date;
             roomNumber: string;
             floor: number;
+            roomTypeId: string;
             status: import(".prisma/client").$Enums.RoomStatus;
             notes: string | null;
-            roomTypeId: string;
+            createdAt: Date;
+            updatedAt: Date;
         }[];
     } & {
         id: string;

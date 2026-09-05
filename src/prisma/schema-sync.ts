@@ -139,7 +139,128 @@ const SCHEMA_SYNC_STEPS: SchemaSyncStep[] = [
     label: 'Chỉ mục duy nhất hotel_services.code',
     sql: `CREATE UNIQUE INDEX IF NOT EXISTS "hotel_services_code_key" ON "hotel_services"("code");`,
   },
+  {
+    // gen_random_uuid() có sẵn từ PostgreSQL 13; bản cũ hơn cần pgcrypto.
+    // Bước này được phép thất bại (thiếu quyền trên hosting) mà không ảnh hưởng gì.
+    label: 'Extension pgcrypto (sinh UUID khi dựng lại sổ thu tiền)',
+    sql: `CREATE EXTENSION IF NOT EXISTS pgcrypto;`,
+  },
+  {
+    label: 'Enum PaymentEntryType / PaymentEntryStatus (sổ thu tiền)',
+    sql: `
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PaymentEntryType') THEN
+          CREATE TYPE "PaymentEntryType" AS ENUM ('PAYMENT', 'DEPOSIT', 'REFUND');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PaymentEntryStatus') THEN
+          CREATE TYPE "PaymentEntryStatus" AS ENUM ('PENDING', 'CONFIRMED', 'REJECTED');
+        END IF;
+      END $$;
+    `,
+  },
+  {
+    // Dành cho DB đã tạo enum từ bản trước (chỉ có PAYMENT/REFUND).
+    label: 'Enum PaymentEntryType bổ sung DEPOSIT',
+    sql: `ALTER TYPE "PaymentEntryType" ADD VALUE IF NOT EXISTS 'DEPOSIT';`,
+  },
+  {
+    label: 'Bảng payments (sổ thu tiền chi tiết của hóa đơn)',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "payments" (
+        "id" TEXT NOT NULL,
+        "invoiceId" TEXT NOT NULL,
+        "amount" DOUBLE PRECISION NOT NULL,
+        "method" "PaymentMethod" NOT NULL DEFAULT 'CASH',
+        "type" "PaymentEntryType" NOT NULL DEFAULT 'PAYMENT',
+        "status" "PaymentEntryStatus" NOT NULL DEFAULT 'CONFIRMED',
+        "reference" TEXT,
+        "note" TEXT,
+        "createdById" TEXT,
+        "confirmedById" TEXT,
+        "confirmedAt" TIMESTAMP(3),
+        "rejectedReason" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+        CONSTRAINT "payments_pkey" PRIMARY KEY ("id")
+      );
+    `,
+  },
+  {
+    label: 'Khóa ngoại và chỉ mục bảng payments',
+    sql: `
+      DO $$
+      BEGIN
+        IF to_regclass('public.payments') IS NOT NULL THEN
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payments_invoiceId_fkey') THEN
+            ALTER TABLE "payments" ADD CONSTRAINT "payments_invoiceId_fkey"
+              FOREIGN KEY ("invoiceId") REFERENCES "invoices"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payments_createdById_fkey') THEN
+            ALTER TABLE "payments" ADD CONSTRAINT "payments_createdById_fkey"
+              FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payments_confirmedById_fkey') THEN
+            ALTER TABLE "payments" ADD CONSTRAINT "payments_confirmedById_fkey"
+              FOREIGN KEY ("confirmedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+          END IF;
+
+          CREATE INDEX IF NOT EXISTS "payments_invoiceId_idx" ON "payments"("invoiceId");
+          CREATE INDEX IF NOT EXISTS "payments_status_idx" ON "payments"("status");
+          CREATE INDEX IF NOT EXISTS "payments_confirmedAt_idx" ON "payments"("confirmedAt");
+        END IF;
+      END $$;
+    `,
+  },
 ];
+
+/**
+ * Dựng lại sổ thu tiền cho dữ liệu có sẵn.
+ *
+ * Trước khi có bảng `payments`, toàn bộ tiền đã thu chỉ nằm ở cột tổng
+ * `invoices.paidAmount`. Từ nay `paidAmount` được tính lại từ các dòng CONFIRMED
+ * của `payments`, nên mọi hóa đơn cũ (và cả hóa đơn vừa được seed) phải được
+ * quy đổi thành một dòng thu tương ứng — nếu không, số tiền khách đã trả sẽ bị
+ * về 0 ngay lần tính lại đầu tiên.
+ *
+ * Câu lệnh chỉ chèn cho hóa đơn CHƯA có dòng thu nào nên chạy lại bao nhiêu lần
+ * cũng an toàn.
+ */
+const BACKFILL_PAYMENT_LEDGER_SQL = `
+  INSERT INTO "payments" (
+    "id", "invoiceId", "amount", "method", "type", "status",
+    "note", "createdById", "confirmedById", "confirmedAt", "createdAt", "updatedAt"
+  )
+  SELECT
+    gen_random_uuid()::text,
+    i."id",
+    i."paidAmount",
+    i."paymentMethod",
+    'PAYMENT'::"PaymentEntryType",
+    'CONFIRMED'::"PaymentEntryStatus",
+    'Khoản thu chuyển từ dữ liệu cũ (trước khi có sổ thu tiền chi tiết)',
+    i."issuedById",
+    i."issuedById",
+    COALESCE(i."paidAt", i."updatedAt", i."createdAt"),
+    COALESCE(i."paidAt", i."createdAt"),
+    CURRENT_TIMESTAMP
+  FROM "invoices" i
+  WHERE i."paidAmount" > 0
+    AND NOT EXISTS (SELECT 1 FROM "payments" p WHERE p."invoiceId" = i."id");
+`;
+
+export async function backfillInvoicePaymentLedger(
+  executeRaw: (sql: string) => Promise<unknown>,
+  logger: Logger,
+): Promise<void> {
+  try {
+    await executeRaw(BACKFILL_PAYMENT_LEDGER_SQL);
+    logger.log('🧾 Sổ thu tiền đã khớp với số tiền đã thu của các hóa đơn cũ.');
+  } catch (err: any) {
+    logger.warn(`⚠️ Không dựng lại được sổ thu tiền cho hóa đơn cũ: ${err.message}`);
+  }
+}
 
 /**
  * Chạy toàn bộ bước đồng bộ. Một bước lỗi không được phép làm sập ứng dụng,

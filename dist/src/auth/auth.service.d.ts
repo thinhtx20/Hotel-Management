@@ -26,12 +26,12 @@ export declare class AuthService {
         expiresIn: number;
         user: {
             id: string;
+            createdAt: Date;
             email: string;
             fullName: string;
             phone: string;
             avatar: string;
             role: import(".prisma/client").$Enums.Role;
-            createdAt: Date;
         };
     }>;
     login(dto: LoginDto, device?: DeviceInfo): Promise<{
@@ -60,13 +60,13 @@ export declare class AuthService {
             averageRating: number;
         };
         id: string;
+        createdAt: Date;
         email: string;
         fullName: string;
         phone: string;
         avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
-        createdAt: Date;
     }>;
     changePassword(userId: string, dto: ChangePasswordDto): Promise<{
         success: boolean;

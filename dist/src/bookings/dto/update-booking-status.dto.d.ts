@@ -11,4 +11,6 @@ export declare class CheckOutDto {
     paymentMethod?: PaymentMethod;
     discount?: number;
     taxRate?: number;
+    amountCollected?: number;
+    note?: string;
 }

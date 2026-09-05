@@ -11,6 +11,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 
 /**
  * Chuẩn hóa `status` về mảng: chấp nhận cả
@@ -28,7 +29,7 @@ const toStatusArray = ({ value }: { value: unknown }): BookingStatus[] | undefin
   return flat.length > 0 ? (flat as BookingStatus[]) : undefined;
 };
 
-export class QueryBookingsDto {
+export class QueryBookingsDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     enum: BookingStatus,
     isArray: true,

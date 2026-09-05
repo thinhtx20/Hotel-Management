@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const client_1 = require("@prisma/client");
 const bcrypt = require("bcrypt");
+const history_seed_1 = require("../src/prisma/history-seed");
 const prisma = new client_1.PrismaClient();
 async function main() {
     console.log('===========================================================');
@@ -691,6 +692,9 @@ async function main() {
         await prisma.hotelService.create({ data: s });
     }
     console.log('   -> Đã khởi tạo 7 dịch vụ gia tăng chuẩn vào CSDL.');
+    console.log(`\n📈 10. Đang dựng dữ liệu kinh doanh lịch sử các năm ${history_seed_1.HISTORY_YEARS.join(', ')} ` +
+        '(doanh thu 12 tháng + hiệu suất nhân sự)...');
+    await (0, history_seed_1.seedHistoricalYears)(prisma, { log: (msg) => console.log(msg), force: true });
     console.log('\n===========================================================');
     console.log('🎉 KHỞI TẠO VÀ FAKE DỮ LIỆU CƠ SỞ DỮ LIỆU HOÀN TẤT!');
     console.log('===========================================================');

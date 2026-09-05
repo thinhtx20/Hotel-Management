@@ -1,6 +1,7 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { QueryUsersDto } from './dto/query-users.dto';
 import { UserEventsService } from './user-events.service';
 import { Role } from '@prisma/client';
 export declare class UsersService {
@@ -9,35 +10,29 @@ export declare class UsersService {
     constructor(prisma: PrismaService, userEvents: UserEventsService);
     create(dto: CreateUserDto): Promise<{
         id: string;
-        email: string;
-        fullName: string;
-        phone: string;
-        avatar: string;
-        role: import(".prisma/client").$Enums.Role;
-        isActive: boolean;
         createdAt: Date;
-    }>;
-    findAll(role?: Role): Promise<{
-        id: string;
         email: string;
         fullName: string;
         phone: string;
         avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
+    }>;
+    findAll(queryOrRole?: QueryUsersDto | Role): Promise<import("../common/utils/pagination.util").PaginatedResult<{
+        id: string;
         createdAt: Date;
         _count: {
             bookings: number;
         };
-    }[]>;
-    findOne(id: string): Promise<{
-        id: string;
         email: string;
         fullName: string;
         phone: string;
         avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
+    }>>;
+    findOne(id: string): Promise<{
+        id: string;
         createdAt: Date;
         bookings: ({
             room: {
@@ -57,19 +52,19 @@ export declare class UsersService {
                 };
             } & {
                 id: string;
-                createdAt: Date;
-                updatedAt: Date;
                 roomNumber: string;
                 floor: number;
+                roomTypeId: string;
                 status: import(".prisma/client").$Enums.RoomStatus;
                 notes: string | null;
-                roomTypeId: string;
+                createdAt: Date;
+                updatedAt: Date;
             };
         } & {
             id: string;
+            status: import(".prisma/client").$Enums.BookingStatus;
             createdAt: Date;
             updatedAt: Date;
-            status: import(".prisma/client").$Enums.BookingStatus;
             bookingCode: string;
             checkInDate: Date;
             checkOutDate: Date;
@@ -88,16 +83,22 @@ export declare class UsersService {
             confirmedById: string | null;
             cancelledById: string | null;
         })[];
-    }>;
-    update(id: string, dto: UpdateUserDto): Promise<{
-        id: string;
         email: string;
         fullName: string;
         phone: string;
         avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
+    }>;
+    update(id: string, dto: UpdateUserDto): Promise<{
+        id: string;
         updatedAt: Date;
+        email: string;
+        fullName: string;
+        phone: string;
+        avatar: string;
+        role: import(".prisma/client").$Enums.Role;
+        isActive: boolean;
     }>;
     updateMe(id: string, dto: {
         fullName?: string;
@@ -106,24 +107,24 @@ export declare class UsersService {
     }): Promise<{
         avatarUrl: string;
         id: string;
+        createdAt: Date;
+        updatedAt: Date;
         email: string;
         fullName: string;
         phone: string;
         avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
-        createdAt: Date;
-        updatedAt: Date;
     }>;
     remove(id: string): Promise<{
         id: string;
+        createdAt: Date;
+        updatedAt: Date;
         email: string;
         fullName: string;
         phone: string;
         avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
-        createdAt: Date;
-        updatedAt: Date;
     }>;
 }

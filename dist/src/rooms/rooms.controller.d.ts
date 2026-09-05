@@ -5,6 +5,7 @@ import { RoomEventsService } from './room-events.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto, UpdateRoomStatusDto } from './dto/update-room.dto';
 import { QueryAvailableRoomsDto } from './dto/query-available-rooms.dto';
+import { QueryRoomsDto } from './dto/query-rooms.dto';
 import { SearchRoomDto } from './dto/search-room.dto';
 import { RoomStatus } from '@prisma/client';
 export declare class RoomsController {
@@ -15,7 +16,7 @@ export declare class RoomsController {
     stream(user?: any): Observable<MessageEvent>;
     search(searchDto: SearchRoomDto, user?: any): Promise<import("./dto/room-response.dto").RoomResponse[]>;
     findAvailable(query: QueryAvailableRoomsDto, user?: any): Promise<any[]>;
-    findAll(status?: RoomStatus, floor?: number, roomTypeId?: string, user?: any): Promise<import("./dto/room-response.dto").RoomResponse[]>;
+    findAll(query: QueryRoomsDto, user?: any): Promise<import("../common/utils/pagination.util").PaginatedResult<any>>;
     findOne(id: string, user?: any): Promise<import("./dto/room-response.dto").RoomResponse>;
     approve(id: string): Promise<import("./dto/room-response.dto").RoomResponse>;
     reject(id: string): Promise<import("./dto/room-response.dto").RoomResponse>;
@@ -33,12 +34,12 @@ export declare class RoomsController {
     update(id: string, updateRoomDto: UpdateRoomDto): Promise<import("./dto/room-response.dto").RoomResponse>;
     remove(id: string): Promise<{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         roomNumber: string;
         floor: number;
+        roomTypeId: string;
         status: import(".prisma/client").$Enums.RoomStatus;
         notes: string | null;
-        roomTypeId: string;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
 }

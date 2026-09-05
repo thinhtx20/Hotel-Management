@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const bcrypt = require("bcrypt");
 const prisma_service_1 = require("../prisma/prisma.service");
 const user_events_service_1 = require("./user-events.service");
+const pagination_util_1 = require("../common/utils/pagination.util");
 let UsersService = class UsersService {
     constructor(prisma, userEvents) {
         this.prisma = prisma;
@@ -50,24 +51,46 @@ let UsersService = class UsersService {
         this.userEvents.emitCreated(created);
         return created;
     }
-    async findAll(role) {
-        return this.prisma.user.findMany({
-            where: role ? { role } : undefined,
-            select: {
-                id: true,
-                email: true,
-                fullName: true,
-                phone: true,
-                avatar: true,
-                role: true,
-                isActive: true,
-                createdAt: true,
-                _count: {
-                    select: { bookings: true },
+    async findAll(queryOrRole) {
+        const query = typeof queryOrRole === 'string'
+            ? { role: queryOrRole }
+            : (queryOrRole ?? {});
+        const where = {};
+        if (query.role) {
+            where.role = query.role;
+        }
+        if (query.search) {
+            const search = query.search.trim();
+            const insensitive = 'insensitive';
+            where.OR = [
+                { fullName: { contains: search, mode: insensitive } },
+                { email: { contains: search, mode: insensitive } },
+                { phone: { contains: search, mode: insensitive } },
+            ];
+        }
+        const { isPaginated, page, limit, skip, take } = (0, pagination_util_1.calculatePagination)(query);
+        const [total, list] = await this.prisma.$transaction([
+            this.prisma.user.count({ where }),
+            this.prisma.user.findMany({
+                where,
+                select: {
+                    id: true,
+                    email: true,
+                    fullName: true,
+                    phone: true,
+                    avatar: true,
+                    role: true,
+                    isActive: true,
+                    createdAt: true,
+                    _count: {
+                        select: { bookings: true },
+                    },
                 },
-            },
-            orderBy: { createdAt: 'desc' },
-        });
+                orderBy: { createdAt: 'desc' },
+                ...(isPaginated ? { skip, take } : {}),
+            }),
+        ]);
+        return (0, pagination_util_1.buildPaginatedResult)(list, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
     }
     async findOne(id) {
         const user = await this.prisma.user.findUnique({

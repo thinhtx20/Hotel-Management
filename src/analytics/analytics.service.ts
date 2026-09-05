@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { BookingStatus, PaymentStatus, RoomStatus, Role } from '@prisma/client';
+import {
+  BookingStatus,
+  PaymentEntryStatus,
+  PaymentEntryType,
+  PaymentStatus,
+  RoomStatus,
+  Role,
+} from '@prisma/client';
 import {
   COLLECTED_PAYMENT_STATUSES,
   DEFAULT_REVENUE_RANGE,
@@ -392,7 +399,13 @@ export class AnalyticsService {
 
     const staffData = await Promise.all(
       staffUsers.map(async (user) => {
-        const [bookingsConfirmed, bookingsCancelled, invoicesIssued, paidAgg] = await Promise.all([
+        const [
+          bookingsConfirmed,
+          bookingsCancelled,
+          invoicesIssued,
+          collectedAgg,
+          refundedAgg,
+        ] = await Promise.all([
           this.prisma.booking.count({
             where: {
               confirmedById: user.id,
@@ -411,11 +424,26 @@ export class AnalyticsService {
               createdAt: { gte: startDate, lte: endDate },
             },
           }),
-          this.prisma.invoice.aggregate({
-            _sum: { paidAmount: true },
+          // Tiền thực nhận lấy từ sổ thu tiền, không lấy từ `invoice.paidAmount`:
+          // một hóa đơn có thể được nhiều người thu làm nhiều lần, cộng cả tổng
+          // hóa đơn cho người chạm vào cuối cùng là sai. Đây cũng đúng cách
+          // `GET /invoices/summary?staffId=` tính chốt ca, nên hai số luôn khớp.
+          this.prisma.payment.aggregate({
+            _sum: { amount: true },
             where: {
-              issuedById: user.id,
-              paidAt: { gte: startDate, lte: endDate },
+              confirmedById: user.id,
+              status: PaymentEntryStatus.CONFIRMED,
+              type: { in: [PaymentEntryType.PAYMENT, PaymentEntryType.DEPOSIT] },
+              confirmedAt: { gte: startDate, lte: endDate },
+            },
+          }),
+          this.prisma.payment.aggregate({
+            _sum: { amount: true },
+            where: {
+              confirmedById: user.id,
+              status: PaymentEntryStatus.CONFIRMED,
+              type: PaymentEntryType.REFUND,
+              confirmedAt: { gte: startDate, lte: endDate },
             },
           }),
         ]);
@@ -428,7 +456,9 @@ export class AnalyticsService {
           bookingsConfirmed,
           bookingsCancelled,
           invoicesIssued,
-          amountCollected: roundMoney(paidAgg._sum.paidAmount || 0),
+          amountCollected: roundMoney(
+            (collectedAgg._sum.amount || 0) - (refundedAgg._sum.amount || 0),
+          ),
         };
       }),
     );

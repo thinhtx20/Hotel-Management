@@ -5,6 +5,7 @@ import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { QueryAvailableRoomsDto } from './dto/query-available-rooms.dto';
 import { SearchRoomDto } from './dto/search-room.dto';
+import { QueryRoomsDto } from './dto/query-rooms.dto';
 import { RoomStatus } from '@prisma/client';
 import { RoomEventsService } from './room-events.service';
 export declare class RoomsService {
@@ -14,7 +15,7 @@ export declare class RoomsService {
     private roomEvents;
     constructor(prisma: PrismaService, redis: RedisService, esService: ElasticsearchService, roomEvents: RoomEventsService);
     create(dto: CreateRoomDto): Promise<import("./dto/room-response.dto").RoomResponse>;
-    findAll(status?: RoomStatus, floor?: number, roomTypeId?: string, isStaff?: boolean): Promise<import("./dto/room-response.dto").RoomResponse[]>;
+    findAll(queryOrStatus?: QueryRoomsDto | RoomStatus, floorParam?: number | boolean, roomTypeIdParam?: string, isStaffParam?: boolean): Promise<import("../common/utils/pagination.util").PaginatedResult<any>>;
     findOne(id: string, includeNotes?: boolean): Promise<import("./dto/room-response.dto").RoomResponse>;
     findAvailable(query: QueryAvailableRoomsDto, includeNotes?: boolean): Promise<any[]>;
     search(dto: SearchRoomDto, includeNotes?: boolean): Promise<import("./dto/room-response.dto").RoomResponse[]>;
@@ -32,12 +33,12 @@ export declare class RoomsService {
     updateStatus(id: string, status: RoomStatus): Promise<import("./dto/room-response.dto").RoomResponse>;
     remove(id: string): Promise<{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         roomNumber: string;
         floor: number;
+        roomTypeId: string;
         status: import(".prisma/client").$Enums.RoomStatus;
         notes: string | null;
-        roomTypeId: string;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
 }

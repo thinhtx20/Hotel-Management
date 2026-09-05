@@ -21,6 +21,7 @@ import { RoomEventsService } from './room-events.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto, UpdateRoomStatusDto } from './dto/update-room.dto';
 import { QueryAvailableRoomsDto } from './dto/query-available-rooms.dto';
+import { QueryRoomsDto } from './dto/query-rooms.dto';
 import { SearchRoomDto } from './dto/search-room.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -191,27 +192,27 @@ export class RoomsController {
   @ApiBearerAuth('JWT-auth')
   @Get()
   @ApiOperation({
-    summary: 'Lấy danh sách tất cả phòng kèm bộ lọc trạng thái/tầng (Công khai cho khách vãng lai)',
+    summary: 'Lấy danh sách tất cả phòng kèm bộ lọc trạng thái/tầng/hạng phòng & phân trang',
     description:
       'Khách vãng lai và khách hàng chỉ thấy phòng đang vận hành. Phòng ở trạng thái ' +
-      'PENDING_APPROVAL / REJECTED chỉ hiện với ADMIN và RECEPTIONIST (gửi kèm Bearer token).',
+      'PENDING_APPROVAL / REJECTED chỉ hiện với ADMIN và RECEPTIONIST (gửi kèm Bearer token). ' +
+      'Response luôn có dạng { data: [...], meta: { total, page, limit, totalPages } }; ' +
+      'không truyền page/limit thì trả về toàn bộ kết quả trong data.',
   })
-  @ApiQuery({ name: 'status', enum: RoomStatus, required: false })
-  @ApiQuery({ name: 'floor', type: Number, required: false })
-  @ApiQuery({ name: 'roomTypeId', type: String, required: false })
   @ApiSuccessResponse({
     status: 200,
     description: 'Lấy danh sách tất cả phòng thành công',
-    exampleData: [SAMPLE_ROOM],
+    exampleData: {
+      data: [SAMPLE_ROOM],
+      meta: { total: 20, page: 1, limit: 20, totalPages: 1 },
+    },
   })
   findAll(
-    @Query('status') status?: RoomStatus,
-    @Query('floor') floor?: number,
-    @Query('roomTypeId') roomTypeId?: string,
+    @Query() query: QueryRoomsDto,
     @CurrentUser() user?: any,
   ) {
     const isStaff = user?.role === Role.ADMIN || user?.role === Role.RECEPTIONIST;
-    return this.roomsService.findAll(status, floor ? Number(floor) : undefined, roomTypeId, isStaff);
+    return this.roomsService.findAll(query, isStaff);
   }
 
   @Public()

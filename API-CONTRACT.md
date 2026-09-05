@@ -44,7 +44,14 @@ Client gửi payload:
   "notes": "Khách trả đợt 1 tại quầy"
 }
 ```
-**Quy tắc:** Backend **tự động tính toán** `newPaidAmount = invoice.paidAmount + amount` và tự động cập nhật `paymentStatus` sang `PAID` (nếu đủ hoặc thừa) hoặc `PARTIAL` (nếu chưa đủ). Client **không cần** tự tính toán `paymentStatus`.
+**Quy tắc:** Endpoint này dành cho **thu ngân thu tiền trực tiếp tại quầy** (`ADMIN` / `RECEPTIONIST`). Backend ghi một dòng vào sổ thu tiền rồi **tự tính lại** `paidAmount` và `paymentStatus` (`PAID` nếu đủ, `PARTIAL` nếu chưa đủ). Client **không cần** tự tính `paymentStatus`.
+
+**Ràng buộc mới:**
+- `amount` phải `> 0`.
+- `amount` **không được vượt quá số còn phải thu** (`finalAmount - paidAmount`) → `400`. Khách trả dư thì thu đúng số còn lại rồi trả lại tiền thừa.
+- Hóa đơn đã `PAID` thì trả `400` với thông báo "Hóa đơn này đã được thanh toán đủ toàn bộ".
+
+**Khách hàng KHÔNG gọi endpoint này.** App khách dùng `POST /invoices/:id/payment-requests` — xem mục [C3](#c3-khách-hàng-tự-thanh-toán-số-tiền-còn-lại).
 
 ### 6. Định dạng Ngày Giờ
 - Sử dụng chuẩn **ISO 8601** kèm múi giờ UTC (`YYYY-MM-DDTHH:mm:ss.sssZ`) hoặc offset địa phương `+07:00`.
@@ -278,9 +285,55 @@ FE **không tự cộng `paidAmount` client-side nữa** — con số đó sai n
 }
 ```
 
+### C1. Danh sách hóa đơn toàn khách sạn & phân trang (`GET /api/v1/invoices`)
+
+Quyền: `ADMIN`, `RECEPTIONIST`.
+
+Toàn bộ việc phân trang và tìm kiếm hóa đơn đã được xử lý phía máy chủ để tránh tải toàn bộ 500+ hóa đơn cùng lúc làm giật lag giao diện thu ngân.
+
+| Query param | Kiểu | Ghi chú |
+|---|---|---|
+| `status` | enum | `UNPAID` \| `PARTIAL` \| `PAID` \| `REFUNDED` |
+| `search` | string | Tìm kiếm theo mã hóa đơn (`invoiceCode`), tên khách, số điện thoại, email hoặc số phòng |
+| `page` | number | Trang cần lấy (mặc định 1, bắt đầu từ 1) |
+| `limit` | number | Số hóa đơn mỗi trang (mặc định 20, tối đa 100) |
+
+- Cấu trúc response chuẩn:
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "data": {
+    "data": [
+      {
+        "id": "a9b8c7d6-e5f4-3210-fedc-ba9876543210",
+        "invoiceCode": "INV-2026-0089",
+        "bookingId": "b1e4c7a2-9d3f-4e8b-8a21-72948e9102c1",
+        "roomAmount": 3600000,
+        "servicesAmount": 200000,
+        "finalAmount": 3800000,
+        "paidAmount": 3800000,
+        "paymentStatus": "PAID",
+        "remainingAmount": 0,
+        "roomNumber": "101",
+        "customerName": "Nguyễn Văn Khách Hàng",
+        "customerPhone": "0912345678"
+      }
+    ],
+    "meta": {
+      "total": 507,
+      "page": 1,
+      "limit": 20,
+      "totalPages": 26
+    }
+  }
+}
+```
+*Tương thích ngược:* Không truyền `page`/`limit` thì `data.data` chứa toàn bộ hóa đơn và `meta.limit = meta.total`, `meta.totalPages = 1`.
+
 ### C2. Hóa đơn của chính khách hàng (`GET /api/v1/invoices/my?status=`)
 
-Endpoint dành cho màn "Hóa đơn của tôi" bên app khách hàng. Không cần truyền tham số nào — backend lọc theo tài khoản trong access token, chỉ trả hóa đơn gắn với đơn đặt phòng của người đó. Cấu trúc mỗi phần tử giống hệt `GET /invoices/:id` (có `items`, `payments`, `roomNumber`, `customerName`).
+Endpoint dành cho màn "Hóa đơn của tôi" bên app khách hàng. Backend lọc theo tài khoản trong access token, chỉ trả hóa đơn gắn với đơn đặt phòng của người đó. Hỗ trợ tham số `status`, `search`, `page`, `limit`. Cấu trúc trả về `{ data: [...], meta: {...} }` (hoặc mảng phẳng nếu client cũ không truyền phân trang).
 
 ```json
 {
@@ -296,18 +349,156 @@ Endpoint dành cho màn "Hóa đơn của tôi" bên app khách hàng. Không c�
       "roomAmount": 3600000,
       "servicesAmount": 200000,
       "finalAmount": 3800000,
-      "paidAmount": 3800000,
-      "paymentStatus": "PAID",
+      "paidAmount": 1000000,
+      "paymentStatus": "PARTIAL",
+
+      "depositAmount": 1000000,
+      "remainingAmount": 2800000,
+      "pendingAmount": 0,
+      "hasPendingPaymentRequest": false,
+      "canRequestPayment": true,
+
       "items": [{ "name": "Tiền thuê phòng P.101", "quantity": 1, "unitPrice": 3600000, "amount": 3600000 }],
-      "payments": [{ "amount": 3800000, "paymentMethod": "CASH", "paidAt": "2026-09-08T11:50:00.000Z", "cashierName": "Trần Văn Minh (Thu Ngân)" }]
+      "payments": [
+        {
+          "id": "pay-0001",
+          "amount": 1000000,
+          "type": "DEPOSIT",
+          "paymentMethod": "BANK_TRANSFER",
+          "paidAt": "2026-09-01T03:00:00.000Z",
+          "reference": null,
+          "note": "Tiền cọc giữ chỗ khi duyệt phòng",
+          "cashierName": "Trần Văn Minh (Thu Ngân)"
+        }
+      ],
+      "pendingPayments": []
     }
   ]
 }
 ```
 
+**Các trường mới (FE dùng trực tiếp, không tự tính nữa):**
+
+| Trường | Ý nghĩa |
+|---|---|
+| `remainingAmount` | Số tiền khách **còn phải trả** = `finalAmount - paidAmount`, không bao giờ âm. Chính là dòng "Còn thiếu". Thẻ "CÒN PHẢI THANH TOÁN" ở đầu màn hình = tổng `remainingAmount` của các hóa đơn. |
+| `depositAmount` | Tiền cọc đã thu lúc lễ tân duyệt đơn (đã nằm trong `paidAmount`, đừng cộng thêm lần nữa). |
+| `payments[]` | Lịch sử thu tiền **thật**, mỗi lần khách trả là một dòng. `type` = `PAYMENT` \| `DEPOSIT` \| `REFUND`; dòng `REFUND` mang `amount` **âm**. |
+| `pendingPayments[]` | Yêu cầu thanh toán khách đã gửi nhưng lễ tân chưa xác nhận. |
+| `pendingAmount` | Tổng tiền đang chờ xác nhận. |
+| `hasPendingPaymentRequest` | `true` khi còn yêu cầu treo → FE hiện "Đang chờ lễ tân xác nhận" thay cho nút thanh toán. |
+| `canRequestPayment` | `true` khi được phép bấm "Thanh toán" (`remainingAmount > 0` và không có yêu cầu nào treo). Dùng cái này để bật/tắt nút. |
+
 Lọc tùy chọn: `?status=UNPAID | PARTIAL | PAID | REFUNDED`.
 
 `GET /invoices/:id` cũng đã mở cho `CUSTOMER`, nhưng **chỉ với hóa đơn thuộc đơn đặt phòng của chính khách** — sai chủ sở hữu trả `403`. Xem [ma trận phân quyền](docs/FE-ROLE-MATRIX.md) để biết đầy đủ.
+
+<a id="c3-khách-hàng-tự-thanh-toán-số-tiền-còn-lại"></a>
+### C3. Khách hàng tự thanh toán số tiền còn lại
+
+Hệ thống **chưa tích hợp cổng thanh toán**, nên khách trả tiền theo mô hình **gửi yêu cầu → lễ tân đối chiếu → xác nhận**. Tiền chỉ được cộng vào hóa đơn sau khi lễ tân xác nhận, khách không thể tự đánh dấu đã trả.
+
+```
+Khách bấm "Thanh toán"          Lễ tân đối chiếu sao kê         Hóa đơn
+POST /invoices/:id/                GET /invoices/                 paidAmount tăng
+     payment-requests    ───────>       payment-requests  ──────>  remainingAmount giảm
+   (tạo dòng PENDING)            POST /invoices/payments/          → PAID khi đủ
+   tiền CHƯA vào két                  :paymentId/confirm
+```
+
+#### 1. Khách gửi yêu cầu — `POST /api/v1/invoices/:id/payment-requests`
+
+Quyền: `CUSTOMER` (chỉ hóa đơn của chính mình), `RECEPTIONIST`, `ADMIN`.
+
+```json
+{
+  "paymentMethod": "BANK_TRANSFER",
+  "reference": "FT25090512345678",
+  "note": "Đã chuyển khoản lúc 14:05, nhờ lễ tân kiểm tra giúp"
+}
+```
+
+> **Bỏ trống `amount` = thanh toán TOÀN BỘ số còn lại.** Đây chính là nút "Thanh toán toàn bộ". Chỉ truyền `amount` khi khách muốn trả một phần.
+
+Response `201`:
+```json
+{
+  "message": "Đã gửi yêu cầu thanh toán toàn bộ số tiền còn lại. Lễ tân sẽ xác nhận sau khi đối chiếu.",
+  "paymentId": "pay-0003",
+  "amount": 2564000,
+  "remainingAfterConfirm": 0,
+  "invoice": { "...": "hóa đơn sau khi tạo yêu cầu" }
+}
+```
+
+Lỗi thường gặp:
+
+| Mã | Trường hợp |
+|---|---|
+| `400` | Hóa đơn đã thanh toán đủ (`remainingAmount = 0`) |
+| `400` | Đã có một yêu cầu đang chờ xác nhận — mỗi hóa đơn chỉ được treo **một** yêu cầu tại một thời điểm |
+| `400` | `amount` vượt quá số còn lại |
+| `403` | Hóa đơn không thuộc đơn đặt phòng của khách |
+
+#### 2. Khách hủy yêu cầu bấm nhầm — `DELETE /api/v1/invoices/:id/payment-requests/:paymentId`
+
+Chỉ hủy được yêu cầu còn `PENDING`. Đã được lễ tân xử lý thì trả `400`.
+
+#### 3. Lễ tân xem hàng chờ — `GET /api/v1/invoices/payment-requests?status=PENDING`
+
+Quyền: `ADMIN`, `RECEPTIONIST`. Mặc định trả các yêu cầu `PENDING`.
+
+```json
+[
+  {
+    "id": "pay-0003",
+    "invoiceId": "inv-uuid-789",
+    "invoiceCode": "INV-2025-0289",
+    "roomNumber": "103",
+    "customerName": "Nguyễn Văn A",
+    "customerPhone": "0912345678",
+    "amount": 2564000,
+    "paymentMethod": "BANK_TRANSFER",
+    "status": "PENDING",
+    "reference": "FT25090512345678",
+    "requestedAt": "2026-09-05T07:05:00.000Z",
+    "invoiceFinalAmount": 5832000,
+    "invoicePaidAmount": 3268000,
+    "invoiceRemainingAmount": 2564000
+  }
+]
+```
+
+#### 4. Lễ tân xác nhận đã nhận tiền — `POST /api/v1/invoices/payments/:paymentId/confirm`
+
+Body rỗng `{}` là đủ. Truyền `amount` nếu khách chuyển thiếu so với số đã yêu cầu, truyền `paymentMethod` nếu khách đổi hình thức trả.
+
+```json
+{
+  "message": "Đã xác nhận thu 2.564.000đ. Hóa đơn đã thanh toán đủ.",
+  "paymentId": "pay-0003",
+  "amount": 2564000,
+  "invoice": { "...": "hóa đơn đã cập nhật paidAmount / remainingAmount" }
+}
+```
+
+#### 5. Lễ tân từ chối — `POST /api/v1/invoices/payments/:paymentId/reject`
+
+```json
+{ "reason": "Không tìm thấy giao dịch với mã FT25090512345678 trên sao kê" }
+```
+
+Lý do được trả lại cho khách qua `rejectedReason`. Yêu cầu bị từ chối **không bao giờ** được tính tiền.
+
+#### 6. Sổ thu tiền — nguồn sự thật duy nhất
+
+`invoices.paidAmount` **không còn được cộng/trừ thủ công ở bất kỳ đâu**. Nó luôn được tính lại từ bảng `payments`:
+
+```
+paidAmount = Σ(PAYMENT + DEPOSIT đã CONFIRMED) − Σ(REFUND đã CONFIRMED)
+```
+
+Nhờ vậy tiền cọc, các lần khách trả qua app, tiền thu tại quầy và tiền hoàn đều nằm chung một sổ, và `remainingAmount` luôn khớp với thực tế. Dữ liệu cũ được tự động quy đổi thành một dòng thu khi khởi động ứng dụng.
 
 ### D. Thông tin cá nhân (`GET /api/v1/auth/me`)
 ```json
@@ -353,44 +544,131 @@ Lọc tùy chọn: `?status=UNPAID | PARTIAL | PAID | REFUNDED`.
 ```
 
 ### G. Sơ đồ phòng (`GET /api/v1/rooms`)
-Mỗi phòng khi có khách (`OCCUPIED`) sẽ tự động có thêm `currentBooking`:
-```json
-{
-  "id": "room-uuid",
-  "roomNumber": "101",
-  "floor": 1,
-  "status": "OCCUPIED",
-  "pricePerNight": 1200000,
-  "images": ["https://images.unsplash.com/..."],
-  "amenities": ["Wifi miễn phí", "Điều hòa hai chiều", "Bể bơi"],
-  "capacity": 3,
-  "area": 35,
-  "rating": 4.9,
-  "reviewCount": 48,
-  "currentBooking": {
-    "id": "booking-uuid",
-    "bookingCode": "BK-240901",
-    "guestName": "Trần Văn A",
-    "guestPhone": "0901234567",
-    "checkOutDate": "2026-09-05T12:00:00.000Z"
-  }
-}
-```
 
-### H. Check-out phòng (`POST /api/v1/bookings/:id/check-out`)
-Trả trực tiếp `invoiceId` ở cấp ngoài cùng để client chuyển thẳng sang màn hình thu ngân:
+Hỗ trợ bộ lọc theo trạng thái, tầng, hạng phòng, tìm kiếm theo số phòng và phân trang:
+
+| Query param | Kiểu | Ghi chú |
+|---|---|---|
+| `status` | enum `RoomStatus` | `AVAILABLE`, `OCCUPIED`, `RESERVED`, `CLEANING`, `MAINTENANCE` |
+| `floor` | number | Lọc theo số tầng (>= 1) |
+| `roomTypeId` | string | UUID của loại phòng |
+| `search` | string | Tìm kiếm theo số phòng hoặc tên loại phòng |
+| `page` | number | Trang cần lấy (bắt đầu từ 1) |
+| `limit` | number | Số phòng mỗi trang (mặc định 20, tối đa 100) |
+
+Mỗi phòng khi có khách (`OCCUPIED`) sẽ tự động có thêm `currentBooking`:
 ```json
 {
   "statusCode": 200,
   "success": true,
   "data": {
-    "message": "Check-out và thanh toán hóa đơn thành công",
-    "invoiceId": "inv-uuid-789",
-    "booking": { ... },
-    "invoice": { ... }
+    "data": [
+      {
+        "id": "room-uuid",
+        "roomNumber": "101",
+        "floor": 1,
+        "status": "OCCUPIED",
+        "pricePerNight": 1200000,
+        "images": ["https://images.unsplash.com/..."],
+        "amenities": ["Wifi miễn phí", "Điều hòa hai chiều", "Bể bơi"],
+        "capacity": 3,
+        "area": 35,
+        "rating": 4.9,
+        "reviewCount": 48,
+        "currentBooking": {
+          "id": "booking-uuid",
+          "bookingCode": "BK-240901",
+          "guestName": "Trần Văn A",
+          "guestPhone": "0901234567",
+          "checkOutDate": "2026-09-05T12:00:00.000Z"
+        }
+      }
+    ],
+    "meta": {
+      "total": 20,
+      "page": 1,
+      "limit": 20,
+      "totalPages": 1
+    }
   }
 }
 ```
+*Tương thích ngược:* Không truyền `page`/`limit` thì `data.data` chứa toàn bộ phòng và `meta.limit = meta.total`. Client Flutter dùng `ApiResult.unwrapList` bóc dữ liệu tự động.
+
+### H. Check-out phòng (`POST /api/v1/bookings/:id/check-out`)
+
+#### H1. Xem trước bảng quyết toán — `GET /api/v1/bookings/:id/checkout-preview`
+
+**Gọi endpoint này ngay khi thu ngân bấm "Check-out"** để biết chính xác phải thu bao nhiêu. Chỉ đọc, không đổi trạng thái đơn hay phòng. Quyền: `ADMIN`, `RECEPTIONIST`.
+
+```json
+{
+  "bookingCode": "BK-2026-0829",
+  "status": "CHECKED_IN",
+  "roomNumber": "103",
+  "customerName": "Nguyễn Văn A",
+  "invoiceId": "inv-uuid-789",
+
+  "roomAmount": 5000000,
+  "servicesAmount": 300000,
+  "discount": 0,
+  "taxRate": 0.1,
+  "tax": 530000,
+  "finalAmount": 5830000,
+
+  "depositAmount": 1000000,
+  "alreadyPaidAmount": 3268000,
+  "amountDue": 2562000,
+
+  "serviceItems": [
+    { "id": "svc-1", "name": "Minibar trọn gói", "quantity": 1, "unitPrice": 300000, "amount": 300000 }
+  ],
+  "pendingPaymentRequests": [],
+  "pendingPaymentAmount": 0
+}
+```
+
+- **`amountDue` = số tiền còn phải thu của khách.** Đây là con số thu ngân cần thấy trên màn hình check-out.
+- `alreadyPaidAmount` đã bao gồm tiền cọc và mọi lần khách trả trước qua app.
+- `pendingPaymentRequests` là các yêu cầu khách gửi qua app chưa đối chiếu — **xử lý hết danh sách này trước khi thu tiền mặt** để tránh thu trùng.
+
+#### H2. Chốt trả phòng — `POST /api/v1/bookings/:id/check-out`
+
+```json
+{
+  "amountCollected": 2562000,
+  "paymentMethod": "CASH",
+  "note": "Khách trả nốt bằng tiền mặt tại quầy",
+  "discount": 0,
+  "taxRate": 0.1
+}
+```
+
+| Trường | Ý nghĩa |
+|---|---|
+| `amountCollected` | Số tiền thu ngân **thực nhận tại quầy**. **Bỏ trống = không thu thêm đồng nào** — phần còn thiếu được đẩy về app cho khách tự thanh toán. Vượt quá `amountDue` → `400`. |
+| `paymentMethod` | Hình thức thu tại quầy (mặc định `CASH`). |
+| `note` | Ghi chú cho khoản thu này. |
+
+**Thay đổi quan trọng so với trước:** check-out **không còn ép hóa đơn thành `PAID`** nữa. Trước đây endpoint này ghi đè `paidAmount = finalAmount` bất kể khách đã trả bao nhiêu, làm mất dấu tiền cọc và thổi phồng doanh thu. Nay hóa đơn chỉ chốt **số tiền phải trả**; số đã thu được tính lại từ sổ thu tiền.
+
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "data": {
+    "message": "Check-out thành công. Hóa đơn còn thiếu 2.562.000đ đã được gửi về mục \"Hóa đơn của tôi\" để khách thanh toán nốt.",
+    "invoiceId": "inv-uuid-789",
+    "amountCollected": 0,
+    "remainingAmount": 2562000,
+    "settlement": { "...": "giống hệt checkout-preview" },
+    "booking": { "...": "status: CHECKED_OUT" },
+    "invoice": { "...": "paymentStatus: PARTIAL" }
+  }
+}
+```
+
+Khách còn nợ **vẫn được trả phòng** (phòng chuyển `CLEANING` như cũ). Hóa đơn ở trạng thái `PARTIAL` / `UNPAID` tự động xuất hiện trong `GET /invoices/my` của khách với `remainingAmount > 0` và `canRequestPayment: true`, khách thanh toán nốt qua luồng ở mục [C3](#c3-khách-hàng-tự-thanh-toán-số-tiền-còn-lại).
 
 ### I. Đăng xuất tài khoản (`POST /api/v1/auth/logout`)
 - **Mục đích:** Hủy phiên làm việc của người dùng, đưa Access Token vào Blacklist (Redis) và thu hồi Refresh Token tương ứng để tránh bị tấn công phát lại.
@@ -1037,6 +1315,47 @@ return () => es.close();
 **Cơ chế bên trong:** sự kiện phát ra từ hai nguồn và tự chống trùng theo `user.id`:
 1. `source: "app"` — phát ngay lập tức (độ trễ ~0) khi chính tiến trình này tạo/sửa tài khoản.
 2. `source: "db-watcher"` — vòng quét CSDL mỗi 15 giây, **chỉ chạy khi đang có client lắng nghe**, để bắt tài khoản sinh ra ngoài tiến trình (deploy nhiều instance, seed, thao tác thẳng vào CSDL). Đổi bằng biến môi trường `USER_EVENTS_POLL_MS`, đặt `0` để tắt hẳn.
+
+### Y2. Danh sách người dùng & phân trang (`GET /api/v1/users`)
+
+Quyền: `ADMIN`, `RECEPTIONIST` (lễ tân chỉ đọc).
+
+| Query param | Kiểu | Ghi chú |
+|---|---|---|
+| `role` | enum `Role` | Lọc theo vai trò: `ADMIN`, `RECEPTIONIST`, `CUSTOMER` |
+| `search` | string | Tìm kiếm không phân biệt hoa thường theo `fullName`, `email`, `phone` |
+| `page` | number | Trang cần lấy (mặc định 1) |
+| `limit` | number | Số người dùng mỗi trang (mặc định 20, tối đa 100) |
+
+- Cấu trúc response:
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "data": {
+    "data": [
+      {
+        "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "email": "reception@hotel.com",
+        "fullName": "Lê Thu Hà (Lễ Tân)",
+        "phone": "0903334455",
+        "avatar": "https://images.unsplash.com/...",
+        "role": "RECEPTIONIST",
+        "isActive": true,
+        "createdAt": "2026-09-03T07:00:00.000Z",
+        "_count": { "bookings": 4 }
+      }
+    ],
+    "meta": {
+      "total": 13,
+      "page": 1,
+      "limit": 20,
+      "totalPages": 1
+    }
+  }
+}
+```
+*Tương thích ngược:* Không truyền `page`/`limit` thì `data.data` chứa toàn bộ tài khoản và `meta.limit = meta.total`.
 
 ---
 
