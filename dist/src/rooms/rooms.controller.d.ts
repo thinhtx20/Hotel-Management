@@ -32,6 +32,7 @@ export declare class RoomsController {
     }>;
     updateStatus(id: string, dto: UpdateRoomStatusDto): Promise<import("./dto/room-response.dto").RoomResponse>;
     update(id: string, updateRoomDto: UpdateRoomDto): Promise<import("./dto/room-response.dto").RoomResponse>;
+    updatePut(id: string, updateRoomDto: UpdateRoomDto): Promise<import("./dto/room-response.dto").RoomResponse>;
     remove(id: string): Promise<{
         id: string;
         roomNumber: string;

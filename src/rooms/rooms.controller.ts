@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Patch,
+  Put,
   Param,
   Delete,
   Query,
@@ -314,13 +315,61 @@ export class RoomsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Patch(':id')
-  @ApiOperation({ summary: 'Cập nhật thông tin phòng (Chỉ Admin)' })
+  @ApiOperation({
+    summary: 'Cập nhật thông tin phòng (Chỉ Admin) — PATCH',
+    description:
+      'Cập nhật một phần hoặc toàn bộ thông tin phòng (số phòng, tầng, hạng phòng, trạng thái, ghi chú) ' +
+      'cũng như giá, tiện ích, ảnh của hạng phòng. Chỉ tài khoản ADMIN mới có quyền thực hiện.',
+  })
   @ApiSuccessResponse({
     status: 200,
     description: 'Cập nhật thông tin phòng thành công',
     exampleData: SAMPLE_ROOM,
   })
+  @ApiErrorResponse({
+    status: 404,
+    message: 'Không tìm thấy phòng với ID: 3f6c8d20-41ab-4f27-96a8-208935cba48b',
+    error: 'Not Found',
+    path: '/api/v1/rooms/3f6c8d20-41ab-4f27-96a8-208935cba48b',
+  })
+  @ApiErrorResponse({
+    status: 409,
+    message: 'Số phòng 101 đã tồn tại',
+    error: 'Conflict',
+    path: '/api/v1/rooms/3f6c8d20-41ab-4f27-96a8-208935cba48b',
+  })
   update(@Param('id') id: string, @Body() updateRoomDto: UpdateRoomDto) {
+    return this.roomsService.update(id, updateRoomDto);
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Put(':id')
+  @ApiOperation({
+    summary: 'Cập nhật toàn diện thông tin phòng (Chỉ Admin) — PUT',
+    description:
+      'Hỗ trợ phương thức PUT tương đương PATCH để tương thích hoàn toàn với các client HTTP/REST. ' +
+      'Chỉ tài khoản ADMIN mới có quyền thực hiện.',
+  })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Cập nhật thông tin phòng thành công',
+    exampleData: SAMPLE_ROOM,
+  })
+  @ApiErrorResponse({
+    status: 404,
+    message: 'Không tìm thấy phòng với ID: 3f6c8d20-41ab-4f27-96a8-208935cba48b',
+    error: 'Not Found',
+    path: '/api/v1/rooms/3f6c8d20-41ab-4f27-96a8-208935cba48b',
+  })
+  @ApiErrorResponse({
+    status: 409,
+    message: 'Số phòng 101 đã tồn tại',
+    error: 'Conflict',
+    path: '/api/v1/rooms/3f6c8d20-41ab-4f27-96a8-208935cba48b',
+  })
+  updatePut(@Param('id') id: string, @Body() updateRoomDto: UpdateRoomDto) {
     return this.roomsService.update(id, updateRoomDto);
   }
 

@@ -303,9 +303,97 @@ let RoomsService = class RoomsService {
     }
     async update(id, dto) {
         const existing = await this.findOne(id, true);
+        if (dto.roomNumber && dto.roomNumber !== existing.roomNumber) {
+            const duplicate = await this.prisma.room.findUnique({
+                where: { roomNumber: dto.roomNumber },
+            });
+            if (duplicate && duplicate.id !== id) {
+                throw new common_1.ConflictException(`Số phòng ${dto.roomNumber} đã tồn tại`);
+            }
+        }
+        let targetRoomTypeId = dto.roomTypeId;
+        if (!targetRoomTypeId) {
+            if (dto.roomTypeCode) {
+                const found = await this.prisma.roomType.findUnique({
+                    where: { code: dto.roomTypeCode },
+                });
+                if (found)
+                    targetRoomTypeId = found.id;
+            }
+            else if (dto.roomTypeName) {
+                const found = await this.prisma.roomType.findUnique({
+                    where: { name: dto.roomTypeName },
+                });
+                if (found)
+                    targetRoomTypeId = found.id;
+            }
+        }
+        if (targetRoomTypeId) {
+            const roomTypeExists = await this.prisma.roomType.findUnique({
+                where: { id: targetRoomTypeId },
+            });
+            if (!roomTypeExists) {
+                throw new common_1.NotFoundException(`Loại phòng ID ${targetRoomTypeId} không tồn tại`);
+            }
+        }
+        const effectiveRoomTypeId = targetRoomTypeId || existing.roomTypeId;
+        const incomingImages = dto.images || (dto.imageUrl ? [dto.imageUrl] : dto.image ? [dto.image] : undefined);
+        const newPrice = dto.pricePerNight ?? dto.price ?? dto.basePrice;
+        if (incomingImages !== undefined ||
+            dto.amenities !== undefined ||
+            newPrice !== undefined ||
+            dto.description !== undefined ||
+            dto.sizeSqM !== undefined ||
+            dto.capacityAdults !== undefined ||
+            dto.capacityChildren !== undefined) {
+            const roomTypeUpdateData = {};
+            if (incomingImages !== undefined) {
+                roomTypeUpdateData.images = incomingImages;
+            }
+            if (dto.amenities !== undefined) {
+                roomTypeUpdateData.amenities = dto.amenities;
+            }
+            if (newPrice !== undefined && Number(newPrice) > 0) {
+                roomTypeUpdateData.basePrice = Number(newPrice);
+            }
+            if (dto.description !== undefined) {
+                roomTypeUpdateData.description = dto.description;
+            }
+            if (dto.sizeSqM !== undefined) {
+                roomTypeUpdateData.sizeSqM = Number(dto.sizeSqM);
+            }
+            if (dto.capacityAdults !== undefined) {
+                roomTypeUpdateData.capacityAdults = Number(dto.capacityAdults);
+            }
+            if (dto.capacityChildren !== undefined) {
+                roomTypeUpdateData.capacityChildren = Number(dto.capacityChildren);
+            }
+            if (Object.keys(roomTypeUpdateData).length > 0) {
+                await this.prisma.roomType.update({
+                    where: { id: effectiveRoomTypeId },
+                    data: roomTypeUpdateData,
+                });
+            }
+        }
+        const roomUpdateData = {};
+        if (dto.roomNumber !== undefined) {
+            roomUpdateData.roomNumber = dto.roomNumber;
+        }
+        if (dto.floor !== undefined) {
+            roomUpdateData.floor = Number(dto.floor);
+        }
+        if (targetRoomTypeId) {
+            roomUpdateData.roomType = { connect: { id: targetRoomTypeId } };
+        }
+        if (dto.status !== undefined) {
+            roomUpdateData.status = dto.status;
+        }
+        if (dto.notes !== undefined) {
+            roomUpdateData.notes = dto.notes;
+        }
         const updated = await this.prisma.room.update({
             where: { id },
-            data: dto,
+            data: roomUpdateData,
             include: { roomType: true },
         });
         await this.redis.delByPattern('cache:rooms:*');

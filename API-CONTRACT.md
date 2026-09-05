@@ -1453,3 +1453,106 @@ response.stream.transform(utf8.decoder).transform(const LineSplitter()).listen((
    - `POST /rooms/sync-status` (Đồng bộ toàn bộ phòng theo lịch)
    - Xác nhận đơn, hủy đơn, từ chối đơn làm đổi trạng thái suy diễn.
 2. `source: "db-watcher"` — Vòng quét CSDL (mặc định 15 giây qua `ROOM_EVENTS_POLL_MS`) tự động bật khi có người mở kết nối và tắt khi hết client, tự động nhận diện thay đổi từ bên ngoài và tự chống phát trùng lặp.
+
+---
+
+### Z2. Cập nhật thông tin phòng (Chỉ Admin) (`PATCH` / `PUT /api/v1/rooms/:id`)
+
+Dành riêng cho vai trò `ADMIN` quản lý toàn diện thông tin buồng phòng. Hỗ trợ song song cả hai method HTTP `PATCH` và `PUT`.
+
+- **Quyền:** `ADMIN`. Nhân viên `RECEPTIONIST` và khách hàng `CUSTOMER` gọi sẽ nhận lỗi `403 Forbidden`.
+- **Headers:** `Authorization: Bearer <adminAccessToken>`
+- **URL Params:** `id`: UUID của phòng cần cập nhật (ví dụ: `3f6c8d20-41ab-4f27-96a8-208935cba48b`).
+
+#### Request Body (JSON) — Tất cả các trường đều là tùy chọn (Optional):
+
+```json
+{
+  "roomNumber": "101",
+  "floor": 1,
+  "roomTypeId": "d9e03d76-e17f-4f05-896c-b3a167cf7564",
+  "roomTypeCode": "DELUXE_OCEAN",
+  "roomTypeName": "Phòng Deluxe Hướng Biển",
+  "status": "AVAILABLE",
+  "notes": "Phòng view sân vườn, cạnh lối thoát hiểm",
+  "pricePerNight": 1350000,
+  "price": 1350000,
+  "description": "Phòng cao cấp ngắm trọn bình minh trên biển",
+  "images": [
+    "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80",
+    "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=800&q=80"
+  ],
+  "image": "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80",
+  "amenities": ["Wifi tốc độ cao", "Ban công view biển", "Bồn tắm nằm", "Smart TV 55 inch"],
+  "sizeSqM": 38,
+  "capacityAdults": 2,
+  "capacityChildren": 1
+}
+```
+
+#### Quy tắc nghiệp vụ và ràng buộc:
+1. **Kiểm tra trùng lặp số phòng:** Nếu đổi `roomNumber` sang số khác mà số phòng mới đó đã tồn tại trong khách sạn -> trả về lỗi `409 Conflict` (`"Số phòng ... đã tồn tại"`).
+2. **Kiểm tra loại phòng:** Nếu truyền `roomTypeId`, `roomTypeCode` hoặc `roomTypeName`, hệ thống sẽ kiểm tra hạng phòng trong CSDL; nếu không tìm thấy -> trả về lỗi `404 Not Found`.
+3. **Bóc tách tự động giữa Phòng & Hạng phòng:**
+   - Các trường thuộc thực thể phòng (`roomNumber`, `floor`, `roomTypeId`, `status`, `notes`) được cập nhật trực tiếp vào bảng `rooms`.
+   - Các trường thuộc hạng phòng (`pricePerNight`, `images`, `amenities`, `description`, `sizeSqM`, `capacityAdults`, `capacityChildren`) được cập nhật trực tiếp vào bảng `room_types` tương ứng, không bị lỗi schema.
+4. **Đồng bộ đa tầng tức thì:**
+   - Xóa sạch cache Redis phòng (`cache:rooms:*`).
+   - Cập nhật chỉ mục Elasticsearch của phòng (`hotel_rooms`).
+   - Phát sự kiện SSE realtime: `room.updated` và `room.status_changed` (nếu trạng thái phòng thay đổi) tới tất cả các client Web/App đang kết nối `/rooms/stream`.
+
+#### Response thành công (`200 OK`):
+
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "data": {
+    "id": "3f6c8d20-41ab-4f27-96a8-208935cba48b",
+    "roomNumber": "101",
+    "floor": 1,
+    "status": "AVAILABLE",
+    "notes": "Phòng view sân vườn, cạnh lối thoát hiểm",
+    "roomTypeId": "d9e03d76-e17f-4f05-896c-b3a167cf7564",
+    "roomTypeName": "Phòng Deluxe Hướng Biển",
+    "roomTypeCode": "DELUXE_OCEAN",
+    "description": "Phòng cao cấp ngắm trọn bình minh trên biển",
+    "pricePerNight": 1350000,
+    "image": "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80",
+    "imageUrl": "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80",
+    "images": [
+      "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=800&q=80"
+    ],
+    "amenities": [
+      "Wifi tốc độ cao",
+      "Ban công view biển",
+      "Bồn tắm nằm",
+      "Smart TV 55 inch"
+    ],
+    "capacityAdults": 2,
+    "capacityChildren": 1,
+    "capacity": 3,
+    "sizeSqM": 38,
+    "area": 38,
+    "rating": 4.8,
+    "reviewCount": 38,
+    "bedType": "1 Giường đôi Queen Size (1.6m x 2.0m)",
+    "viewType": "Hướng biển trực diện (Ocean View)",
+    "highlights": [
+      "Ban công riêng nhìn thẳng ra biển",
+      "Bồn tắm nằm ngắm hoàng hôn",
+      "Hệ thống đèn thông minh điều chỉnh theo tâm trạng",
+      "Miễn phí bữa sáng buffet và đồ uống chào mừng"
+    ]
+  }
+}
+```
+
+#### Các mã lỗi thường gặp:
+- `400 Bad Request`: Định dạng dữ liệu không hợp lệ.
+- `401 Unauthorized`: Chưa đăng nhập hoặc token đã hết hạn.
+- `403 Forbidden`: Tài khoản không có vai trò `ADMIN`.
+- `404 Not Found`: Không tìm thấy phòng hoặc loại phòng tương ứng.
+- `409 Conflict`: Số phòng cập nhật bị trùng với phòng khác trong hệ thống.
+

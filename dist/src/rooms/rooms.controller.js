@@ -120,6 +120,9 @@ let RoomsController = class RoomsController {
     update(id, updateRoomDto) {
         return this.roomsService.update(id, updateRoomDto);
     }
+    updatePut(id, updateRoomDto) {
+        return this.roomsService.update(id, updateRoomDto);
+    }
     remove(id) {
         return this.roomsService.remove(id);
     }
@@ -353,11 +356,27 @@ __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, common_1.Patch)(':id'),
-    (0, swagger_1.ApiOperation)({ summary: 'Cập nhật thông tin phòng (Chỉ Admin)' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Cập nhật thông tin phòng (Chỉ Admin) — PATCH',
+        description: 'Cập nhật một phần hoặc toàn bộ thông tin phòng (số phòng, tầng, hạng phòng, trạng thái, ghi chú) ' +
+            'cũng như giá, tiện ích, ảnh của hạng phòng. Chỉ tài khoản ADMIN mới có quyền thực hiện.',
+    }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
         description: 'Cập nhật thông tin phòng thành công',
         exampleData: SAMPLE_ROOM,
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 404,
+        message: 'Không tìm thấy phòng với ID: 3f6c8d20-41ab-4f27-96a8-208935cba48b',
+        error: 'Not Found',
+        path: '/api/v1/rooms/3f6c8d20-41ab-4f27-96a8-208935cba48b',
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 409,
+        message: 'Số phòng 101 đã tồn tại',
+        error: 'Conflict',
+        path: '/api/v1/rooms/3f6c8d20-41ab-4f27-96a8-208935cba48b',
     }),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
@@ -365,6 +384,39 @@ __decorate([
     __metadata("design:paramtypes", [String, update_room_dto_1.UpdateRoomDto]),
     __metadata("design:returntype", void 0)
 ], RoomsController.prototype, "update", null);
+__decorate([
+    (0, swagger_1.ApiBearerAuth)('JWT-auth'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
+    (0, common_1.Put)(':id'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Cập nhật toàn diện thông tin phòng (Chỉ Admin) — PUT',
+        description: 'Hỗ trợ phương thức PUT tương đương PATCH để tương thích hoàn toàn với các client HTTP/REST. ' +
+            'Chỉ tài khoản ADMIN mới có quyền thực hiện.',
+    }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Cập nhật thông tin phòng thành công',
+        exampleData: SAMPLE_ROOM,
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 404,
+        message: 'Không tìm thấy phòng với ID: 3f6c8d20-41ab-4f27-96a8-208935cba48b',
+        error: 'Not Found',
+        path: '/api/v1/rooms/3f6c8d20-41ab-4f27-96a8-208935cba48b',
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 409,
+        message: 'Số phòng 101 đã tồn tại',
+        error: 'Conflict',
+        path: '/api/v1/rooms/3f6c8d20-41ab-4f27-96a8-208935cba48b',
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, update_room_dto_1.UpdateRoomDto]),
+    __metadata("design:returntype", void 0)
+], RoomsController.prototype, "updatePut", null);
 __decorate([
     (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
