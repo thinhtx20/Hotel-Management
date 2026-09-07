@@ -122,9 +122,13 @@ let UsersService = class UsersService {
     }
     async update(id, dto) {
         await this.findOne(id);
+        const data = { ...dto };
+        if (data.password) {
+            data.password = await bcrypt.hash(data.password, await bcrypt.genSalt(10));
+        }
         const updated = await this.prisma.user.update({
             where: { id },
-            data: dto,
+            data,
             select: {
                 id: true,
                 email: true,
@@ -138,6 +142,25 @@ let UsersService = class UsersService {
         });
         this.userEvents.emitUpdated(updated);
         return updated;
+    }
+    async adminChangePassword(id, dto) {
+        const user = await this.prisma.user.findUnique({ where: { id } });
+        if (!user) {
+            throw new common_1.NotFoundException(`Không tìm thấy người dùng với ID: ${id}`);
+        }
+        const newPassword = dto.newPassword || dto.password;
+        if (!newPassword || newPassword.trim().length < 6) {
+            throw new common_1.BadRequestException('Mật khẩu mới phải có ít nhất 6 ký tự');
+        }
+        const hashedPassword = await bcrypt.hash(newPassword.trim(), await bcrypt.genSalt(10));
+        await this.prisma.user.update({
+            where: { id },
+            data: { password: hashedPassword },
+        });
+        return {
+            success: true,
+            message: `Đã đổi mật khẩu cho tài khoản ${user.fullName || user.email} thành công`,
+        };
     }
     async updateMe(id, dto) {
         await this.findOne(id);

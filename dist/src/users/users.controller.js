@@ -23,6 +23,7 @@ const skip_transform_decorator_1 = require("../common/decorators/skip-transform.
 const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
 const update_user_dto_1 = require("./dto/update-user.dto");
 const create_user_dto_1 = require("./dto/create-user.dto");
+const admin_change_password_dto_1 = require("./dto/admin-change-password.dto");
 const update_me_dto_1 = require("./dto/update-me.dto");
 const query_users_dto_1 = require("./dto/query-users.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
@@ -79,6 +80,9 @@ let UsersController = class UsersController {
     }
     update(id, updateUserDto) {
         return this.usersService.update(id, updateUserDto);
+    }
+    adminChangePassword(id, dto) {
+        return this.usersService.adminChangePassword(id, dto);
     }
     remove(id) {
         return this.usersService.remove(id);
@@ -210,6 +214,40 @@ __decorate([
     __metadata("design:paramtypes", [String, update_user_dto_1.UpdateUserDto]),
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "update", null);
+__decorate([
+    (0, common_1.Patch)(':id/password'),
+    (0, common_1.Post)(':id/password'),
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Admin đổi / đặt lại mật khẩu cho tài khoản người dùng',
+        description: 'Cho phép Quản trị viên đổi mật khẩu cho các tài khoản khác mà không cần biết mật khẩu cũ.',
+    }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Đổi mật khẩu tài khoản thành công',
+        exampleData: {
+            success: true,
+            message: 'Đã đổi mật khẩu cho tài khoản Lê Thu Hà (Lễ Tân) thành công',
+        },
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 400,
+        message: 'Mật khẩu mới phải có ít nhất 6 ký tự',
+        error: 'Bad Request',
+        path: '/api/v1/users/:id/password',
+    }),
+    (0, api_success_response_decorator_1.ApiErrorResponse)({
+        status: 404,
+        message: 'Không tìm thấy người dùng với ID tương ứng',
+        error: 'Not Found',
+        path: '/api/v1/users/:id/password',
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, admin_change_password_dto_1.AdminChangePasswordDto]),
+    __metadata("design:returntype", void 0)
+], UsersController.prototype, "adminChangePassword", null);
 __decorate([
     (0, common_1.Delete)(':id'),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),

@@ -1226,6 +1226,30 @@ Thay cho việc mượn `POST /auth/register`.
 - **Request body:** `{ email, password, fullName, role, phone?, avatar?, isActive? }` với `role` ∈ `ADMIN | RECEPTIONIST | CUSTOMER`.
 - Trùng email trả `409 Conflict`.
 
+### Q2. Admin đổi / đặt lại mật khẩu người dùng (`PATCH /api/v1/users/:id/password` hoặc `POST /api/v1/users/:id/password`)
+Dành riêng cho Quản trị viên cấp lại / đặt lại mật khẩu cho các tài khoản nhân viên hoặc khách hàng mà không cần biết mật khẩu cũ.
+
+- **Quyền:** `ADMIN`.
+- **Endpoint:** `PATCH /api/v1/users/:id/password` (hoặc `POST /api/v1/users/:id/password`, `POST /api/v1/users/:id/change-password`).
+- **Request body:**
+  ```json
+  {
+    "newPassword": "PasswordMoi@123"
+  }
+  ```
+  *(Chấp nhận cả trường `password` làm alias).*
+- **Phản hồi thành công (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Đã đổi mật khẩu cho tài khoản Lê Thu Hà (Lễ Tân) thành công"
+  }
+  ```
+- **Lỗi:**
+  - `400 Bad Request`: Mật khẩu mới dưới 6 ký tự hoặc rỗng.
+  - `403 Forbidden`: Người gọi không phải `ADMIN`.
+  - `404 Not Found`: Không tìm thấy người dùng với ID tương ứng.
+
 ### R. Sửa `totalInvoices` ở `GET /api/v1/invoices/summary`
 `totalInvoices` trước đây chỉ đếm theo `createdAt` trong ngày, nên hóa đơn phát hành hôm trước và thu tiền hôm nay vẫn vào `paidInvoices` khiến `totalInvoices: 0` mà `paidInvoices: 1`.
 Nay `totalInvoices` đếm hóa đơn **phát hành trong ngày HOẶC có thu tiền trong ngày**. `unpaidInvoices` / `partialInvoices` vẫn là tồn đọng toàn hệ thống (không giới hạn theo ngày).

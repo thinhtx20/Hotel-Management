@@ -1,6 +1,7 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { AdminChangePasswordDto } from './dto/admin-change-password.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { UserEventsService } from './user-events.service';
 import { Role } from '@prisma/client';
@@ -99,6 +100,10 @@ export declare class UsersService {
         avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
+    }>;
+    adminChangePassword(id: string, dto: AdminChangePasswordDto): Promise<{
+        success: boolean;
+        message: string;
     }>;
     updateMe(id: string, dto: {
         fullName?: string;

@@ -5,4 +5,5 @@ export declare class UpdateUserDto {
     avatar?: string;
     role?: Role;
     isActive?: boolean;
+    password?: string;
 }

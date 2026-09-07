@@ -46,4 +46,11 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], UpdateUserDto.prototype, "isActive", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: 'Admin@123', description: 'Mật khẩu mới (tối thiểu 6 ký tự)' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(6, { message: 'Mật khẩu phải có ít nhất 6 ký tự' }),
+    __metadata("design:type", String)
+], UpdateUserDto.prototype, "password", void 0);
 //# sourceMappingURL=update-user.dto.js.map

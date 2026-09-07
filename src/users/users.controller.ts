@@ -21,6 +21,7 @@ import { SkipTransform } from '../common/decorators/skip-transform.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { AdminChangePasswordDto } from './dto/admin-change-password.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -191,6 +192,40 @@ export class UsersController {
   })
   update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
     return this.usersService.update(id, updateUserDto);
+  }
+
+  @Patch(':id/password')
+  @Post(':id/password')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'Admin đổi / đặt lại mật khẩu cho tài khoản người dùng',
+    description: 'Cho phép Quản trị viên đổi mật khẩu cho các tài khoản khác mà không cần biết mật khẩu cũ.',
+  })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Đổi mật khẩu tài khoản thành công',
+    exampleData: {
+      success: true,
+      message: 'Đã đổi mật khẩu cho tài khoản Lê Thu Hà (Lễ Tân) thành công',
+    },
+  })
+  @ApiErrorResponse({
+    status: 400,
+    message: 'Mật khẩu mới phải có ít nhất 6 ký tự',
+    error: 'Bad Request',
+    path: '/api/v1/users/:id/password',
+  })
+  @ApiErrorResponse({
+    status: 404,
+    message: 'Không tìm thấy người dùng với ID tương ứng',
+    error: 'Not Found',
+    path: '/api/v1/users/:id/password',
+  })
+  adminChangePassword(
+    @Param('id') id: string,
+    @Body() dto: AdminChangePasswordDto,
+  ) {
+    return this.usersService.adminChangePassword(id, dto);
   }
 
   @Delete(':id')
