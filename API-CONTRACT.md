@@ -1556,3 +1556,205 @@ Dành riêng cho vai trò `ADMIN` quản lý toàn diện thông tin buồng ph�
 - `404 Not Found`: Không tìm thấy phòng hoặc loại phòng tương ứng.
 - `409 Conflict`: Số phòng cập nhật bị trùng với phòng khác trong hệ thống.
 
+---
+
+## 9. Module Shifts — Quản lý Ca trực & Bàn giao Tiền két
+
+Module này giải quyết 2 bài toán vận hành cốt lõi:
+1. **Minh bạch nhân sự trực quầy**: Admin biết chính xác lễ tân nào đang làm việc tại quầy nào theo thời gian thực.
+2. **Kiểm soát dòng tiền két (Anti-leakage)**: Khai báo tiền mặt đầu ca, tự động ghi nhận mọi khoản thu/hoàn tiền mặt vào ca trực, và đối soát chênh lệch tiền thực tế khi chốt ca.
+
+---
+
+### S1. Bắt đầu ca trực quầy: `POST /api/v1/shifts/open`
+- **Quyền gọi:** `RECEPTIONIST`, `ADMIN`
+- **Mô tả:** Lễ tân mở ca khi bắt đầu làm việc tại quầy, khai báo số tiền mặt trong két nhận bàn giao đầu ca. Mỗi nhân viên chỉ được mở 1 ca `OPEN` tại một thời điểm.
+
+#### Payload gửi lên:
+```jsonc
+{
+  "shiftType": "MORNING",           // "MORNING" | "AFTERNOON" | "NIGHT" | "CUSTOM"
+  "initialCash": 2000000,          // Số tiền mặt nhận bàn giao đầu ca trong két (VND)
+  "deskName": "Quầy Lễ Tân 1",    // Tùy chọn: Tên quầy hoặc máy POS trực
+  "note": "Nhận bàn giao từ ca đêm" // Tùy chọn: Ghi chú khi nhận ca
+}
+```
+
+#### Dữ liệu trả về (HTTP 201):
+```jsonc
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Thành công",
+  "data": {
+    "id": "shift-uuid-001",
+    "shiftCode": "SFT-20260907-001",
+    "staffId": "user-uuid-receptionist",
+    "shiftType": "MORNING",
+    "deskName": "Quầy Lễ Tân 1",
+    "status": "OPEN",
+    "startTime": "2026-09-07T07:00:00.000Z",
+    "endTime": null,
+    "initialCash": 2000000,
+    "actualCash": null,
+    "expectedCash": null,
+    "cashDifference": null,
+    "creditCardAmount": 0,
+    "bankTransferAmount": 0,
+    "totalRevenue": 0,
+    "openNote": "Nhận bàn giao từ ca đêm",
+    "staff": {
+      "id": "user-uuid-receptionist",
+      "fullName": "Lê Thu Hà (Lễ Tân)",
+      "email": "reception@hotel.com",
+      "phone": "0903334455",
+      "avatar": "https://images.unsplash.com/...",
+      "role": "RECEPTIONIST"
+    },
+    "stats": {
+      "initialCash": 2000000,
+      "cashCollected": 0,
+      "cashRefunded": 0,
+      "netCashChange": 0,
+      "expectedCash": 2000000,
+      "creditCardAmount": 0,
+      "bankTransferAmount": 0,
+      "totalRevenue": 0,
+      "paymentCount": 0,
+      "refundCount": 0
+    }
+  }
+}
+```
+
+---
+
+### S2. Thông tin ca trực hiện tại của tôi: `GET /api/v1/shifts/current`
+- **Quyền gọi:** `RECEPTIONIST`, `ADMIN`
+- **Mô tả:** Lấy ca trực đang mở của nhân viên đang đăng nhập cùng số liệu đối soát tiền két theo thời gian thực (Realtime Shift Stats). Nếu nhân viên chưa mở ca, trả về `data: null`.
+
+#### Dữ liệu trả về (HTTP 200):
+```jsonc
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Thành công",
+  "data": {
+    "id": "shift-uuid-001",
+    "shiftCode": "SFT-20260907-001",
+    "staffId": "user-uuid-receptionist",
+    "shiftType": "MORNING",
+    "deskName": "Quầy Lễ Tân 1",
+    "status": "OPEN",
+    "startTime": "2026-09-07T07:00:00.000Z",
+    "initialCash": 2000000,
+    "stats": {
+      "initialCash": 2000000,
+      "cashCollected": 3500000,       // Tổng tiền mặt thu trong ca
+      "cashRefunded": 200000,         // Tổng tiền mặt hoàn trả khách
+      "netCashChange": 3300000,       // Biến động tiền mặt ròng
+      "expectedCash": 5300000,        // Số tiền mặt hiện tại phải có trong két (2.000.000 + 3.300.000)
+      "creditCardAmount": 1200000,    // Thu qua POS quẹt thẻ
+      "bankTransferAmount": 4800000,  // Thu qua QR chuyển khoản
+      "totalRevenue": 9300000,        // Tổng doanh thu phát sinh trong ca
+      "paymentCount": 7,              // Số lượt thu tiền
+      "refundCount": 1                // Số lượt hoàn tiền
+    }
+  }
+}
+```
+
+---
+
+### S3. Danh sách lễ tân đang trực quầy: `GET /api/v1/shifts/active`
+- **Quyền gọi:** `ADMIN`, `RECEPTIONIST`
+- **Mô tả:** **Dành cho Admin và Ban quản lý** xem danh sách các ca đang trực tại quầy theo thời gian thực.
+
+#### Dữ liệu trả về (HTTP 200):
+```jsonc
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Thành công",
+  "data": [
+    {
+      "id": "shift-uuid-001",
+      "shiftCode": "SFT-20260907-001",
+      "staffId": "user-uuid-001",
+      "staffName": "Lê Thu Hà (Lễ Tân)",
+      "staffAvatar": "https://images.unsplash.com/...",
+      "staffPhone": "0903334455",
+      "shiftType": "MORNING",
+      "deskName": "Quầy Lễ Tân 1",
+      "status": "OPEN",
+      "startTime": "2026-09-07T07:00:00.000Z",
+      "initialCash": 2000000,
+      "currentExpectedCash": 5300000,
+      "totalRevenueSoFar": 9300000
+    }
+  ]
+}
+```
+
+> **Lưu ý:** Endpoint `GET /api/v1/analytics/dashboard` cũng đã được bổ sung mảng `activeShifts` và số đếm `activeStaffCount` để hiển thị trực tiếp widget nhân sự trên Dashboard của Admin.
+
+---
+
+### S4. Chốt ca trực & bàn giao quỹ tiền két: `POST /api/v1/shifts/close`
+- **Quyền gọi:** `RECEPTIONIST`, `ADMIN`
+- **Mô tả:** Lễ tân kiểm đếm tiền mặt thực tế trong két và chốt ca. Nếu tiền thực tế lệch so với số sách (`actualCash !== expectedCash`), hệ thống bắt buộc nhập lý do giải trình (`differenceReason`).
+
+#### Payload gửi lên:
+```jsonc
+{
+  "actualCash": 5300000,                        // Số tiền mặt thực tế kiểm đếm có trong két
+  "closeNote": "Đã bàn giao tiền mặt và sổ sách",// Tùy chọn: Ghi chú khi chốt ca
+  "differenceReason": null,                     // Bắt buộc nếu có chênh lệch tiền mặt
+  "handoverStaffId": "user-uuid-next-staff"     // Tùy chọn: ID nhân viên nhận bàn giao ca tiếp theo
+}
+```
+
+#### Dữ liệu trả về (HTTP 200):
+```jsonc
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Thành công",
+  "data": {
+    "id": "shift-uuid-001",
+    "shiftCode": "SFT-20260907-001",
+    "status": "CLOSED",
+    "startTime": "2026-09-07T07:00:00.000Z",
+    "endTime": "2026-09-07T15:00:00.000Z",
+    "initialCash": 2000000,
+    "actualCash": 5300000,
+    "expectedCash": 5300000,
+    "cashDifference": 0,
+    "creditCardAmount": 1200000,
+    "bankTransferAmount": 4800000,
+    "totalRevenue": 9300000,
+    "differenceReason": null,
+    "closeNote": "Đã bàn giao tiền mặt và sổ sách",
+    "handoverStaffName": "Trần Văn B (Lễ Tân Ca Chiều)"
+  }
+}
+```
+
+---
+
+### S5. Tra cứu lịch sử ca trực: `GET /api/v1/shifts`
+- **Quyền gọi:** `ADMIN`, `RECEPTIONIST`
+- **Query params:**
+  - `staffId`: Lọc theo ID nhân viên
+  - `status`: `OPEN` | `CLOSED`
+  - `shiftType`: `MORNING` | `AFTERNOON` | `NIGHT` | `CUSTOM`
+  - `fromDate`, `toDate`: Khoảng thời gian
+  - `page`: Trang (mặc định 1)
+  - `limit`: Số bản ghi mỗi trang (mặc định 10)
+
+---
+
+### S6. Chi tiết ca trực & Bảng kê giao dịch: `GET /api/v1/shifts/:id`
+- **Quyền gọi:** `ADMIN`, `RECEPTIONIST`
+- **Mô tả:** Trả về toàn bộ thông tin chi tiết ca trực kèm danh sách đầy đủ các khoản thanh toán (`payments`) phát sinh trong ca để phục vụ in biên bản bàn giao ca hoặc kiểm toán kế toán.
+

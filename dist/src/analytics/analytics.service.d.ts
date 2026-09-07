@@ -30,6 +30,22 @@ export declare class AnalyticsService {
             CLEANING: number;
             MAINTENANCE: number;
         };
+        activeShifts: {
+            id: string;
+            staff: {
+                id: string;
+                fullName: string;
+                phone: string;
+                avatar: string;
+            };
+            shiftCode: string;
+            staffId: string;
+            shiftType: import(".prisma/client").$Enums.ShiftType;
+            deskName: string;
+            startTime: Date;
+            initialCash: number;
+        }[];
+        activeStaffCount: number;
         revenue7Days: DailyRevenuePoint[];
         revenueRanges: Record<string, {
             range: number;

@@ -171,6 +171,7 @@ export declare class BookingsController {
                 invoiceId: string;
                 createdById: string | null;
                 rejectedReason: string | null;
+                shiftId: string | null;
             })[];
         } & {
             id: string;

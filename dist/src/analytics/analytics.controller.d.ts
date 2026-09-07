@@ -29,6 +29,22 @@ export declare class AnalyticsController {
             CLEANING: number;
             MAINTENANCE: number;
         };
+        activeShifts: {
+            id: string;
+            staff: {
+                id: string;
+                fullName: string;
+                phone: string;
+                avatar: string;
+            };
+            shiftCode: string;
+            staffId: string;
+            shiftType: import(".prisma/client").$Enums.ShiftType;
+            deskName: string;
+            startTime: Date;
+            initialCash: number;
+        }[];
+        activeStaffCount: number;
         revenue7Days: import("../common/utils/revenue.util").DailyRevenuePoint[];
         revenueRanges: Record<string, {
             range: number;

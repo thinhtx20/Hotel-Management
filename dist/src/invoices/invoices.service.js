@@ -350,6 +350,12 @@ let InvoicesService = class InvoicesService {
                 `(${remaining.toLocaleString('vi-VN')}đ). Nếu khách trả dư, hãy thu đúng số còn lại và trả lại tiền thừa.`);
         }
         const now = new Date();
+        const activeShift = cashierId
+            ? await this.prisma.workShift.findFirst({
+                where: { staffId: cashierId, status: client_1.ShiftStatus.OPEN },
+                select: { id: true },
+            })
+            : null;
         const updated = await this.prisma.$transaction(async (tx) => {
             await tx.payment.create({
                 data: {
@@ -362,6 +368,7 @@ let InvoicesService = class InvoicesService {
                     createdById: cashierId,
                     confirmedById: cashierId,
                     confirmedAt: now,
+                    shiftId: activeShift?.id || null,
                 },
             });
             if (dto.notes) {
@@ -553,6 +560,12 @@ let InvoicesService = class InvoicesService {
             throw new common_1.BadRequestException(`Số tiền xác nhận (${amount.toLocaleString('vi-VN')}đ) vượt quá số còn phải thu của hóa đơn ` +
                 `(${remaining.toLocaleString('vi-VN')}đ)`);
         }
+        const activeShift = cashierId
+            ? await this.prisma.workShift.findFirst({
+                where: { staffId: cashierId, status: client_1.ShiftStatus.OPEN },
+                select: { id: true },
+            })
+            : null;
         const updated = await this.prisma.$transaction(async (tx) => {
             await tx.payment.update({
                 where: { id: paymentId },
@@ -562,6 +575,7 @@ let InvoicesService = class InvoicesService {
                     status: client_1.PaymentEntryStatus.CONFIRMED,
                     confirmedById: cashierId,
                     confirmedAt: new Date(),
+                    shiftId: activeShift?.id || null,
                     note: dto.note ? `${payment.note || ''}\n${dto.note}`.trim() : payment.note,
                 },
             });
@@ -787,6 +801,12 @@ let InvoicesService = class InvoicesService {
         }
         const refundNote = `[Hoàn tiền: ${dto.amount.toLocaleString()}đ lúc ${new Date().toLocaleString('vi-VN')}. Lý do: ${dto.reason}]`;
         const updatedNotes = invoice.notes ? `${invoice.notes}\n${refundNote}` : refundNote;
+        const activeShift = staffId
+            ? await this.prisma.workShift.findFirst({
+                where: { staffId, status: client_1.ShiftStatus.OPEN },
+                select: { id: true },
+            })
+            : null;
         const updated = await this.prisma.$transaction(async (tx) => {
             await tx.payment.create({
                 data: {
@@ -799,6 +819,7 @@ let InvoicesService = class InvoicesService {
                     createdById: staffId,
                     confirmedById: staffId,
                     confirmedAt: new Date(),
+                    shiftId: activeShift?.id || null,
                 },
             });
             await tx.invoice.update({

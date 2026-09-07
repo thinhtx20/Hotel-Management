@@ -30,6 +30,7 @@ import {
   Prisma,
   Role,
   RoomStatus,
+  ShiftStatus,
 } from '@prisma/client';
 import { RoomEventsService } from '../rooms/room-events.service';
 import { InvoicesService } from '../invoices/invoices.service';
@@ -501,6 +502,13 @@ export class BookingsService {
         where: { invoiceId: invoiceRow.id, type: PaymentEntryType.DEPOSIT },
       });
 
+      const activeShift = currentUserId
+        ? await tx.workShift.findFirst({
+            where: { staffId: currentUserId, status: ShiftStatus.OPEN },
+            select: { id: true },
+          })
+        : null;
+
       await tx.payment.create({
         data: {
           invoiceId: invoiceRow.id,
@@ -512,6 +520,7 @@ export class BookingsService {
           createdById: currentUserId,
           confirmedById: currentUserId,
           confirmedAt: new Date(),
+          shiftId: activeShift?.id || null,
         },
       });
 
@@ -829,6 +838,13 @@ export class BookingsService {
       });
 
       if (collected > 0) {
+        const activeShift = cashierId
+          ? await tx.workShift.findFirst({
+              where: { staffId: cashierId, status: ShiftStatus.OPEN },
+              select: { id: true },
+            })
+          : null;
+
         await tx.payment.create({
           data: {
             invoiceId: invoiceRow.id,
@@ -840,6 +856,7 @@ export class BookingsService {
             createdById: cashierId,
             confirmedById: cashierId,
             confirmedAt: now,
+            shiftId: activeShift?.id || null,
           },
         });
       }

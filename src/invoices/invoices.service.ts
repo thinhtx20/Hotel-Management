@@ -20,6 +20,7 @@ import {
   PaymentStatus,
   Prisma,
   Role,
+  ShiftStatus,
 } from '@prisma/client';
 import {
   collectedRevenueWhere,
@@ -502,6 +503,13 @@ export class InvoicesService {
 
     const now = new Date();
 
+    const activeShift = cashierId
+      ? await this.prisma.workShift.findFirst({
+          where: { staffId: cashierId, status: ShiftStatus.OPEN },
+          select: { id: true },
+        })
+      : null;
+
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.payment.create({
         data: {
@@ -514,6 +522,7 @@ export class InvoicesService {
           createdById: cashierId,
           confirmedById: cashierId,
           confirmedAt: now,
+          shiftId: activeShift?.id || null,
         },
       });
 
@@ -791,6 +800,13 @@ export class InvoicesService {
       );
     }
 
+    const activeShift = cashierId
+      ? await this.prisma.workShift.findFirst({
+          where: { staffId: cashierId, status: ShiftStatus.OPEN },
+          select: { id: true },
+        })
+      : null;
+
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.payment.update({
         where: { id: paymentId },
@@ -800,6 +816,7 @@ export class InvoicesService {
           status: PaymentEntryStatus.CONFIRMED,
           confirmedById: cashierId,
           confirmedAt: new Date(),
+          shiftId: activeShift?.id || null,
           note: dto.note ? `${payment.note || ''}\n${dto.note}`.trim() : payment.note,
         },
       });
@@ -1103,6 +1120,13 @@ export class InvoicesService {
     const refundNote = `[Hoàn tiền: ${dto.amount.toLocaleString()}đ lúc ${new Date().toLocaleString('vi-VN')}. Lý do: ${dto.reason}]`;
     const updatedNotes = invoice.notes ? `${invoice.notes}\n${refundNote}` : refundNote;
 
+    const activeShift = staffId
+      ? await this.prisma.workShift.findFirst({
+          where: { staffId, status: ShiftStatus.OPEN },
+          select: { id: true },
+        })
+      : null;
+
     const updated = await this.prisma.$transaction(async (tx) => {
       // Hoàn tiền cũng là một dòng của sổ thu tiền (mang dấu âm) để lịch sử
       // giao dịch hiển thị cho khách luôn đầy đủ.
@@ -1117,6 +1141,7 @@ export class InvoicesService {
           createdById: staffId,
           confirmedById: staffId,
           confirmedAt: new Date(),
+          shiftId: activeShift?.id || null,
         },
       });
 

@@ -350,6 +350,12 @@ let BookingsService = BookingsService_1 = class BookingsService {
             await tx.payment.deleteMany({
                 where: { invoiceId: invoiceRow.id, type: client_1.PaymentEntryType.DEPOSIT },
             });
+            const activeShift = currentUserId
+                ? await tx.workShift.findFirst({
+                    where: { staffId: currentUserId, status: client_1.ShiftStatus.OPEN },
+                    select: { id: true },
+                })
+                : null;
             await tx.payment.create({
                 data: {
                     invoiceId: invoiceRow.id,
@@ -361,6 +367,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                     createdById: currentUserId,
                     confirmedById: currentUserId,
                     confirmedAt: new Date(),
+                    shiftId: activeShift?.id || null,
                 },
             });
             const settledInvoice = await this.invoices.recalculateInvoiceTotals(tx, invoiceRow.id);
@@ -589,6 +596,12 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 },
             });
             if (collected > 0) {
+                const activeShift = cashierId
+                    ? await tx.workShift.findFirst({
+                        where: { staffId: cashierId, status: client_1.ShiftStatus.OPEN },
+                        select: { id: true },
+                    })
+                    : null;
                 await tx.payment.create({
                     data: {
                         invoiceId: invoiceRow.id,
@@ -600,6 +613,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                         createdById: cashierId,
                         confirmedById: cashierId,
                         confirmedAt: now,
+                        shiftId: activeShift?.id || null,
                     },
                 });
             }

@@ -53,7 +53,7 @@ let AnalyticsService = class AnalyticsService {
                 },
             }),
         ]);
-        const [allRevenueAggregate, todayRevenueAggregate, yesterdayRevenueAggregate, pendingBookings, unpaidInvoices,] = await Promise.all([
+        const [allRevenueAggregate, todayRevenueAggregate, yesterdayRevenueAggregate, pendingBookings, unpaidInvoices, activeShifts,] = await Promise.all([
             this.prisma.invoice.aggregate({
                 _sum: { paidAmount: true },
                 where: { paymentStatus: { in: revenue_util_1.COLLECTED_PAYMENT_STATUSES } },
@@ -73,6 +73,27 @@ let AnalyticsService = class AnalyticsService {
                 where: {
                     paymentStatus: { in: [client_1.PaymentStatus.UNPAID, client_1.PaymentStatus.PARTIAL] },
                 },
+            }),
+            this.prisma.workShift.findMany({
+                where: { status: client_1.ShiftStatus.OPEN },
+                select: {
+                    id: true,
+                    shiftCode: true,
+                    staffId: true,
+                    shiftType: true,
+                    deskName: true,
+                    startTime: true,
+                    initialCash: true,
+                    staff: {
+                        select: {
+                            id: true,
+                            fullName: true,
+                            avatar: true,
+                            phone: true,
+                        },
+                    },
+                },
+                orderBy: { startTime: 'desc' },
             }),
         ]);
         const todayRevenue = (0, revenue_util_1.roundMoney)(todayRevenueAggregate._sum.paidAmount || 0);
@@ -112,6 +133,8 @@ let AnalyticsService = class AnalyticsService {
             pendingInvoicesCount: unpaidInvoices,
             unpaidInvoices,
             roomStatusBreakdown,
+            activeShifts,
+            activeStaffCount: activeShifts.length,
             revenue7Days,
             revenueRanges: dailyRev.ranges,
             availableRanges: revenue_util_1.REVENUE_RANGES,

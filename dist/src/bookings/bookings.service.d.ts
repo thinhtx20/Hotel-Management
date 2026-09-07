@@ -171,6 +171,7 @@ export declare class BookingsService {
                 invoiceId: string;
                 createdById: string | null;
                 rejectedReason: string | null;
+                shiftId: string | null;
             })[];
         } & {
             id: string;

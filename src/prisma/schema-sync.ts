@@ -213,6 +213,90 @@ const SCHEMA_SYNC_STEPS: SchemaSyncStep[] = [
       END $$;
     `,
   },
+  {
+    label: 'Enum ShiftType / ShiftStatus (quản lý ca trực)',
+    sql: `
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ShiftType') THEN
+          CREATE TYPE "ShiftType" AS ENUM ('MORNING', 'AFTERNOON', 'NIGHT', 'CUSTOM');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ShiftStatus') THEN
+          CREATE TYPE "ShiftStatus" AS ENUM ('OPEN', 'CLOSED');
+        END IF;
+      END $$;
+    `,
+  },
+  {
+    label: 'Bảng work_shifts (quản lý ca làm việc và bàn giao tiền két)',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "work_shifts" (
+        "id" TEXT NOT NULL,
+        "shiftCode" TEXT NOT NULL,
+        "staffId" TEXT NOT NULL,
+        "shiftType" "ShiftType" NOT NULL DEFAULT 'MORNING',
+        "deskName" TEXT,
+        "status" "ShiftStatus" NOT NULL DEFAULT 'OPEN',
+        "startTime" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "endTime" TIMESTAMP(3),
+        "initialCash" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "actualCash" DOUBLE PRECISION,
+        "expectedCash" DOUBLE PRECISION,
+        "cashDifference" DOUBLE PRECISION,
+        "creditCardAmount" DOUBLE PRECISION DEFAULT 0,
+        "bankTransferAmount" DOUBLE PRECISION DEFAULT 0,
+        "totalRevenue" DOUBLE PRECISION DEFAULT 0,
+        "openNote" TEXT,
+        "closeNote" TEXT,
+        "differenceReason" TEXT,
+        "handoverStaffId" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+        CONSTRAINT "work_shifts_pkey" PRIMARY KEY ("id")
+      );
+    `,
+  },
+  {
+    label: 'Chỉ mục và khóa ngoại bảng work_shifts',
+    sql: `
+      DO $$
+      BEGIN
+        IF to_regclass('public.work_shifts') IS NOT NULL THEN
+          CREATE UNIQUE INDEX IF NOT EXISTS "work_shifts_shiftCode_key" ON "work_shifts"("shiftCode");
+          CREATE INDEX IF NOT EXISTS "work_shifts_staffId_idx" ON "work_shifts"("staffId");
+          CREATE INDEX IF NOT EXISTS "work_shifts_status_idx" ON "work_shifts"("status");
+          CREATE INDEX IF NOT EXISTS "work_shifts_startTime_idx" ON "work_shifts"("startTime");
+
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'work_shifts_staffId_fkey') THEN
+            ALTER TABLE "work_shifts" ADD CONSTRAINT "work_shifts_staffId_fkey"
+              FOREIGN KEY ("staffId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'work_shifts_handoverStaffId_fkey') THEN
+            ALTER TABLE "work_shifts" ADD CONSTRAINT "work_shifts_handoverStaffId_fkey"
+              FOREIGN KEY ("handoverStaffId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+          END IF;
+        END IF;
+      END $$;
+    `,
+  },
+  {
+    label: 'Bảng payments bổ sung shiftId liên kết ca trực',
+    sql: `
+      DO $$
+      BEGIN
+        IF to_regclass('public.payments') IS NOT NULL THEN
+          ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "shiftId" TEXT;
+          CREATE INDEX IF NOT EXISTS "payments_shiftId_idx" ON "payments"("shiftId");
+
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payments_shiftId_fkey') THEN
+            ALTER TABLE "payments" ADD CONSTRAINT "payments_shiftId_fkey"
+              FOREIGN KEY ("shiftId") REFERENCES "work_shifts"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+          END IF;
+        END IF;
+      END $$;
+    `,
+  },
 ];
 
 /**

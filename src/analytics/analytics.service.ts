@@ -7,6 +7,7 @@ import {
   PaymentStatus,
   RoomStatus,
   Role,
+  ShiftStatus,
 } from '@prisma/client';
 import {
   COLLECTED_PAYMENT_STATUSES,
@@ -81,6 +82,7 @@ export class AnalyticsService {
       yesterdayRevenueAggregate,
       pendingBookings,
       unpaidInvoices,
+      activeShifts,
     ] = await Promise.all([
       this.prisma.invoice.aggregate({
         _sum: { paidAmount: true },
@@ -101,6 +103,27 @@ export class AnalyticsService {
         where: {
           paymentStatus: { in: [PaymentStatus.UNPAID, PaymentStatus.PARTIAL] },
         },
+      }),
+      this.prisma.workShift.findMany({
+        where: { status: ShiftStatus.OPEN },
+        select: {
+          id: true,
+          shiftCode: true,
+          staffId: true,
+          shiftType: true,
+          deskName: true,
+          startTime: true,
+          initialCash: true,
+          staff: {
+            select: {
+              id: true,
+              fullName: true,
+              avatar: true,
+              phone: true,
+            },
+          },
+        },
+        orderBy: { startTime: 'desc' },
       }),
     ]);
 
@@ -151,6 +174,8 @@ export class AnalyticsService {
       pendingInvoicesCount: unpaidInvoices,
       unpaidInvoices,
       roomStatusBreakdown,
+      activeShifts,
+      activeStaffCount: activeShifts.length,
       revenue7Days,
       revenueRanges: dailyRev.ranges,
       availableRanges: REVENUE_RANGES,
