@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.InvoicesService = void 0;
+const notifications_service_1 = require("../notifications/notifications.service");
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const query_invoices_dto_1 = require("./dto/query-invoices.dto");
@@ -34,8 +35,9 @@ const INVOICE_INCLUDE = {
     },
 };
 let InvoicesService = class InvoicesService {
-    constructor(prisma) {
+    constructor(prisma, notificationsService) {
         this.prisma = prisma;
+        this.notificationsService = notificationsService;
     }
     async recalculateInvoiceTotals(tx, invoiceId) {
         const invoice = await tx.invoice.findUnique({
@@ -541,7 +543,7 @@ let InvoicesService = class InvoicesService {
     async confirmPayment(paymentId, dto, cashierId) {
         const payment = await this.prisma.payment.findUnique({
             where: { id: paymentId },
-            include: { invoice: { select: { id: true, finalAmount: true, paidAmount: true } } },
+            include: { invoice: { select: { id: true, finalAmount: true, paidAmount: true, invoiceCode: true, booking: { select: { customerId: true } } } } },
         });
         if (!payment) {
             throw new common_1.NotFoundException(`Không tìm thấy yêu cầu thanh toán ID: ${paymentId}`);
@@ -586,6 +588,19 @@ let InvoicesService = class InvoicesService {
             return this.recalculateInvoiceTotals(tx, payment.invoiceId);
         });
         const response = this.toInvoiceResponse(updated);
+        if (payment.invoice?.booking?.customerId) {
+            this.notificationsService.sendToUser(payment.invoice.booking.customerId, {
+                title: 'Thanh toán thành công',
+                body: `Khoản thanh toán ${amount.toLocaleString('vi-VN')}đ cho hóa đơn ${payment.invoice.invoiceCode || ''} đã được xác nhận.`,
+                category: 'payment',
+                actionRoute: '/my-bookings',
+                actionLabel: 'Xem hóa đơn',
+                data: {
+                    type: 'PAYMENT_CONFIRMED',
+                    invoiceId: payment.invoiceId,
+                },
+            }).catch(() => { });
+        }
         return {
             message: response.remainingAmount > 0
                 ? `Đã xác nhận thu ${amount.toLocaleString('vi-VN')}đ. Hóa đơn còn thiếu ${response.remainingAmount.toLocaleString('vi-VN')}đ.`
@@ -834,6 +849,6 @@ let InvoicesService = class InvoicesService {
 exports.InvoicesService = InvoicesService;
 exports.InvoicesService = InvoicesService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService, notifications_service_1.NotificationsService])
 ], InvoicesService);
 //# sourceMappingURL=invoices.service.js.map

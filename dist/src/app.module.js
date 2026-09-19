@@ -23,6 +23,7 @@ const mail_module_1 = require("./mail/mail.module");
 const services_module_1 = require("./services/services.module");
 const upload_module_1 = require("./upload/upload.module");
 const shifts_module_1 = require("./shifts/shifts.module");
+const notifications_module_1 = require("./notifications/notifications.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -47,6 +48,7 @@ exports.AppModule = AppModule = __decorate([
             services_module_1.ServicesModule,
             upload_module_1.UploadModule,
             shifts_module_1.ShiftsModule,
+            notifications_module_1.NotificationsModule,
         ],
     })
 ], AppModule);

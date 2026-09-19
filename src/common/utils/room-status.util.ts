@@ -1,10 +1,18 @@
 import { BookingStatus, RoomStatus } from '@prisma/client';
 
 /**
- * Các trạng thái phòng do con người đặt tay, không được suy ra từ lịch đặt phòng.
- * Lễ tân phải tự chuyển phòng ra khỏi các trạng thái này.
+ * Các trạng thái phòng do con người đặt tay hoặc quy trình buồng phòng vận hành,
+ * không được tự động suy diễn đè từ lịch đặt phòng:
+ * - CLEANING: Khách vừa trả phòng hoặc nhân viên đang dọn dẹp vệ sinh phòng.
+ *   Phải đợi buồng phòng xác nhận dọn xong (chuyển sang AVAILABLE) thì phòng
+ *   mới sẵn sàng đón lượt khách tiếp theo. Tuyệt đối không tự động nhảy sang
+ *   RESERVED hay AVAILABLE dù ngày hôm nay có đơn đặt phòng CONFIRMED kế tiếp.
+ * - MAINTENANCE: Phòng đang sửa chữa, bảo trì kỹ thuật.
+ * - PENDING_APPROVAL: Phòng mới tạo chưa được duyệt.
+ * - REJECTED: Phòng bị từ chối duyệt.
  */
 export const MANUAL_ROOM_STATUSES: RoomStatus[] = [
+  RoomStatus.CLEANING,
   RoomStatus.MAINTENANCE,
   RoomStatus.PENDING_APPROVAL,
   RoomStatus.REJECTED,
@@ -19,9 +27,10 @@ export interface RoomStatusBookingInput {
 /**
  * Nguồn sự thật duy nhất cho trạng thái phòng suy ra từ lịch đặt phòng.
  *
- *  - Đang có khách CHECKED_IN và chưa hết hạn trả phòng -> OCCUPIED
+ *  - Đang có khách CHECKED_IN (chưa trả phòng và thanh toán) -> luôn là OCCUPIED
+ *  - Các trạng thái thủ công / buồng phòng (CLEANING, MAINTENANCE, PENDING_APPROVAL, REJECTED) -> giữ nguyên
  *  - Có đơn CONFIRMED giữ phòng cho ngày hôm nay (chưa qua ngày trả) -> RESERVED
- *  - Không có đơn nào đang giữ phòng hôm nay -> giữ CLEANING nếu đang dọn, ngược lại AVAILABLE
+ *  - Không có đơn nào đang giữ phòng hôm nay -> AVAILABLE
  *
  * Đơn PENDING KHÔNG chiếm phòng: khách mới gửi yêu cầu, lễ tân chưa xác nhận.
  */
@@ -30,20 +39,21 @@ export function deriveRoomStatus(
   bookings: RoomStatusBookingInput[],
   now: Date = new Date(),
 ): RoomStatus {
-  if (MANUAL_ROOM_STATUSES.includes(currentStatus)) {
-    return currentStatus;
-  }
-
-    // 1. Đang có khách CHECKED_IN (chưa trả phòng và thanh toán) -> luôn là OCCUPIED
+  // 1. Đang có khách CHECKED_IN (chưa trả phòng và thanh toán) -> luôn là OCCUPIED
   if (bookings.some((b) => b.status === BookingStatus.CHECKED_IN)) {
     return RoomStatus.OCCUPIED;
+  }
+
+  // 2. Các trạng thái thủ công / buồng phòng được bảo toàn, không bị lịch đặt phòng ghi đè
+  if (MANUAL_ROOM_STATUSES.includes(currentStatus)) {
+    return currentStatus;
   }
 
   // Cuối ngày hôm nay để xét đơn đặt phòng có hiệu lực cho ngày hôm nay
   const endOfToday = new Date(now);
   endOfToday.setHours(23, 59, 59, 999);
 
-  // 2. Có đơn CONFIRMED đang giữ phòng cho hôm nay:
+  // 3. Có đơn CONFIRMED đang giữ phòng cho hôm nay:
   // Đã hoặc sẽ nhận phòng trước cuối ngày hôm nay, và chưa tới giờ trả phòng.
   if (
     bookings.some((b) => {
@@ -58,11 +68,6 @@ export function deriveRoomStatus(
     })
   ) {
     return RoomStatus.RESERVED;
-  }
-
-  // 3. Phòng vừa trả và đang dọn dẹp vẫn phải chờ buồng phòng xác nhận xong.
-  if (currentStatus === RoomStatus.CLEANING) {
-    return RoomStatus.CLEANING;
   }
 
   return RoomStatus.AVAILABLE;

@@ -109,6 +109,7 @@ export declare class UsersService {
         fullName?: string;
         phone?: string;
         avatar?: string;
+        fcmToken?: string;
     }): Promise<{
         avatarUrl: string;
         id: string;
@@ -131,5 +132,9 @@ export declare class UsersService {
         avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
+    }>;
+    updateFcmToken(userId: string, fcmToken: string): Promise<{
+        message: string;
+        fcmToken: string;
     }>;
 }

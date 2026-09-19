@@ -6,6 +6,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { AdminChangePasswordDto } from './dto/admin-change-password.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { UpdateFcmTokenDto } from './dto/update-fcm-token.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 export declare class UsersController {
     private readonly usersService;
@@ -22,6 +23,10 @@ export declare class UsersController {
         avatar: string;
         role: import(".prisma/client").$Enums.Role;
         isActive: boolean;
+    }>;
+    updateFcmToken(userId: string, dto: UpdateFcmTokenDto): Promise<{
+        message: string;
+        fcmToken: string;
     }>;
     create(dto: CreateUserDto): Promise<{
         id: string;

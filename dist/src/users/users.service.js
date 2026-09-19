@@ -24,7 +24,7 @@ let UsersService = class UsersService {
         const email = dto.email.trim().toLowerCase();
         const existing = await this.prisma.user.findUnique({ where: { email } });
         if (existing) {
-            throw new common_1.ConflictException('Email này đã được đăng ký trong hệ thống');
+            throw new common_1.ConflictException('Email nÃ y Ä‘Ã£ Ä‘Æ°á»£c Ä‘Äƒng kÃ½ trong há»‡ thá»‘ng');
         }
         const hashedPassword = await bcrypt.hash(dto.password, await bcrypt.genSalt(10));
         const created = await this.prisma.user.create({
@@ -116,7 +116,7 @@ let UsersService = class UsersService {
             },
         });
         if (!user) {
-            throw new common_1.NotFoundException(`Không tìm thấy người dùng với ID: ${id}`);
+            throw new common_1.NotFoundException(`KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i dÃ¹ng vá»›i ID: ${id}`);
         }
         return user;
     }
@@ -146,11 +146,11 @@ let UsersService = class UsersService {
     async adminChangePassword(id, dto) {
         const user = await this.prisma.user.findUnique({ where: { id } });
         if (!user) {
-            throw new common_1.NotFoundException(`Không tìm thấy người dùng với ID: ${id}`);
+            throw new common_1.NotFoundException(`KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i dÃ¹ng vá»›i ID: ${id}`);
         }
         const newPassword = dto.newPassword || dto.password;
         if (!newPassword || newPassword.trim().length < 6) {
-            throw new common_1.BadRequestException('Mật khẩu mới phải có ít nhất 6 ký tự');
+            throw new common_1.BadRequestException('Máº­t kháº©u má»›i pháº£i cÃ³ Ã­t nháº¥t 6 kÃ½ tá»±');
         }
         const hashedPassword = await bcrypt.hash(newPassword.trim(), await bcrypt.genSalt(10));
         await this.prisma.user.update({
@@ -159,7 +159,7 @@ let UsersService = class UsersService {
         });
         return {
             success: true,
-            message: `Đã đổi mật khẩu cho tài khoản ${user.fullName || user.email} thành công`,
+            message: `ÄÃ£ Ä‘á»•i máº­t kháº©u cho tÃ i khoáº£n ${user.fullName || user.email} thÃ nh cÃ´ng`,
         };
     }
     async updateMe(id, dto) {
@@ -170,6 +170,7 @@ let UsersService = class UsersService {
                 ...(dto.fullName ? { fullName: dto.fullName } : {}),
                 ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
                 ...(dto.avatar !== undefined ? { avatar: dto.avatar } : {}),
+                ...(dto.fcmToken !== undefined ? { fcmToken: dto.fcmToken } : {}),
             },
             select: {
                 id: true,
@@ -208,6 +209,14 @@ let UsersService = class UsersService {
         });
         this.userEvents.emitDeactivated(deactivated);
         return deactivated;
+    }
+    async updateFcmToken(userId, fcmToken) {
+        await this.findOne(userId);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { fcmToken },
+        });
+        return { message: 'Cập nhật FCM token thành công', fcmToken };
     }
 };
 exports.UsersService = UsersService;

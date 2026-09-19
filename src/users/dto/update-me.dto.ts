@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+﻿import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString } from 'class-validator';
 
 export class UpdateMeDto {
@@ -16,4 +16,9 @@ export class UpdateMeDto {
   @IsOptional()
   @IsString()
   avatar?: string;
+
+  @ApiPropertyOptional({ example: 'fZ0yZ...xyz' })
+  @IsOptional()
+  @IsString()
+  fcmToken?: string;
 }

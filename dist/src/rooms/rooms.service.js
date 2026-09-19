@@ -501,6 +501,21 @@ let RoomsService = class RoomsService {
     }
     async remove(id) {
         const existing = await this.findOne(id, true);
+        const activeBooking = await this.prisma.booking.findFirst({
+            where: {
+                roomId: id,
+                status: { in: [client_1.BookingStatus.CHECKED_IN, client_1.BookingStatus.CONFIRMED, client_1.BookingStatus.PENDING] },
+            },
+        });
+        if (activeBooking) {
+            throw new common_1.BadRequestException(`Không thể xóa phòng ${existing.roomNumber} vì đang có đơn đặt phòng chưa hoàn tất (mã đơn: ${activeBooking.bookingCode}). Vui lòng xử lý đơn đặt phòng trước khi xóa.`);
+        }
+        const totalBookings = await this.prisma.booking.count({
+            where: { roomId: id },
+        });
+        if (totalBookings > 0) {
+            throw new common_1.BadRequestException(`Không thể xóa hoàn toàn phòng ${existing.roomNumber} do phòng đã có ${totalBookings} đơn đặt phòng trong lịch sử. Để ngừng kinh doanh phòng này, vui lòng chuyển trạng thái phòng sang BẢO TRÌ (MAINTENANCE) hoặc TỪ CHỐI (REJECTED).`);
+        }
         const deleted = await this.prisma.room.delete({
             where: { id },
         });

@@ -13,14 +13,16 @@ import { UpdateServiceOrderStatusDto } from './dto/update-service-order-status.d
 import { Role } from '@prisma/client';
 import { RoomEventsService } from '../rooms/room-events.service';
 import { InvoicesService } from '../invoices/invoices.service';
+import { NotificationsService } from '../notifications/notifications.service';
 export declare class BookingsService {
     private prisma;
     private redis;
     private esService;
     private roomEvents;
     private invoices;
+    private notificationsService;
     private readonly logger;
-    constructor(prisma: PrismaService, redis: RedisService, esService: ElasticsearchService, roomEvents: RoomEventsService, invoices: InvoicesService);
+    constructor(prisma: PrismaService, redis: RedisService, esService: ElasticsearchService, roomEvents: RoomEventsService, invoices: InvoicesService, notificationsService: NotificationsService);
     private reindexRoom;
     private syncRoomStatus;
     create(dto: CreateBookingDto, currentUserId: string, currentUserRole: Role): Promise<any>;
@@ -248,5 +250,17 @@ export declare class BookingsService {
         note: string | null;
         totalPrice: number;
         requestedById: string | null;
+    }>;
+    notifyCheckoutReminder(bookingId: string): Promise<{
+        success: boolean;
+        message: string;
+        bookingId: string;
+        roomNumber: string;
+        hasFcmToken: boolean;
+    }>;
+    notifyAllTodayCheckouts(): Promise<{
+        message: string;
+        totalDueToday: number;
+        notificationsSent: number;
     }>;
 }

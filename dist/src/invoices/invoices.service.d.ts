@@ -1,3 +1,4 @@
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
@@ -9,7 +10,8 @@ import { QueryPaymentRequestsDto } from './dto/query-payment-requests.dto';
 import { PaymentEntryStatus, PaymentStatus, Prisma, Role } from '@prisma/client';
 export declare class InvoicesService {
     private prisma;
-    constructor(prisma: PrismaService);
+    private notificationsService;
+    constructor(prisma: PrismaService, notificationsService: NotificationsService);
     recalculateInvoiceTotals(tx: Prisma.TransactionClient, invoiceId: string): Promise<{
         booking: {
             room: {

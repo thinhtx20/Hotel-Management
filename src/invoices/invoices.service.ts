@@ -1,3 +1,4 @@
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   Injectable,
   NotFoundException,
@@ -51,7 +52,7 @@ const INVOICE_INCLUDE = {
 
 @Injectable()
 export class InvoicesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private notificationsService: NotificationsService) {}
 
   /**
    * Tính lại `paidAmount` / `paymentStatus` / `paidAt` của hóa đơn từ sổ thu tiền.
@@ -767,7 +768,7 @@ export class InvoicesService {
   async confirmPayment(paymentId: string, dto: ConfirmPaymentDto, cashierId: string) {
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
-      include: { invoice: { select: { id: true, finalAmount: true, paidAmount: true } } },
+      include: { invoice: { select: { id: true, finalAmount: true, paidAmount: true, invoiceCode: true, booking: { select: { customerId: true } } } } },
     });
 
     if (!payment) {
@@ -830,6 +831,20 @@ export class InvoicesService {
     });
 
     const response = this.toInvoiceResponse(updated);
+
+    if (payment.invoice?.booking?.customerId) {
+      this.notificationsService.sendToUser(payment.invoice.booking.customerId, {
+        title: 'Thanh toán thành công',
+        body: `Khoản thanh toán ${amount.toLocaleString('vi-VN')}đ cho hóa đơn ${payment.invoice.invoiceCode || ''} đã được xác nhận.`,
+        category: 'payment',
+        actionRoute: '/my-bookings',
+        actionLabel: 'Xem hóa đơn',
+        data: {
+          type: 'PAYMENT_CONFIRMED',
+          invoiceId: payment.invoiceId,
+        },
+      }).catch(() => {});
+    }
 
     return {
       message:

@@ -250,4 +250,16 @@ export declare class BookingsController {
         totalPrice: number;
         requestedById: string | null;
     }>;
+    notifyCheckoutReminder(id: string): Promise<{
+        success: boolean;
+        message: string;
+        bookingId: string;
+        roomNumber: string;
+        hasFcmToken: boolean;
+    }>;
+    notifyTodayCheckouts(): Promise<{
+        message: string;
+        totalDueToday: number;
+        notificationsSent: number;
+    }>;
 }

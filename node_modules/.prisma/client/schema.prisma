@@ -95,6 +95,7 @@ model User {
   // activeSessionId là mã phiên duy nhất đang có hiệu lực (khớp với `sid` trong JWT).
   activeSessionId String?
   activeDevice    String?
+  fcmToken        String?
   lastLoginAt     DateTime?
 
   bookings          Booking[]

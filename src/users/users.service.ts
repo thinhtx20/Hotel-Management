@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+﻿import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -17,15 +17,15 @@ export class UsersService {
   ) {}
 
   /**
-   * Admin tạo tài khoản nhân viên với vai trò chỉ định.
-   * Khác /auth/register (luôn ép CUSTOMER và không trả về vai trò tùy chọn).
+   * Admin táº¡o tÃ i khoáº£n nhÃ¢n viÃªn vá»›i vai trÃ² chá»‰ Ä‘á»‹nh.
+   * KhÃ¡c /auth/register (luÃ´n Ã©p CUSTOMER vÃ  khÃ´ng tráº£ vá» vai trÃ² tÃ¹y chá»n).
    */
   async create(dto: CreateUserDto) {
     const email = dto.email.trim().toLowerCase();
 
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
-      throw new ConflictException('Email này đã được đăng ký trong hệ thống');
+      throw new ConflictException('Email nÃ y Ä‘Ã£ Ä‘Æ°á»£c Ä‘Äƒng kÃ½ trong há»‡ thá»‘ng');
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, await bcrypt.genSalt(10));
@@ -52,7 +52,7 @@ export class UsersService {
       },
     });
 
-    // Đẩy realtime để danh sách tài khoản đang mở tự thêm dòng mới
+    // Äáº©y realtime Ä‘á»ƒ danh sÃ¡ch tÃ i khoáº£n Ä‘ang má»Ÿ tá»± thÃªm dÃ²ng má»›i
     this.userEvents.emitCreated(created);
 
     return created;
@@ -130,7 +130,7 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new NotFoundException(`Không tìm thấy người dùng với ID: ${id}`);
+      throw new NotFoundException(`KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i dÃ¹ng vá»›i ID: ${id}`);
     }
 
     return user;
@@ -163,17 +163,17 @@ export class UsersService {
   }
 
   /**
-   * Admin đổi / đặt lại mật khẩu cho tài khoản người dùng khác
+   * Admin Ä‘á»•i / Ä‘áº·t láº¡i máº­t kháº©u cho tÃ i khoáº£n ngÆ°á»i dÃ¹ng khÃ¡c
    */
   async adminChangePassword(id: string, dto: AdminChangePasswordDto) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
-      throw new NotFoundException(`Không tìm thấy người dùng với ID: ${id}`);
+      throw new NotFoundException(`KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i dÃ¹ng vá»›i ID: ${id}`);
     }
 
     const newPassword = dto.newPassword || dto.password;
     if (!newPassword || newPassword.trim().length < 6) {
-      throw new BadRequestException('Mật khẩu mới phải có ít nhất 6 ký tự');
+      throw new BadRequestException('Máº­t kháº©u má»›i pháº£i cÃ³ Ã­t nháº¥t 6 kÃ½ tá»±');
     }
 
     const hashedPassword = await bcrypt.hash(newPassword.trim(), await bcrypt.genSalt(10));
@@ -185,11 +185,11 @@ export class UsersService {
 
     return {
       success: true,
-      message: `Đã đổi mật khẩu cho tài khoản ${user.fullName || user.email} thành công`,
+      message: `ÄÃ£ Ä‘á»•i máº­t kháº©u cho tÃ i khoáº£n ${user.fullName || user.email} thÃ nh cÃ´ng`,
     };
   }
 
-  async updateMe(id: string, dto: { fullName?: string; phone?: string; avatar?: string }) {
+  async updateMe(id: string, dto: { fullName?: string; phone?: string; avatar?: string; fcmToken?: string }) {
     await this.findOne(id);
     const updated = await this.prisma.user.update({
       where: { id },
@@ -197,6 +197,7 @@ export class UsersService {
         ...(dto.fullName ? { fullName: dto.fullName } : {}),
         ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
         ...(dto.avatar !== undefined ? { avatar: dto.avatar } : {}),
+        ...(dto.fcmToken !== undefined ? { fcmToken: dto.fcmToken } : {}),
       },
       select: {
         id: true,
@@ -240,5 +241,13 @@ export class UsersService {
     this.userEvents.emitDeactivated(deactivated);
 
     return deactivated;
+  }
+  async updateFcmToken(userId: string, fcmToken: string) {
+    await this.findOne(userId);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { fcmToken },
+    });
+    return { message: 'Cập nhật FCM token thành công', fcmToken };
   }
 }
