@@ -15,8 +15,8 @@ export declare class RoomsService {
     private roomEvents;
     constructor(prisma: PrismaService, redis: RedisService, esService: ElasticsearchService, roomEvents: RoomEventsService);
     create(dto: CreateRoomDto): Promise<import("./dto/room-response.dto").RoomResponse>;
-    findAll(queryOrStatus?: QueryRoomsDto | RoomStatus, floorParam?: number | boolean, roomTypeIdParam?: string, isStaffParam?: boolean): Promise<import("../common/utils/pagination.util").PaginatedResult<any>>;
-    findOne(id: string, includeNotes?: boolean): Promise<import("./dto/room-response.dto").RoomResponse>;
+    findAll(queryOrStatus?: QueryRoomsDto | RoomStatus, floorParam?: number | boolean, roomTypeIdParam?: string, isStaffParam?: boolean): Promise<any>;
+    findOne(id: string, includeNotes?: boolean): Promise<any>;
     findAvailable(query: QueryAvailableRoomsDto, includeNotes?: boolean): Promise<any[]>;
     search(dto: SearchRoomDto, includeNotes?: boolean): Promise<import("./dto/room-response.dto").RoomResponse[]>;
     update(id: string, dto: UpdateRoomDto): Promise<import("./dto/room-response.dto").RoomResponse>;

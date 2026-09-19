@@ -108,6 +108,8 @@ model User {
   shifts            WorkShift[] @relation("StaffShifts")
   receivedShifts    WorkShift[] @relation("ShiftHandoverStaff")
 
+  @@index([role])
+  @@index([isActive])
   @@map("users")
 }
 
@@ -143,6 +145,9 @@ model Room {
 
   bookings   Booking[]
 
+  @@index([status])
+  @@index([floor])
+  @@index([roomTypeId])
   @@map("rooms")
 }
 
@@ -184,6 +189,11 @@ model Booking {
   @@index([status])
   @@index([checkInDate])
   @@index([checkOutDate])
+  @@index([roomId])
+  @@index([customerId])
+  @@index([createdAt])
+  @@index([roomId, status])
+  @@index([customerId, status])
   @@map("bookings")
 }
 
@@ -209,6 +219,10 @@ model Invoice {
 
   payments       Payment[]
 
+  @@index([paymentStatus])
+  @@index([paidAt])
+  @@index([issuedById])
+  @@index([createdAt])
   @@map("invoices")
 }
 
@@ -252,6 +266,8 @@ model Payment {
   @@index([status])
   @@index([confirmedAt])
   @@index([shiftId])
+  @@index([confirmedById])
+  @@index([confirmedById, status, confirmedAt])
   @@map("payments")
 }
 
@@ -269,6 +285,8 @@ model ExtraServiceOrder {
   note          String?
   createdAt     DateTime @default(now())
 
+  @@index([bookingId])
+  @@index([status])
   @@map("extra_service_orders")
 }
 

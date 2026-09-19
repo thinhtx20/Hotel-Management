@@ -1,84 +1,11 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { DailyRevenuePoint } from '../common/utils/revenue.util';
+import { RedisService } from '../redis/redis.service';
 export declare class AnalyticsService {
     private prisma;
-    constructor(prisma: PrismaService);
-    getDashboardOverview(): Promise<{
-        totalRevenueToday: number;
-        todayRevenue: number;
-        yesterdayRevenue: number;
-        revenueChangePercent: number;
-        occupancyRate: number;
-        totalRooms: number;
-        availableRooms: number;
-        occupiedRooms: number;
-        reservedRooms: number;
-        cleaningRooms: number;
-        maintenanceRooms: number;
-        checkInsToday: number;
-        todayCheckIns: number;
-        checkOutsToday: number;
-        todayCheckOuts: number;
-        activeBookings: number;
-        pendingBookings: number;
-        pendingInvoicesCount: number;
-        unpaidInvoices: number;
-        roomStatusBreakdown: {
-            AVAILABLE: number;
-            OCCUPIED: number;
-            RESERVED: number;
-            CLEANING: number;
-            MAINTENANCE: number;
-        };
-        activeShifts: {
-            id: string;
-            staff: {
-                id: string;
-                fullName: string;
-                phone: string;
-                avatar: string;
-            };
-            shiftCode: string;
-            staffId: string;
-            shiftType: import(".prisma/client").$Enums.ShiftType;
-            deskName: string;
-            startTime: Date;
-            initialCash: number;
-        }[];
-        activeStaffCount: number;
-        revenue7Days: DailyRevenuePoint[];
-        revenueRanges: Record<string, {
-            range: number;
-            from: string;
-            to: string;
-            series: DailyRevenuePoint[];
-            total: number;
-            average: number;
-            peak: {
-                date: string;
-                revenue: number;
-            };
-            previousTotal: number;
-            changePercent: number;
-            invoiceCount: number;
-        }>;
-        availableRanges: number[];
-        rooms: {
-            total: number;
-            available: number;
-            occupied: number;
-            reserved: number;
-            cleaning: number;
-            maintenance: number;
-            occupancyRate: string;
-        };
-        todayActivity: {
-            expectedCheckIns: number;
-            expectedCheckOuts: number;
-            activeBookings: number;
-        };
-        totalRevenue: number;
-    }>;
+    private redis;
+    constructor(prisma: PrismaService, redis: RedisService);
+    getDashboardOverview(): Promise<any>;
     getDailyRevenue(days?: number): Promise<{
         days: number;
         availableRanges: number[];

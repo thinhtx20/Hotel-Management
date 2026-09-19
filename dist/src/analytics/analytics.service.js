@@ -14,11 +14,18 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const client_1 = require("@prisma/client");
 const revenue_util_1 = require("../common/utils/revenue.util");
+const redis_service_1 = require("../redis/redis.service");
 let AnalyticsService = class AnalyticsService {
-    constructor(prisma) {
+    constructor(prisma, redis) {
         this.prisma = prisma;
+        this.redis = redis;
     }
     async getDashboardOverview() {
+        const cacheKey = 'cache:analytics:dashboard';
+        const cached = await this.redis.get(cacheKey);
+        if (cached) {
+            return cached;
+        }
         const today = new Date();
         const todayStart = (0, revenue_util_1.startOfDay)(today);
         const todayEnd = (0, revenue_util_1.endOfDay)(today);
@@ -26,14 +33,21 @@ let AnalyticsService = class AnalyticsService {
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStart = (0, revenue_util_1.startOfDay)(yesterday);
         const yesterdayEnd = (0, revenue_util_1.endOfDay)(yesterday);
-        const [totalRooms, availableRooms, occupiedRooms, reservedRooms, cleaningRooms, maintenanceRooms,] = await Promise.all([
-            this.prisma.room.count(),
-            this.prisma.room.count({ where: { status: client_1.RoomStatus.AVAILABLE } }),
-            this.prisma.room.count({ where: { status: client_1.RoomStatus.OCCUPIED } }),
-            this.prisma.room.count({ where: { status: client_1.RoomStatus.RESERVED } }),
-            this.prisma.room.count({ where: { status: client_1.RoomStatus.CLEANING } }),
-            this.prisma.room.count({ where: { status: client_1.RoomStatus.MAINTENANCE } }),
-        ]);
+        const roomGroups = await this.prisma.room.groupBy({
+            by: ['status'],
+            _count: { id: true },
+        });
+        const statusMap = new Map();
+        let totalRooms = 0;
+        for (const g of roomGroups) {
+            statusMap.set(g.status, g._count.id);
+            totalRooms += g._count.id;
+        }
+        const availableRooms = statusMap.get(client_1.RoomStatus.AVAILABLE) || 0;
+        const occupiedRooms = statusMap.get(client_1.RoomStatus.OCCUPIED) || 0;
+        const reservedRooms = statusMap.get(client_1.RoomStatus.RESERVED) || 0;
+        const cleaningRooms = statusMap.get(client_1.RoomStatus.CLEANING) || 0;
+        const maintenanceRooms = statusMap.get(client_1.RoomStatus.MAINTENANCE) || 0;
         const [todayCheckIns, todayCheckOuts, activeBookings] = await Promise.all([
             this.prisma.booking.count({
                 where: {
@@ -112,7 +126,7 @@ let AnalyticsService = class AnalyticsService {
             CLEANING: cleaningRooms,
             MAINTENANCE: maintenanceRooms,
         };
-        return {
+        const result = {
             totalRevenueToday: todayRevenue,
             todayRevenue,
             yesterdayRevenue,
@@ -154,6 +168,8 @@ let AnalyticsService = class AnalyticsService {
             },
             totalRevenue: (0, revenue_util_1.roundMoney)(allRevenueAggregate._sum.paidAmount || 0),
         };
+        await this.redis.set(cacheKey, result, 15);
+        return result;
     }
     async getDailyRevenue(days = revenue_util_1.DEFAULT_REVENUE_RANGE) {
         const range = (0, revenue_util_1.normalizeRevenueRange)(days);
@@ -324,45 +340,63 @@ let AnalyticsService = class AnalyticsService {
             },
             orderBy: { fullName: 'asc' },
         });
-        const staffData = await Promise.all(staffUsers.map(async (user) => {
-            const [bookingsConfirmed, bookingsCancelled, invoicesIssued, collectedAgg, refundedAgg,] = await Promise.all([
-                this.prisma.booking.count({
-                    where: {
-                        confirmedById: user.id,
-                        confirmedAt: { gte: startDate, lte: endDate },
-                    },
-                }),
-                this.prisma.booking.count({
-                    where: {
-                        cancelledById: user.id,
-                        cancelledAt: { gte: startDate, lte: endDate },
-                    },
-                }),
-                this.prisma.invoice.count({
-                    where: {
-                        issuedById: user.id,
-                        createdAt: { gte: startDate, lte: endDate },
-                    },
-                }),
-                this.prisma.payment.aggregate({
-                    _sum: { amount: true },
-                    where: {
-                        confirmedById: user.id,
-                        status: client_1.PaymentEntryStatus.CONFIRMED,
-                        type: { in: [client_1.PaymentEntryType.PAYMENT, client_1.PaymentEntryType.DEPOSIT] },
-                        confirmedAt: { gte: startDate, lte: endDate },
-                    },
-                }),
-                this.prisma.payment.aggregate({
-                    _sum: { amount: true },
-                    where: {
-                        confirmedById: user.id,
-                        status: client_1.PaymentEntryStatus.CONFIRMED,
-                        type: client_1.PaymentEntryType.REFUND,
-                        confirmedAt: { gte: startDate, lte: endDate },
-                    },
-                }),
-            ]);
+        const staffIds = staffUsers.map((u) => u.id);
+        const [confirmedBookingsGroup, cancelledBookingsGroup, invoicesGroup, collectedPaymentsGroup, refundedPaymentsGroup,] = await Promise.all([
+            this.prisma.booking.groupBy({
+                by: ['confirmedById'],
+                _count: { id: true },
+                where: {
+                    confirmedById: { in: staffIds },
+                    confirmedAt: { gte: startDate, lte: endDate },
+                },
+            }),
+            this.prisma.booking.groupBy({
+                by: ['cancelledById'],
+                _count: { id: true },
+                where: {
+                    cancelledById: { in: staffIds },
+                    cancelledAt: { gte: startDate, lte: endDate },
+                },
+            }),
+            this.prisma.invoice.groupBy({
+                by: ['issuedById'],
+                _count: { id: true },
+                where: {
+                    issuedById: { in: staffIds },
+                    createdAt: { gte: startDate, lte: endDate },
+                },
+            }),
+            this.prisma.payment.groupBy({
+                by: ['confirmedById'],
+                _sum: { amount: true },
+                where: {
+                    confirmedById: { in: staffIds },
+                    status: client_1.PaymentEntryStatus.CONFIRMED,
+                    type: { in: [client_1.PaymentEntryType.PAYMENT, client_1.PaymentEntryType.DEPOSIT] },
+                    confirmedAt: { gte: startDate, lte: endDate },
+                },
+            }),
+            this.prisma.payment.groupBy({
+                by: ['confirmedById'],
+                _sum: { amount: true },
+                where: {
+                    confirmedById: { in: staffIds },
+                    status: client_1.PaymentEntryStatus.CONFIRMED,
+                    type: client_1.PaymentEntryType.REFUND,
+                    confirmedAt: { gte: startDate, lte: endDate },
+                },
+            }),
+        ]);
+        const confirmedMap = new Map(confirmedBookingsGroup.filter((g) => g.confirmedById).map((g) => [g.confirmedById, g._count.id]));
+        const cancelledMap = new Map(cancelledBookingsGroup.filter((g) => g.cancelledById).map((g) => [g.cancelledById, g._count.id]));
+        const invoicesMap = new Map(invoicesGroup.filter((g) => g.issuedById).map((g) => [g.issuedById, g._count.id]));
+        const collectedMap = new Map(collectedPaymentsGroup.filter((g) => g.confirmedById).map((g) => [g.confirmedById, g._sum.amount || 0]));
+        const refundedMap = new Map(refundedPaymentsGroup.filter((g) => g.confirmedById).map((g) => [g.confirmedById, g._sum.amount || 0]));
+        const staffData = staffUsers.map((user) => {
+            const bookingsConfirmed = confirmedMap.get(user.id) || 0;
+            const bookingsCancelled = cancelledMap.get(user.id) || 0;
+            const invoicesIssued = invoicesMap.get(user.id) || 0;
+            const amountCollected = (0, revenue_util_1.roundMoney)((collectedMap.get(user.id) || 0) - (refundedMap.get(user.id) || 0));
             return {
                 userId: user.id,
                 fullName: user.fullName,
@@ -371,9 +405,9 @@ let AnalyticsService = class AnalyticsService {
                 bookingsConfirmed,
                 bookingsCancelled,
                 invoicesIssued,
-                amountCollected: (0, revenue_util_1.roundMoney)((collectedAgg._sum.amount || 0) - (refundedAgg._sum.amount || 0)),
+                amountCollected,
             };
-        }));
+        });
         const totals = staffData.reduce((acc, curr) => ({
             bookingsConfirmed: acc.bookingsConfirmed + curr.bookingsConfirmed,
             bookingsCancelled: acc.bookingsCancelled + curr.bookingsCancelled,
@@ -391,6 +425,7 @@ let AnalyticsService = class AnalyticsService {
 exports.AnalyticsService = AnalyticsService;
 exports.AnalyticsService = AnalyticsService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        redis_service_1.RedisService])
 ], AnalyticsService);
 //# sourceMappingURL=analytics.service.js.map

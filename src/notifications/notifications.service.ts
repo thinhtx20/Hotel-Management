@@ -98,7 +98,7 @@ export class NotificationsService implements OnModuleInit {
 
     try {
       const cacheKey = `user:${userId}:notifications`;
-      await this.redis.set(cacheKey, JSON.stringify(list), 86400 * 7);
+      await this.redis.set(cacheKey, list, 86400 * 7);
     } catch (_) {}
   }
 
@@ -128,12 +128,17 @@ export class NotificationsService implements OnModuleInit {
 
     await this.storeNotification(userId, notifItem);
 
-    if (!user || !user.fcmToken) {
-      this.logger.debug(`ℹ️ User ${userId} (${user?.fullName ?? 'Không rõ'}) chưa có fcmToken, đã lưu vào danh sách thông báo in-app.`);
-      return true;
+    if (user && user.fcmToken) {
+      // Gửi push notification qua Firebase FCM ở chế độ bất đồng bộ (non-blocking)
+      // giúp API phản hồi tức thì mà không phải chờ mạng Google Firebase
+      setImmediate(() => {
+        this.sendToToken(user.fcmToken!, payload).catch((err) => {
+          this.logger.warn(`Lỗi gửi FCM background cho user ${userId}: ${err.message}`);
+        });
+      });
     }
 
-    return this.sendToToken(user.fcmToken, payload);
+    return true;
   }
 
   /**
@@ -190,24 +195,22 @@ export class NotificationsService implements OnModuleInit {
 
     if (items.length === 0) {
       try {
-        const cached = await this.redis.get(`user:${userId}:notifications`);
-        if (cached) {
-          items = JSON.parse(cached as string);
+        const cached = await this.redis.get<AppNotificationItem[]>(`user:${userId}:notifications`);
+        if (cached && Array.isArray(cached) && cached.length > 0) {
+          items = cached;
           this.inMemoryNotifications.set(userId, items);
         }
       } catch (_) {}
     }
 
-    if (items.length < 5) {
+    // Chỉ sinh từ DB khi hoàn toàn chưa có thông báo nào trong cache
+    if (items.length === 0) {
       const dbNotifications = await this.generateNotificationsFromDb(userId);
-      const existingIds = new Set(items.map((i) => i.id));
-      for (const notif of dbNotifications) {
-        if (!existingIds.has(notif.id)) {
-          items.push(notif);
-          existingIds.add(notif.id);
-        }
-      }
+      items = dbNotifications;
       this.inMemoryNotifications.set(userId, items);
+      try {
+        await this.redis.set(`user:${userId}:notifications`, items, 86400 * 7);
+      } catch (_) {}
     }
 
     items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -348,7 +351,7 @@ export class NotificationsService implements OnModuleInit {
     if (item) {
       item.isRead = true;
       try {
-        await this.redis.set(`user:${userId}:notifications`, JSON.stringify(list), 86400 * 7);
+        await this.redis.set(`user:${userId}:notifications`, list, 86400 * 7);
       } catch (_) {}
       return true;
     }
@@ -361,7 +364,7 @@ export class NotificationsService implements OnModuleInit {
       item.isRead = true;
     }
     try {
-      await this.redis.set(`user:${userId}:notifications`, JSON.stringify(list), 86400 * 7);
+      await this.redis.set(`user:${userId}:notifications`, list, 86400 * 7);
     } catch (_) {}
     return true;
   }
@@ -395,11 +398,14 @@ export class NotificationsService implements OnModuleInit {
       select: { id: true, fcmToken: true },
     });
 
+    // Gửi song song thay vì lặp tuần tự từng user
     let sentCount = 0;
-    for (const user of users) {
-      const ok = await this.sendToUser(user.id, payload);
-      if (ok) sentCount++;
-    }
+    await Promise.all(
+      users.map(async (user) => {
+        const ok = await this.sendToUser(user.id, payload);
+        if (ok) sentCount++;
+      }),
+    );
 
     return { sentCount, totalUsers: users.length };
   }

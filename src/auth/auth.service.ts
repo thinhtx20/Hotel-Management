@@ -285,10 +285,11 @@ export class AuthService {
       },
     });
 
+    // Xóa cache phiên đăng nhập của user để các request sau nạp mã phiên mới
+    await this.redisService.del(`auth:user:${user.id}`);
+
     // Thu hồi toàn bộ refresh token của các thiết bị trước đó (nếu có Redis)
-    if (this.redisService?.isReady) {
-      await this.redisService.delByPattern(`auth:refresh:${user.id}:*`);
-    }
+    await this.redisService.delByPattern(`auth:refresh:${user.id}:*`);
 
     if (user.activeSessionId && user.activeSessionId !== sessionId) {
       this.logger.log(
@@ -318,6 +319,8 @@ export class AuthService {
         where: { id: userId },
         data: { activeSessionId: null, activeDevice: null },
       });
+
+      await this.redisService.del(`auth:user:${userId}`);
     } catch (err: any) {
       // Đăng xuất không được phép thất bại chỉ vì dọn phiên lỗi
       this.logger.warn(`[Auth] Không dọn được phiên thiết bị của user ${userId}: ${err.message}`);

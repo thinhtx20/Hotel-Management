@@ -2,11 +2,22 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import Redis from 'ioredis';
 import { randomUUID } from 'crypto';
 
+interface MemoryCacheEntry {
+  value: any;
+  expiresAt: number;
+}
+
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
   private client: Redis | null = null;
   private isConnected = false;
+
+  // Bộ nhớ đệm Memory Fallback khi Redis không khả dụng
+  private readonly memoryCache = new Map<string, MemoryCacheEntry>();
+  // Bộ nhớ giữ khóa (Distributed Lock fallback) trong bộ nhớ
+  private readonly memoryLocks = new Map<string, { token: string; expiresAt: number }>();
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
   // Lua script an toàn để giải phóng distributed lock
   private readonly RELEASE_LOCK_SCRIPT = `
@@ -21,6 +32,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     const host = process.env.REDIS_HOST || 'localhost';
     const port = Number(process.env.REDIS_PORT) || 6379;
     const password = process.env.REDIS_PASSWORD || undefined;
+
+    // Thiết lập dọn dẹp bộ nhớ đệm in-memory định kỳ mỗi 60 giây
+    this.cleanupInterval = setInterval(() => this.purgeExpiredMemory(), 60000);
 
     try {
       this.client = new Redis({
@@ -42,18 +56,22 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
       this.client.on('error', (err) => {
         this.isConnected = false;
-        this.logger.warn(`⚠️ Cảnh báo Redis: ${err.message}. Hệ thống sẽ tạm bỏ qua cache.`);
+        this.logger.warn(`⚠️ Cảnh báo Redis: ${err.message}. Hệ thống chuyển sang In-Memory Cache.`);
       });
 
       await this.client.connect().catch((err) => {
-        this.logger.warn(`⚠️ Chưa khởi động Redis server (${err.message}). Vui lòng chạy 'docker compose up -d redis'.`);
+        this.logger.warn(`⚠️ Chưa khởi động Redis server (${err.message}). Hệ thống sử dụng In-Memory Cache fallback.`);
       });
     } catch (e: any) {
-      this.logger.warn(`⚠️ Không thể kết nối Redis: ${e.message}`);
+      this.logger.warn(`⚠️ Không thể kết nối Redis: ${e.message}. Sử dụng In-Memory Cache.`);
     }
   }
 
   async onModuleDestroy() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
     if (this.client) {
       await this.client.quit();
     }
@@ -63,34 +81,76 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.isConnected && this.client !== null;
   }
 
+  private purgeExpiredMemory() {
+    const now = Date.now();
+    for (const [key, entry] of this.memoryCache.entries()) {
+      if (entry.expiresAt <= now) {
+        this.memoryCache.delete(key);
+      }
+    }
+    for (const [key, lock] of this.memoryLocks.entries()) {
+      if (lock.expiresAt <= now) {
+        this.memoryLocks.delete(key);
+      }
+    }
+  }
+
   /**
-   * Lấy dữ liệu từ Cache
+   * Lấy dữ liệu từ Cache (Redis hoặc In-Memory Fallback)
    */
   async get<T>(key: string): Promise<T | null> {
-    if (!this.isReady || !this.client) return null;
-    try {
-      const data = await this.client.get(key);
-      return data ? JSON.parse(data) : null;
-    } catch (err: any) {
-      this.logger.warn(`Lỗi khi đọc Redis key ${key}: ${err.message}`);
-      return null;
+    if (this.isReady && this.client) {
+      try {
+        const data = await this.client.get(key);
+        if (data) {
+          try {
+            return JSON.parse(data);
+          } catch {
+            return data as unknown as T;
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(`Lỗi khi đọc Redis key ${key}: ${err.message}`);
+      }
     }
+
+    // Fallback sang Memory Cache
+    const entry = this.memoryCache.get(key);
+    if (entry) {
+      if (entry.expiresAt > Date.now()) {
+        return entry.value as T;
+      }
+      this.memoryCache.delete(key);
+    }
+
+    return null;
   }
 
   /**
    * Lưu dữ liệu vào Cache kèm thời gian hết hạn (TTL)
    */
   async set(key: string, value: any, ttlSeconds = 60): Promise<void> {
-    if (!this.isReady || !this.client) return;
-    try {
-      const serialized = JSON.stringify(value);
-      if (ttlSeconds > 0) {
-        await this.client.set(key, serialized, 'EX', ttlSeconds);
-      } else {
-        await this.client.set(key, serialized);
+    const expiresAt = Date.now() + ttlSeconds * 1000;
+
+    // Lưu Memory Cache trước
+    this.memoryCache.set(key, { value, expiresAt });
+
+    // Giới hạn bộ nhớ tránh tràn: nếu quá 5000 items, dọn dẹp các key hết hạn
+    if (this.memoryCache.size > 5000) {
+      this.purgeExpiredMemory();
+    }
+
+    if (this.isReady && this.client) {
+      try {
+        const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+        if (ttlSeconds > 0) {
+          await this.client.set(key, serialized, 'EX', ttlSeconds);
+        } else {
+          await this.client.set(key, serialized);
+        }
+      } catch (err: any) {
+        this.logger.warn(`Lỗi khi ghi Redis key ${key}: ${err.message}`);
       }
-    } catch (err: any) {
-      this.logger.warn(`Lỗi khi ghi Redis key ${key}: ${err.message}`);
     }
   }
 
@@ -98,11 +158,14 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    * Xóa một key trong Cache
    */
   async del(key: string): Promise<void> {
-    if (!this.isReady || !this.client) return;
-    try {
-      await this.client.del(key);
-    } catch (err: any) {
-      this.logger.warn(`Lỗi khi xóa Redis key ${key}: ${err.message}`);
+    this.memoryCache.delete(key);
+
+    if (this.isReady && this.client) {
+      try {
+        await this.client.del(key);
+      } catch (err: any) {
+        this.logger.warn(`Lỗi khi xóa Redis key ${key}: ${err.message}`);
+      }
     }
   }
 
@@ -110,59 +173,92 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    * Xóa danh sách key theo mẫu (pattern wildcard)
    */
   async delByPattern(pattern: string): Promise<void> {
-    if (!this.isReady || !this.client) return;
-    try {
-      const keys = await this.client.keys(pattern);
-      if (keys.length > 0) {
-        await this.client.del(...keys);
+    // Xóa trong Memory Cache
+    const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+    for (const key of this.memoryCache.keys()) {
+      if (regex.test(key)) {
+        this.memoryCache.delete(key);
       }
-    } catch (err: any) {
-      this.logger.warn(`Lỗi khi xóa Redis pattern ${pattern}: ${err.message}`);
+    }
+
+    if (this.isReady && this.client) {
+      try {
+        const keys = await this.client.keys(pattern);
+        if (keys.length > 0) {
+          await this.client.del(...keys);
+        }
+      } catch (err: any) {
+        this.logger.warn(`Lỗi khi xóa Redis pattern ${pattern}: ${err.message}`);
+      }
     }
   }
 
   /**
+   * Helper thông minh: đọc cache nếu có, nếu chưa có thì gọi fetcher và cache lại
+   */
+  async remember<T>(key: string, ttlSeconds: number, fetcher: () => Promise<T>): Promise<T> {
+    const cached = await this.get<T>(key);
+    if (cached !== null && cached !== undefined) {
+      return cached;
+    }
+    const fresh = await fetcher();
+    if (fresh !== undefined && fresh !== null) {
+      await this.set(key, fresh, ttlSeconds);
+    }
+    return fresh;
+  }
+
+  /**
    * ==========================================
-   * REDIS DISTRIBUTED LOCK (CHỐNG DOUBLE BOOKING)
+   * DISTRIBUTED LOCK (CHỐNG DOUBLE BOOKING)
    * ==========================================
-   * Cố gắng chiếm Lock cho một tài nguyên (ví dụ: phòng khách sạn theo ngày)
-   * @param resourceKey Key định danh tài nguyên cần khóa (vd: lock:room:101:2026-09-05)
-   * @param ttlMs Thời gian giữ khóa tối đa tính bằng mili-giây (mặc định 5000ms)
-   * @returns lockToken nếu chiếm khóa thành công, null nếu tài nguyên đang bị khóa bởi request khác
    */
   async acquireLock(resourceKey: string, ttlMs = 5000): Promise<string | null> {
-    if (!this.isReady || !this.client) {
-      // Fallback an toàn nếu chưa bật Redis
-      return randomUUID();
+    const lockToken = randomUUID();
+    const now = Date.now();
+
+    // Nếu có Redis, dùng SET NX PX chuẩn
+    if (this.isReady && this.client) {
+      try {
+        const result = await this.client.set(resourceKey, lockToken, 'PX', ttlMs, 'NX');
+        return result === 'OK' ? lockToken : null;
+      } catch (err: any) {
+        this.logger.warn(`Lỗi acquireLock Redis cho ${resourceKey}: ${err.message}`);
+      }
     }
-    try {
-      const lockToken = randomUUID();
-      // SET key token NX PX ttlMs
-      const result = await this.client.set(resourceKey, lockToken, 'PX', ttlMs, 'NX');
-      return result === 'OK' ? lockToken : null;
-    } catch (err: any) {
-      this.logger.warn(`Lỗi acquireLock cho ${resourceKey}: ${err.message}`);
-      return randomUUID();
+
+    // Fallback an toàn với Memory Lock
+    const existing = this.memoryLocks.get(resourceKey);
+    if (existing && existing.expiresAt > now) {
+      return null; // Đang bị khóa
     }
+
+    this.memoryLocks.set(resourceKey, { token: lockToken, expiresAt: now + ttlMs });
+    return lockToken;
   }
 
-  /**
-   * Giải phóng Distributed Lock bằng Lua Script an toàn
-   * Đảm bảo chỉ người giữ token đúng mới có thể mở khóa
-   */
   async releaseLock(resourceKey: string, lockToken: string): Promise<boolean> {
-    if (!this.isReady || !this.client) return true;
-    try {
-      const result = await this.client.eval(
-        this.RELEASE_LOCK_SCRIPT,
-        1,
-        resourceKey,
-        lockToken,
-      );
-      return result === 1;
-    } catch (err: any) {
-      this.logger.warn(`Lỗi releaseLock cho ${resourceKey}: ${err.message}`);
-      return false;
+    // Memory Lock release
+    const existing = this.memoryLocks.get(resourceKey);
+    if (existing && existing.token === lockToken) {
+      this.memoryLocks.delete(resourceKey);
     }
+
+    if (this.isReady && this.client) {
+      try {
+        const result = await this.client.eval(
+          this.RELEASE_LOCK_SCRIPT,
+          1,
+          resourceKey,
+          lockToken,
+        );
+        return result === 1;
+      } catch (err: any) {
+        this.logger.warn(`Lỗi releaseLock Redis cho ${resourceKey}: ${err.message}`);
+        return false;
+      }
+    }
+
+    return true;
   }
 }

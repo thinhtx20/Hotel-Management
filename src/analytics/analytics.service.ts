@@ -23,11 +23,22 @@ import {
   startOfDay,
 } from '../common/utils/revenue.util';
 
+import { RedisService } from '../redis/redis.service';
+
 @Injectable()
 export class AnalyticsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private redis: RedisService,
+  ) {}
 
   async getDashboardOverview() {
+    const cacheKey = 'cache:analytics:dashboard';
+    const cached = await this.redis.get<any>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const today = new Date();
     const todayStart = startOfDay(today);
     const todayEnd = endOfDay(today);
@@ -37,22 +48,24 @@ export class AnalyticsService {
     const yesterdayStart = startOfDay(yesterday);
     const yesterdayEnd = endOfDay(yesterday);
 
-    // Thống kê phòng
-    const [
-      totalRooms,
-      availableRooms,
-      occupiedRooms,
-      reservedRooms,
-      cleaningRooms,
-      maintenanceRooms,
-    ] = await Promise.all([
-      this.prisma.room.count(),
-      this.prisma.room.count({ where: { status: RoomStatus.AVAILABLE } }),
-      this.prisma.room.count({ where: { status: RoomStatus.OCCUPIED } }),
-      this.prisma.room.count({ where: { status: RoomStatus.RESERVED } }),
-      this.prisma.room.count({ where: { status: RoomStatus.CLEANING } }),
-      this.prisma.room.count({ where: { status: RoomStatus.MAINTENANCE } }),
-    ]);
+    // Gom thống kê phòng trong 1 câu groupBy duy nhất thay vì 6 câu count riêng lẻ
+    const roomGroups = await this.prisma.room.groupBy({
+      by: ['status'],
+      _count: { id: true },
+    });
+
+    const statusMap = new Map<RoomStatus, number>();
+    let totalRooms = 0;
+    for (const g of roomGroups) {
+      statusMap.set(g.status, g._count.id);
+      totalRooms += g._count.id;
+    }
+
+    const availableRooms = statusMap.get(RoomStatus.AVAILABLE) || 0;
+    const occupiedRooms = statusMap.get(RoomStatus.OCCUPIED) || 0;
+    const reservedRooms = statusMap.get(RoomStatus.RESERVED) || 0;
+    const cleaningRooms = statusMap.get(RoomStatus.CLEANING) || 0;
+    const maintenanceRooms = statusMap.get(RoomStatus.MAINTENANCE) || 0;
 
     // Thống kê khách đến & đi hôm nay
     const [todayCheckIns, todayCheckOuts, activeBookings] = await Promise.all([
@@ -152,7 +165,7 @@ export class AnalyticsService {
       MAINTENANCE: maintenanceRooms,
     };
 
-    return {
+    const result = {
       // Hợp đồng phẳng đầy đủ cho FE (BE-1, BE-6 & Claude Artifact Section 05)
       totalRevenueToday: todayRevenue,
       todayRevenue,
@@ -197,6 +210,10 @@ export class AnalyticsService {
       },
       totalRevenue: roundMoney(allRevenueAggregate._sum.paidAmount || 0),
     };
+
+    // Cache kết quả tổng quan 15 giây
+    await this.redis.set(cacheKey, result, 15);
+    return result;
   }
 
   /**
@@ -422,71 +439,97 @@ export class AnalyticsService {
       orderBy: { fullName: 'asc' },
     });
 
-    const staffData = await Promise.all(
-      staffUsers.map(async (user) => {
-        const [
-          bookingsConfirmed,
-          bookingsCancelled,
-          invoicesIssued,
-          collectedAgg,
-          refundedAgg,
-        ] = await Promise.all([
-          this.prisma.booking.count({
-            where: {
-              confirmedById: user.id,
-              confirmedAt: { gte: startDate, lte: endDate },
-            },
-          }),
-          this.prisma.booking.count({
-            where: {
-              cancelledById: user.id,
-              cancelledAt: { gte: startDate, lte: endDate },
-            },
-          }),
-          this.prisma.invoice.count({
-            where: {
-              issuedById: user.id,
-              createdAt: { gte: startDate, lte: endDate },
-            },
-          }),
-          // Tiền thực nhận lấy từ sổ thu tiền, không lấy từ `invoice.paidAmount`:
-          // một hóa đơn có thể được nhiều người thu làm nhiều lần, cộng cả tổng
-          // hóa đơn cho người chạm vào cuối cùng là sai. Đây cũng đúng cách
-          // `GET /invoices/summary?staffId=` tính chốt ca, nên hai số luôn khớp.
-          this.prisma.payment.aggregate({
-            _sum: { amount: true },
-            where: {
-              confirmedById: user.id,
-              status: PaymentEntryStatus.CONFIRMED,
-              type: { in: [PaymentEntryType.PAYMENT, PaymentEntryType.DEPOSIT] },
-              confirmedAt: { gte: startDate, lte: endDate },
-            },
-          }),
-          this.prisma.payment.aggregate({
-            _sum: { amount: true },
-            where: {
-              confirmedById: user.id,
-              status: PaymentEntryStatus.CONFIRMED,
-              type: PaymentEntryType.REFUND,
-              confirmedAt: { gte: startDate, lte: endDate },
-            },
-          }),
-        ]);
+    const staffIds = staffUsers.map((u) => u.id);
 
-        return {
-          userId: user.id,
-          fullName: user.fullName,
-          email: user.email,
-          role: user.role,
-          bookingsConfirmed,
-          bookingsCancelled,
-          invoicesIssued,
-          amountCollected: roundMoney(
-            (collectedAgg._sum.amount || 0) - (refundedAgg._sum.amount || 0),
-          ),
-        };
+    // Gom truy vấn toàn bộ nhân viên qua groupBy để xử lý triệt để N+1 query
+    const [
+      confirmedBookingsGroup,
+      cancelledBookingsGroup,
+      invoicesGroup,
+      collectedPaymentsGroup,
+      refundedPaymentsGroup,
+    ] = await Promise.all([
+      this.prisma.booking.groupBy({
+        by: ['confirmedById'],
+        _count: { id: true },
+        where: {
+          confirmedById: { in: staffIds },
+          confirmedAt: { gte: startDate, lte: endDate },
+        },
       }),
+      this.prisma.booking.groupBy({
+        by: ['cancelledById'],
+        _count: { id: true },
+        where: {
+          cancelledById: { in: staffIds },
+          cancelledAt: { gte: startDate, lte: endDate },
+        },
+      }),
+      this.prisma.invoice.groupBy({
+        by: ['issuedById'],
+        _count: { id: true },
+        where: {
+          issuedById: { in: staffIds },
+          createdAt: { gte: startDate, lte: endDate },
+        },
+      }),
+      this.prisma.payment.groupBy({
+        by: ['confirmedById'],
+        _sum: { amount: true },
+        where: {
+          confirmedById: { in: staffIds },
+          status: PaymentEntryStatus.CONFIRMED,
+          type: { in: [PaymentEntryType.PAYMENT, PaymentEntryType.DEPOSIT] },
+          confirmedAt: { gte: startDate, lte: endDate },
+        },
+      }),
+      this.prisma.payment.groupBy({
+        by: ['confirmedById'],
+        _sum: { amount: true },
+        where: {
+          confirmedById: { in: staffIds },
+          status: PaymentEntryStatus.CONFIRMED,
+          type: PaymentEntryType.REFUND,
+          confirmedAt: { gte: startDate, lte: endDate },
+        },
+      }),
+    ]);
+
+    const confirmedMap = new Map<string, number>(
+      confirmedBookingsGroup.filter((g) => g.confirmedById).map((g) => [g.confirmedById!, g._count.id]),
     );
+    const cancelledMap = new Map<string, number>(
+      cancelledBookingsGroup.filter((g) => g.cancelledById).map((g) => [g.cancelledById!, g._count.id]),
+    );
+    const invoicesMap = new Map<string, number>(
+      invoicesGroup.filter((g) => g.issuedById).map((g) => [g.issuedById!, g._count.id]),
+    );
+    const collectedMap = new Map<string, number>(
+      collectedPaymentsGroup.filter((g) => g.confirmedById).map((g) => [g.confirmedById!, g._sum.amount || 0]),
+    );
+    const refundedMap = new Map<string, number>(
+      refundedPaymentsGroup.filter((g) => g.confirmedById).map((g) => [g.confirmedById!, g._sum.amount || 0]),
+    );
+
+    const staffData = staffUsers.map((user) => {
+      const bookingsConfirmed = confirmedMap.get(user.id) || 0;
+      const bookingsCancelled = cancelledMap.get(user.id) || 0;
+      const invoicesIssued = invoicesMap.get(user.id) || 0;
+      const amountCollected = roundMoney(
+        (collectedMap.get(user.id) || 0) - (refundedMap.get(user.id) || 0),
+      );
+
+      return {
+        userId: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role,
+        bookingsConfirmed,
+        bookingsCancelled,
+        invoicesIssued,
+        amountCollected,
+      };
+    });
 
     const totals = staffData.reduce(
       (acc, curr) => ({

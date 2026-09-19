@@ -163,6 +163,11 @@ let RoomsService = class RoomsService {
                 { roomType: { name: { contains: search, mode: insensitive } } },
             ];
         }
+        const cacheKey = `cache:rooms:list:${JSON.stringify(query)}:${isStaff}`;
+        const cached = await this.redis.get(cacheKey);
+        if (cached) {
+            return cached;
+        }
         const { isPaginated, page, limit, skip, take } = (0, pagination_util_1.calculatePagination)(query);
         const [total, rooms] = await this.prisma.$transaction([
             this.prisma.room.count({ where }),
@@ -174,7 +179,9 @@ let RoomsService = class RoomsService {
                         where: { status: { in: [client_1.BookingStatus.CHECKED_IN, client_1.BookingStatus.CONFIRMED] } },
                         orderBy: { checkInDate: 'asc' },
                         take: 2,
-                        include: { customer: { select: { fullName: true, phone: true } } },
+                        ...(isStaff
+                            ? { include: { customer: { select: { fullName: true, phone: true } } } }
+                            : { select: { status: true, checkInDate: true, checkOutDate: true, bookingCode: true } }),
                     },
                 },
                 orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
@@ -182,9 +189,16 @@ let RoomsService = class RoomsService {
             }),
         ]);
         const data = rooms.map((r) => (0, room_response_dto_1.toRoomResponse)(r, isStaff));
-        return (0, pagination_util_1.buildPaginatedResult)(data, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
+        const result = (0, pagination_util_1.buildPaginatedResult)(data, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
+        await this.redis.set(cacheKey, result, 60);
+        return result;
     }
     async findOne(id, includeNotes = false) {
+        const cacheKey = `cache:rooms:detail:${id}:${includeNotes}`;
+        const cached = await this.redis.get(cacheKey);
+        if (cached) {
+            return cached;
+        }
         const room = await this.prisma.room.findUnique({
             where: { id },
             include: {
@@ -193,14 +207,18 @@ let RoomsService = class RoomsService {
                     where: { status: { in: [client_1.BookingStatus.CHECKED_IN, client_1.BookingStatus.CONFIRMED] } },
                     orderBy: { checkInDate: 'asc' },
                     take: 5,
-                    include: { customer: { select: { fullName: true, phone: true } } },
+                    ...(includeNotes
+                        ? { include: { customer: { select: { fullName: true, phone: true } } } }
+                        : { select: { status: true, checkInDate: true, checkOutDate: true, bookingCode: true } }),
                 },
             },
         });
         if (!room) {
             throw new common_1.NotFoundException(`Không tìm thấy phòng với ID: ${id}`);
         }
-        return (0, room_response_dto_1.toRoomResponse)(room, includeNotes);
+        const result = (0, room_response_dto_1.toRoomResponse)(room, includeNotes);
+        await this.redis.set(cacheKey, result, 60);
+        return result;
     }
     async findAvailable(query, includeNotes = false) {
         const rawCheckIn = new Date(query.checkInDate);

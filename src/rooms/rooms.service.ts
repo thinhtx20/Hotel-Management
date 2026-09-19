@@ -193,6 +193,12 @@ export class RoomsService {
       ];
     }
 
+    const cacheKey = `cache:rooms:list:${JSON.stringify(query)}:${isStaff}`;
+    const cached = await this.redis.get<any>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const { isPaginated, page, limit, skip, take } = calculatePagination(query);
 
     const [total, rooms] = await this.prisma.$transaction([
@@ -205,7 +211,9 @@ export class RoomsService {
             where: { status: { in: [BookingStatus.CHECKED_IN, BookingStatus.CONFIRMED] } },
             orderBy: { checkInDate: 'asc' },
             take: 2,
-            include: { customer: { select: { fullName: true, phone: true } } },
+            ...(isStaff
+              ? { include: { customer: { select: { fullName: true, phone: true } } } }
+              : { select: { status: true, checkInDate: true, checkOutDate: true, bookingCode: true } }),
           },
         },
         orderBy: [{ floor: 'asc' }, { roomNumber: 'asc' }],
@@ -214,10 +222,21 @@ export class RoomsService {
     ]);
 
     const data = rooms.map((r) => toRoomResponse(r, isStaff));
-    return buildPaginatedResult(data, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
+    const result = buildPaginatedResult(data, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
+    
+    // Lưu cache 60 giây (tự động xóa khi có thay đổi trạng thái phòng hoặc đơn đặt phòng)
+    await this.redis.set(cacheKey, result, 60);
+
+    return result;
   }
 
   async findOne(id: string, includeNotes = false) {
+    const cacheKey = `cache:rooms:detail:${id}:${includeNotes}`;
+    const cached = await this.redis.get<any>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const room = await this.prisma.room.findUnique({
       where: { id },
       include: {
@@ -226,7 +245,9 @@ export class RoomsService {
           where: { status: { in: [BookingStatus.CHECKED_IN, BookingStatus.CONFIRMED] } },
           orderBy: { checkInDate: 'asc' },
           take: 5,
-          include: { customer: { select: { fullName: true, phone: true } } },
+          ...(includeNotes
+            ? { include: { customer: { select: { fullName: true, phone: true } } } }
+            : { select: { status: true, checkInDate: true, checkOutDate: true, bookingCode: true } }),
         },
       },
     });
@@ -235,7 +256,9 @@ export class RoomsService {
       throw new NotFoundException(`Không tìm thấy phòng với ID: ${id}`);
     }
 
-    return toRoomResponse(room, includeNotes);
+    const result = toRoomResponse(room, includeNotes);
+    await this.redis.set(cacheKey, result, 60);
+    return result;
   }
 
   /**

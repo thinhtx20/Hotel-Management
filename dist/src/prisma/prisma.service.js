@@ -21,9 +21,22 @@ function formatDatabaseUrl() {
     if (!url)
         return undefined;
     const isCloudDb = !url.includes('localhost') && !url.includes('127.0.0.1');
+    const separator = url.includes('?') ? '&' : '?';
+    const params = [];
     if (isCloudDb && !url.includes('sslmode=')) {
-        const separator = url.includes('?') ? '&' : '?';
-        url = `${url}${separator}sslmode=require&connect_timeout=30&pool_timeout=30`;
+        params.push('sslmode=require');
+    }
+    if (!url.includes('connect_timeout=')) {
+        params.push('connect_timeout=15');
+    }
+    if (!url.includes('pool_timeout=')) {
+        params.push('pool_timeout=15');
+    }
+    if (!url.includes('connection_limit=')) {
+        params.push('connection_limit=15');
+    }
+    if (params.length > 0) {
+        url = `${url}${separator}${params.join('&')}`;
     }
     return url;
 }
@@ -69,6 +82,14 @@ let PrismaService = PrismaService_1 = class PrismaService extends client_1.Prism
     }
     async ensureInitialSeed() {
         try {
+            const [adminExists, roomsCount] = await Promise.all([
+                this.user.findFirst({ where: { email: 'admin@hotel.com' } }),
+                this.room.count(),
+            ]);
+            if (adminExists && roomsCount > 0) {
+                this.logger.log('⚡ CSDL đã đầy đủ dữ liệu mẫu khởi tạo, bỏ qua seed để tăng tốc khởi động.');
+                return;
+            }
             this.logger.log('🔄 Đang đồng bộ và kiểm tra dữ liệu mẫu cho từng Role...');
             const salt = await bcrypt.genSalt(10);
             const adminPassword = await bcrypt.hash('Admin@123', salt);

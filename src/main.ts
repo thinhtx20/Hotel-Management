@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
+import compression from 'compression';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -10,6 +11,9 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Bật nén HTTP Gzip / Deflate giúp giảm 70-85% dung lượng response JSON qua mạng
+  app.use(compression());
 
   // Phục vụ tệp tĩnh cho ảnh tải lên (Lưu trữ cục bộ khi chưa có Supabase hoặc Supabase bảo trì)
   app.useStaticAssets(join(process.cwd(), 'uploads'), {

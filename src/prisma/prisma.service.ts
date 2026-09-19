@@ -15,11 +15,25 @@ function formatDatabaseUrl(): string | undefined {
   let url = process.env.DATABASE_URL;
   if (!url) return undefined;
 
-  // Nếu là database cloud (như Render, Neon, Supabase...) và chưa có cấu hình sslmode
   const isCloudDb = !url.includes('localhost') && !url.includes('127.0.0.1');
+  const separator = url.includes('?') ? '&' : '?';
+  const params: string[] = [];
+
   if (isCloudDb && !url.includes('sslmode=')) {
-    const separator = url.includes('?') ? '&' : '?';
-    url = `${url}${separator}sslmode=require&connect_timeout=30&pool_timeout=30`;
+    params.push('sslmode=require');
+  }
+  if (!url.includes('connect_timeout=')) {
+    params.push('connect_timeout=15');
+  }
+  if (!url.includes('pool_timeout=')) {
+    params.push('pool_timeout=15');
+  }
+  if (!url.includes('connection_limit=')) {
+    params.push('connection_limit=15');
+  }
+
+  if (params.length > 0) {
+    url = `${url}${separator}${params.join('&')}`;
   }
   return url;
 }
@@ -82,6 +96,17 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   private async ensureInitialSeed() {
     try {
+      // Kiểm tra nhanh: nếu DB đã có Admin và Phòng thì bỏ qua để khởi động tức thì (< 100ms)
+      const [adminExists, roomsCount] = await Promise.all([
+        this.user.findFirst({ where: { email: 'admin@hotel.com' } }),
+        this.room.count(),
+      ]);
+
+      if (adminExists && roomsCount > 0) {
+        this.logger.log('⚡ CSDL đã đầy đủ dữ liệu mẫu khởi tạo, bỏ qua seed để tăng tốc khởi động.');
+        return;
+      }
+
       this.logger.log('🔄 Đang đồng bộ và kiểm tra dữ liệu mẫu cho từng Role...');
 
       // 1. TÀI KHOẢN NGƯỜI DÙNG CHO CÁC ROLE

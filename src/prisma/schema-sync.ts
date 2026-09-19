@@ -297,6 +297,55 @@ const SCHEMA_SYNC_STEPS: SchemaSyncStep[] = [
       END $$;
     `,
   },
+  {
+    label: 'Chỉ mục tối ưu hiệu năng truy vấn (Bookings, Invoices, Rooms, Payments, Users)',
+    sql: `
+      DO $$
+      BEGIN
+        -- Bookings indexes
+        IF to_regclass('public.bookings') IS NOT NULL THEN
+          CREATE INDEX IF NOT EXISTS "bookings_roomId_idx" ON "bookings"("roomId");
+          CREATE INDEX IF NOT EXISTS "bookings_customerId_idx" ON "bookings"("customerId");
+          CREATE INDEX IF NOT EXISTS "bookings_createdAt_idx" ON "bookings"("createdAt");
+          CREATE INDEX IF NOT EXISTS "bookings_roomId_status_idx" ON "bookings"("roomId", "status");
+          CREATE INDEX IF NOT EXISTS "bookings_customerId_status_idx" ON "bookings"("customerId", "status");
+        END IF;
+
+        -- Invoices indexes
+        IF to_regclass('public.invoices') IS NOT NULL THEN
+          CREATE INDEX IF NOT EXISTS "invoices_paymentStatus_idx" ON "invoices"("paymentStatus");
+          CREATE INDEX IF NOT EXISTS "invoices_paidAt_idx" ON "invoices"("paidAt");
+          CREATE INDEX IF NOT EXISTS "invoices_issuedById_idx" ON "invoices"("issuedById");
+          CREATE INDEX IF NOT EXISTS "invoices_createdAt_idx" ON "invoices"("createdAt");
+        END IF;
+
+        -- Rooms indexes
+        IF to_regclass('public.rooms') IS NOT NULL THEN
+          CREATE INDEX IF NOT EXISTS "rooms_status_idx" ON "rooms"("status");
+          CREATE INDEX IF NOT EXISTS "rooms_floor_idx" ON "rooms"("floor");
+          CREATE INDEX IF NOT EXISTS "rooms_roomTypeId_idx" ON "rooms"("roomTypeId");
+        END IF;
+
+        -- Payments indexes
+        IF to_regclass('public.payments') IS NOT NULL THEN
+          CREATE INDEX IF NOT EXISTS "payments_confirmedById_idx" ON "payments"("confirmedById");
+          CREATE INDEX IF NOT EXISTS "payments_confirmedById_status_confirmedAt_idx" ON "payments"("confirmedById", "status", "confirmedAt");
+        END IF;
+
+        -- ExtraServiceOrders indexes
+        IF to_regclass('public.extra_service_orders') IS NOT NULL THEN
+          CREATE INDEX IF NOT EXISTS "extra_service_orders_bookingId_idx" ON "extra_service_orders"("bookingId");
+          CREATE INDEX IF NOT EXISTS "extra_service_orders_status_idx" ON "extra_service_orders"("status");
+        END IF;
+
+        -- Users indexes
+        IF to_regclass('public.users') IS NOT NULL THEN
+          CREATE INDEX IF NOT EXISTS "users_role_idx" ON "users"("role");
+          CREATE INDEX IF NOT EXISTS "users_isActive_idx" ON "users"("isActive");
+        END IF;
+      END $$;
+    `,
+  },
 ];
 
 /**

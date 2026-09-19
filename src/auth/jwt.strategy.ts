@@ -37,26 +37,36 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   ) {
     // Kiểm tra Access Token có nằm trong Blacklist (do đăng xuất) không
     const token = jwtExtractor(req);
-    if (token && this.redisService?.isReady) {
+    if (token) {
       const isBlacklisted = await this.redisService.get(`auth:blacklist:${token}`);
       if (isBlacklisted) {
         throw new UnauthorizedException('Phiên làm việc đã kết thúc do đăng xuất. Vui lòng đăng nhập lại');
       }
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        phone: true,
-        role: true,
-        isActive: true,
-        activeSessionId: true,
-        activeDevice: true,
-      },
-    });
+    const userCacheKey = `auth:user:${payload.sub}`;
+    let user = await this.redisService.get<any>(userCacheKey);
+
+    if (!user) {
+      user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+          phone: true,
+          role: true,
+          isActive: true,
+          activeSessionId: true,
+          activeDevice: true,
+        },
+      });
+
+      if (user && user.isActive) {
+        // Cache 30s để tăng tốc các request song song từ mobile/web app
+        await this.redisService.set(userCacheKey, user, 30);
+      }
+    }
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Tài khoản không tồn tại hoặc đã bị vô hiệu hóa');

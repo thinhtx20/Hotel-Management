@@ -16,8 +16,8 @@ export declare class RoomsController {
     stream(user?: any): Observable<MessageEvent>;
     search(searchDto: SearchRoomDto, user?: any): Promise<import("./dto/room-response.dto").RoomResponse[]>;
     findAvailable(query: QueryAvailableRoomsDto, user?: any): Promise<any[]>;
-    findAll(query: QueryRoomsDto, user?: any): Promise<import("../common/utils/pagination.util").PaginatedResult<any>>;
-    findOne(id: string, user?: any): Promise<import("./dto/room-response.dto").RoomResponse>;
+    findAll(query: QueryRoomsDto, user?: any): Promise<any>;
+    findOne(id: string, user?: any): Promise<any>;
     approve(id: string): Promise<import("./dto/room-response.dto").RoomResponse>;
     reject(id: string): Promise<import("./dto/room-response.dto").RoomResponse>;
     syncStatus(): Promise<{

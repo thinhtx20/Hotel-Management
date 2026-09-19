@@ -221,9 +221,8 @@ let AuthService = AuthService_1 = class AuthService {
                 lastLoginAt: new Date(),
             },
         });
-        if (this.redisService?.isReady) {
-            await this.redisService.delByPattern(`auth:refresh:${user.id}:*`);
-        }
+        await this.redisService.del(`auth:user:${user.id}`);
+        await this.redisService.delByPattern(`auth:refresh:${user.id}:*`);
         if (user.activeSessionId && user.activeSessionId !== sessionId) {
             this.logger.log(`[Auth] Tài khoản "${user.email}" đăng nhập trên thiết bị mới (${deviceLabel}), phiên cũ đã bị thu hồi.`);
         }
@@ -243,6 +242,7 @@ let AuthService = AuthService_1 = class AuthService {
                 where: { id: userId },
                 data: { activeSessionId: null, activeDevice: null },
             });
+            await this.redisService.del(`auth:user:${userId}`);
         }
         catch (err) {
             this.logger.warn(`[Auth] Không dọn được phiên thiết bị của user ${userId}: ${err.message}`);
