@@ -15,14 +15,17 @@ import { InvoiceTimeFilterType, QueryInvoicesDto } from './dto/query-invoices.dt
 import { QueryPaymentRequestsDto } from './dto/query-payment-requests.dto';
 import { buildPaginatedResult, calculatePagination } from '../common/utils/pagination.util';
 import {
+  BookingStatus,
   PaymentEntryStatus,
   PaymentEntryType,
   PaymentMethod,
   PaymentStatus,
   Prisma,
   Role,
+  RoomStatus,
   ShiftStatus,
 } from '@prisma/client';
+import { deriveRoomStatus } from '../common/utils/room-status.util';
 import {
   collectedRevenueWhere,
   endOfDay,
@@ -768,7 +771,26 @@ export class InvoicesService {
   async confirmPayment(paymentId: string, dto: ConfirmPaymentDto, cashierId: string) {
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
-      include: { invoice: { select: { id: true, finalAmount: true, paidAmount: true, invoiceCode: true, booking: { select: { customerId: true } } } } },
+      include: {
+        invoice: {
+          select: {
+            id: true,
+            finalAmount: true,
+            paidAmount: true,
+            invoiceCode: true,
+            bookingId: true,
+            booking: {
+              select: {
+                id: true,
+                customerId: true,
+                status: true,
+                roomId: true,
+                depositAmount: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!payment) {
@@ -808,6 +830,13 @@ export class InvoicesService {
         })
       : null;
 
+    const booking = payment.invoice?.booking;
+    const isDepositPayment = payment.type === PaymentEntryType.DEPOSIT;
+    const shouldConfirmBooking =
+      isDepositPayment &&
+      booking &&
+      booking.status === BookingStatus.PENDING;
+
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.payment.update({
         where: { id: paymentId },
@@ -827,34 +856,86 @@ export class InvoicesService {
         data: { issuedById: cashierId },
       });
 
+      // Xác nhận khoản cọc → tự động chuyển booking PENDING → CONFIRMED
+      if (shouldConfirmBooking) {
+        await tx.booking.update({
+          where: { id: booking.id },
+          data: {
+            status: BookingStatus.CONFIRMED,
+            depositAmount: roundMoney(amount),
+            confirmedAt: new Date(),
+            confirmedById: cashierId,
+            confirmationNote: 'Tự động xác nhận khi thu ngân duyệt khoản cọc',
+          },
+        });
+      }
+
       return this.recalculateInvoiceTotals(tx, payment.invoiceId);
     });
 
+    // Đổi trạng thái phòng sau khi booking đã CONFIRMED (ngoài transaction, giống approve flow)
+    if (shouldConfirmBooking && booking.roomId) {
+      await this.syncRoomStatusAfterDeposit(booking.roomId);
+    }
+
     const response = this.toInvoiceResponse(updated);
 
-    if (payment.invoice?.booking?.customerId) {
-      this.notificationsService.sendToUser(payment.invoice.booking.customerId, {
-        title: 'Thanh toán thành công',
-        body: `Khoản thanh toán ${amount.toLocaleString('vi-VN')}đ cho hóa đơn ${payment.invoice.invoiceCode || ''} đã được xác nhận.`,
+    if (booking?.customerId) {
+      const notifBody = shouldConfirmBooking
+        ? `Khoản cọc ${amount.toLocaleString('vi-VN')}đ đã được xác nhận. Đơn đặt phòng của bạn đã được duyệt.`
+        : `Khoản thanh toán ${amount.toLocaleString('vi-VN')}đ cho hóa đơn ${payment.invoice.invoiceCode || ''} đã được xác nhận.`;
+      this.notificationsService.sendToUser(booking.customerId, {
+        title: shouldConfirmBooking ? 'Đặt cọc thành công' : 'Thanh toán thành công',
+        body: notifBody,
         category: 'payment',
         actionRoute: '/my-bookings',
-        actionLabel: 'Xem hóa đơn',
+        actionLabel: 'Xem đơn đặt phòng',
         data: {
-          type: 'PAYMENT_CONFIRMED',
+          type: shouldConfirmBooking ? 'DEPOSIT_CONFIRMED' : 'PAYMENT_CONFIRMED',
           invoiceId: payment.invoiceId,
+          bookingId: booking.id,
         },
       }).catch(() => {});
     }
 
     return {
-      message:
-        response.remainingAmount > 0
+      message: shouldConfirmBooking
+        ? `Đã xác nhận cọc ${amount.toLocaleString('vi-VN')}đ và duyệt đơn đặt phòng thành công.`
+        : response.remainingAmount > 0
           ? `Đã xác nhận thu ${amount.toLocaleString('vi-VN')}đ. Hóa đơn còn thiếu ${response.remainingAmount.toLocaleString('vi-VN')}đ.`
           : `Đã xác nhận thu ${amount.toLocaleString('vi-VN')}đ. Hóa đơn đã thanh toán đủ.`,
       paymentId,
       amount,
+      bookingConfirmed: shouldConfirmBooking || undefined,
       invoice: response,
     };
+  }
+
+  /**
+   * Đồng bộ trạng thái phòng sau khi xác nhận cọc chuyển booking → CONFIRMED.
+   * Logic giống BookingsService.syncRoomStatus, nhưng inline ở đây để tránh
+   * circular dependency giữa InvoicesService và BookingsService.
+   */
+  private async syncRoomStatusAfterDeposit(roomId: string): Promise<void> {
+    const room = await this.prisma.room.findUnique({
+      where: { id: roomId },
+      include: {
+        bookings: {
+          where: { status: { in: [BookingStatus.CHECKED_IN, BookingStatus.CONFIRMED] } },
+          select: { status: true, checkInDate: true, checkOutDate: true },
+        },
+      },
+    });
+
+    if (!room) return;
+
+    const nextStatus = deriveRoomStatus(room.status, room.bookings);
+    if (nextStatus === room.status) return;
+
+    await this.prisma.room.update({
+      where: { id: roomId },
+      data: { status: nextStatus },
+    });
   }
 
   /** Thu ngân từ chối yêu cầu (không thấy giao dịch trên sao kê, sai số tiền...). */
