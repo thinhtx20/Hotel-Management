@@ -156,6 +156,9 @@ export class NotificationsService implements OnModuleInit {
           title: payload.title,
           body: payload.body,
           category: payload.category ?? 'Thông báo khách sạn',
+          route: payload.actionRoute ?? payload.data?.route ?? '/my-bookings',
+          actionRoute: payload.actionRoute ?? payload.data?.route ?? '/my-bookings',
+          actionLabel: payload.actionLabel ?? 'Xem chi tiết',
           ...(payload.data ?? {}),
         },
         android: {
