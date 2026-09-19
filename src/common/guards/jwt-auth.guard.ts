@@ -1,4 +1,4 @@
-import { ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+﻿import { ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
@@ -15,8 +15,13 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       context.getClass(),
     ]);
     const request = context.switchToHttp().getRequest();
-    // Nếu là public endpoint và không có header Authorization thì cho qua luôn
-    if (isPublic && !request.headers?.authorization) {
+    // Nếu là public endpoint và KHÔNG có cả header Authorization lẫn token qua query parameter thì cho qua
+    if (
+      isPublic &&
+      !request.headers?.authorization &&
+      !request.query?.token &&
+      !request.query?.access_token
+    ) {
       return true;
     }
     return super.canActivate(context);

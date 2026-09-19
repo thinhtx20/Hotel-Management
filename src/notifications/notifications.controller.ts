@@ -13,8 +13,8 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { NotificationsService } from './notifications.service';
 import { Role } from '@prisma/client';
 
-@ApiTags('notifications')
-@ApiBearerAuth('JWT')
+@ApiTags('Notifications (Thông báo & Push notification)')
+@ApiBearerAuth('JWT-auth')
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
 export class NotificationsController {

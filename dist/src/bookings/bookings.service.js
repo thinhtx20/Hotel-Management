@@ -92,7 +92,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
         const rawCheckIn = new Date(dto.checkInDate);
         const rawCheckOut = new Date(dto.checkOutDate);
         if (rawCheckIn >= rawCheckOut) {
-            throw new common_1.BadRequestException('NgÃ y nháº­n phÃ²ng pháº£i trÆ°á»›c ngÃ y tráº£ phÃ²ng');
+            throw new common_1.BadRequestException('Ngày nhận phòng phải trước ngày trả phòng');
         }
         const checkIn = new Date(rawCheckIn);
         checkIn.setUTCHours(14, 0, 0, 0);
@@ -101,8 +101,8 @@ let BookingsService = BookingsService_1 = class BookingsService {
         const lockKey = `lock:booking:room:${dto.roomId}`;
         const lockToken = await this.redis.acquireLock(lockKey, 6000);
         if (!lockToken) {
-            this.logger.warn(`Conflict lock trÃªn phÃ²ng ${dto.roomId} bá»Ÿi request Ä‘á»“ng thá»i`);
-            throw new common_1.ConflictException('PhÃ²ng nÃ y Ä‘ang Ä‘Æ°á»£c khÃ¡ch khÃ¡c giá»¯ chá»— Ä‘á»ƒ thanh toÃ¡n, vui lÃ²ng thá»­ láº¡i sau giÃ¢y lÃ¡t!');
+            this.logger.warn(`Conflict lock trên phòng ${dto.roomId} bởi request đồng thời`);
+            throw new common_1.ConflictException('Phòng này đang được khách khác giữ chỗ để thanh toán, vui lòng thử lại sau giây lát!');
         }
         try {
             const room = await this.prisma.room.findUnique({
@@ -110,10 +110,10 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 include: { roomType: true },
             });
             if (!room) {
-                throw new common_1.NotFoundException(`KhÃ´ng tÃ¬m tháº¥y phÃ²ng vá»›i ID: ${dto.roomId}`);
+                throw new common_1.NotFoundException(`Không tìm thấy phòng với ID: ${dto.roomId}`);
             }
             if (room.status === client_1.RoomStatus.MAINTENANCE) {
-                throw new common_1.BadRequestException('PhÃ²ng nÃ y hiá»‡n Ä‘ang báº£o trÃ¬, khÃ´ng thá»ƒ Ä‘áº·t');
+                throw new common_1.BadRequestException('Phòng này hiện đang bảo trì, không thể đặt');
             }
             const now = new Date();
             const conflictBooking = await this.prisma.booking.findFirst({
@@ -128,7 +128,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 },
             });
             if (conflictBooking) {
-                throw new common_1.ConflictException('PhÃ²ng nÃ y Ä‘Ã£ cÃ³ khÃ¡ch Ä‘áº·t hoáº·c Ä‘ang á»Ÿ trong khoáº£ng thá»i gian Ä‘Æ°á»£c chá»n');
+                throw new common_1.ConflictException('Phòng này đã có khách đặt hoặc đang ở trong khoảng thời gian được chọn');
             }
             const diffTime = Math.abs(checkOut.getTime() - checkIn.getTime());
             const nights = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
@@ -159,17 +159,6 @@ let BookingsService = BookingsService_1 = class BookingsService {
             });
             await this.syncRoomStatus(dto.roomId);
             await this.redis.delByPattern('cache:rooms:*');
-            this.notificationsService.sendToUser(finalCustomerId, {
-                title: initialStatus === client_1.BookingStatus.CONFIRMED ? 'Xác nhận đặt phòng' : 'Đơn đặt phòng mới',
-                body: `Đơn đặt phòng ${booking.bookingCode} (${room?.roomNumber ? 'Phòng ' + room.roomNumber : ''}) đã được tạo thành công.`,
-                category: 'booking',
-                actionRoute: '/my-bookings',
-                actionLabel: 'Xem chuyến đi',
-                data: {
-                    type: 'BOOKING_CREATED',
-                    bookingId: booking.id,
-                },
-            }).catch(() => { });
             return this.toBookingResponse(booking, currentUserRole);
         }
         finally {
@@ -263,7 +252,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
     }
     assertOwnership(booking, userId, userRole) {
         if (userRole === client_1.Role.CUSTOMER && booking.customerId !== userId) {
-            throw new common_1.ForbiddenException('Báº¡n chá»‰ cÃ³ thá»ƒ xem vÃ  thao tÃ¡c trÃªn Ä‘Æ¡n Ä‘áº·t phÃ²ng cá»§a chÃ­nh mÃ¬nh');
+            throw new common_1.ForbiddenException('Bạn chỉ có thể xem và thao tác trên đơn đặt phòng của chính mình');
         }
     }
     async findOne(id, currentUserId, currentUserRole) {
@@ -272,7 +261,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
             include: BOOKING_INCLUDE,
         });
         if (!booking) {
-            throw new common_1.NotFoundException(`KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n Ä‘áº·t phÃ²ng ID: ${id}`);
+            throw new common_1.NotFoundException(`Không tìm thấy đơn đặt phòng ID: ${id}`);
         }
         this.assertOwnership(booking, currentUserId, currentUserRole);
         return this.toBookingResponse(booking, currentUserRole);
@@ -283,24 +272,24 @@ let BookingsService = BookingsService_1 = class BookingsService {
             include: BOOKING_INCLUDE,
         });
         if (!booking) {
-            throw new common_1.NotFoundException(`KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n Ä‘áº·t phÃ²ng ID: ${id}`);
+            throw new common_1.NotFoundException(`Không tìm thấy đơn đặt phòng ID: ${id}`);
         }
         if (booking.status === client_1.BookingStatus.CONFIRMED) {
-            throw new common_1.BadRequestException('ÄÆ¡n Ä‘áº·t phÃ²ng nÃ y Ä‘Ã£ Ä‘Æ°á»£c phÃª duyá»‡t trÆ°á»›c Ä‘Ã³');
+            throw new common_1.BadRequestException('Đơn đặt phòng này đã được phê duyệt trước đó');
         }
         if (booking.status === client_1.BookingStatus.CANCELLED) {
-            throw new common_1.BadRequestException('ÄÆ¡n Ä‘áº·t phÃ²ng nÃ y Ä‘Ã£ bá»‹ há»§y, khÃ´ng thá»ƒ phÃª duyá»‡t');
+            throw new common_1.BadRequestException('Đơn đặt phòng này đã bị hủy, không thể phê duyệt');
         }
         if (booking.status === client_1.BookingStatus.CHECKED_IN || booking.status === client_1.BookingStatus.CHECKED_OUT) {
-            throw new common_1.BadRequestException('ÄÆ¡n Ä‘áº·t phÃ²ng Ä‘Ã£ hoáº·c Ä‘ang Ä‘Æ°á»£c thá»±c hiá»‡n, khÃ´ng thá»ƒ duyá»‡t láº¡i');
+            throw new common_1.BadRequestException('Đơn đặt phòng đã hoặc đang được thực hiện, không thể duyệt lại');
         }
         const targetRoomId = dto?.assignedRoomId || booking.roomId;
         const targetRoom = await this.prisma.room.findUnique({ where: { id: targetRoomId } });
         if (!targetRoom) {
-            throw new common_1.NotFoundException(`KhÃ´ng tÃ¬m tháº¥y phÃ²ng cáº§n xáº¿p vá»›i ID: ${targetRoomId}`);
+            throw new common_1.NotFoundException(`Không tìm thấy phòng cần xếp với ID: ${targetRoomId}`);
         }
         if (targetRoom.status === client_1.RoomStatus.MAINTENANCE) {
-            throw new common_1.BadRequestException('PhÃ²ng Ä‘Æ°á»£c xáº¿p Ä‘ang báº£o trÃ¬, khÃ´ng thá»ƒ nháº­n khÃ¡ch');
+            throw new common_1.BadRequestException('Phòng được xếp đang bảo trì, không thể nhận khách');
         }
         if (targetRoomId !== booking.roomId) {
             const conflict = await this.prisma.booking.findFirst({
@@ -317,7 +306,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 },
             });
             if (conflict) {
-                throw new common_1.ConflictException(`PhÃ²ng ${targetRoom.roomNumber} Ä‘Ã£ cÃ³ Ä‘Æ¡n ${conflict.bookingCode} trÃ¹ng lá»‹ch trong khoáº£ng thá»i gian nÃ y`);
+                throw new common_1.ConflictException(`Phòng ${targetRoom.roomNumber} đã có đơn ${conflict.bookingCode} trùng lịch trong khoảng thời gian này`);
             }
         }
         const depositAmount = dto?.depositAmount !== undefined ? dto.depositAmount : (booking.depositAmount || 0);
@@ -351,12 +340,12 @@ let BookingsService = BookingsService_1 = class BookingsService {
                     paidAmount: 0,
                     paymentMethod: dto?.paymentMethod || client_1.PaymentMethod.BANK_TRANSFER,
                     paymentStatus: client_1.PaymentStatus.UNPAID,
-                    notes: dto?.notes || 'Tiá»n cá»c giá»¯ chá»— khi duyá»‡t phÃ²ng',
+                    notes: dto?.notes || 'Tiền cọc giữ chỗ khi duyệt phòng',
                     issuedById: currentUserId,
                 },
                 update: {
                     paymentMethod: dto?.paymentMethod || client_1.PaymentMethod.BANK_TRANSFER,
-                    notes: dto?.notes || 'Tiá»n cá»c giá»¯ chá»— khi duyá»‡t phÃ²ng',
+                    notes: dto?.notes || 'Tiền cọc giữ chỗ khi duyệt phòng',
                     issuedById: currentUserId,
                 },
             });
@@ -376,7 +365,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                     method: dto?.paymentMethod || client_1.PaymentMethod.BANK_TRANSFER,
                     type: client_1.PaymentEntryType.DEPOSIT,
                     status: client_1.PaymentEntryStatus.CONFIRMED,
-                    note: 'Tiá»n cá»c giá»¯ chá»— khi duyá»‡t phÃ²ng',
+                    note: 'Tiền cọc giữ chỗ khi duyệt phòng',
                     createdById: currentUserId,
                     confirmedById: currentUserId,
                     confirmedAt: new Date(),
@@ -391,19 +380,8 @@ let BookingsService = BookingsService_1 = class BookingsService {
             await this.syncRoomStatus(booking.roomId);
         }
         await this.redis.delByPattern('cache:rooms:*');
-        this.notificationsService.sendToUser(booking.customerId, {
-            title: 'Đơn đặt phòng đã được duyệt',
-            body: `Đơn đặt phòng ${booking.bookingCode} của Quý khách đã được xác nhận.`,
-            category: 'booking',
-            actionRoute: '/my-bookings',
-            actionLabel: 'Xem chuyến đi',
-            data: {
-                type: 'BOOKING_CONFIRMED',
-                bookingId: booking.id,
-            },
-        }).catch(() => { });
         return {
-            message: 'PhÃª duyá»‡t Ä‘Æ¡n Ä‘áº·t phÃ²ng vÃ  xÃ¡c nháº­n tiá»n cá»c thÃ nh cÃ´ng',
+            message: 'Phê duyệt đơn đặt phòng và xác nhận tiền cọc thành công',
             depositAmount,
             booking: this.toBookingResponse({
                 ...updatedBooking,
@@ -419,7 +397,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
         const result = await this.approve(id, dto, currentUserId);
         return {
             ...result,
-            message: 'XÃ¡c nháº­n Ä‘Æ¡n Ä‘áº·t phÃ²ng thÃ nh cÃ´ng',
+            message: 'Xác nhận đơn đặt phòng thành công',
         };
     }
     async reject(id, dto, currentUserId) {
@@ -428,13 +406,13 @@ let BookingsService = BookingsService_1 = class BookingsService {
             include: BOOKING_INCLUDE,
         });
         if (!booking) {
-            throw new common_1.NotFoundException(`KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n Ä‘áº·t phÃ²ng ID: ${id}`);
+            throw new common_1.NotFoundException(`Không tìm thấy đơn đặt phòng ID: ${id}`);
         }
         if (booking.status === client_1.BookingStatus.CANCELLED) {
-            throw new common_1.BadRequestException('ÄÆ¡n Ä‘áº·t phÃ²ng nÃ y Ä‘Ã£ bá»‹ há»§y trÆ°á»›c Ä‘Ã³');
+            throw new common_1.BadRequestException('Đơn đặt phòng này đã bị hủy trước đó');
         }
         if (booking.status === client_1.BookingStatus.CHECKED_IN || booking.status === client_1.BookingStatus.CHECKED_OUT) {
-            throw new common_1.BadRequestException('KhÃ´ng thá»ƒ tá»« chá»‘i Ä‘Æ¡n Ä‘áº·t phÃ²ng Ä‘Ã£ hoáº·c Ä‘ang lÆ°u trÃº');
+            throw new common_1.BadRequestException('Không thể từ chối đơn đặt phòng đã hoặc đang lưu trú');
         }
         const reason = dto?.cancellationReason || dto?.reason || null;
         const updatedBooking = await this.prisma.booking.update({
@@ -449,35 +427,24 @@ let BookingsService = BookingsService_1 = class BookingsService {
         });
         await this.syncRoomStatus(booking.roomId);
         await this.redis.delByPattern('cache:rooms:*');
-        this.notificationsService.sendToUser(booking.customerId, {
-            title: 'Đơn đặt phòng đã hủy',
-            body: `Đơn đặt phòng ${booking.bookingCode} đã bị từ chối/hủy.${reason ? ' Lý do: ' + reason : ''}`,
-            category: 'booking',
-            actionRoute: '/my-bookings',
-            actionLabel: 'Chi tiết đơn',
-            data: {
-                type: 'BOOKING_CANCELLED',
-                bookingId: booking.id,
-            },
-        }).catch(() => { });
         return {
-            message: 'Tá»« chá»‘i Ä‘Æ¡n Ä‘áº·t phÃ²ng thÃ nh cÃ´ng',
+            message: 'Từ chối đơn đặt phòng thành công',
             booking: this.toBookingResponse(updatedBooking),
         };
     }
     async checkIn(id) {
         const booking = await this.findOne(id);
         if (booking.status === client_1.BookingStatus.CANCELLED) {
-            throw new common_1.BadRequestException('ÄÆ¡n Ä‘áº·t phÃ²ng nÃ y Ä‘Ã£ bá»‹ há»§y');
+            throw new common_1.BadRequestException('Đơn đặt phòng này đã bị hủy');
         }
         if (booking.status === client_1.BookingStatus.PENDING) {
-            throw new common_1.BadRequestException('ÄÆ¡n Ä‘áº·t phÃ²ng Ä‘ang á»Ÿ tráº¡ng thÃ¡i chá» duyá»‡t. Lá»… tÃ¢n vui lÃ²ng phÃª duyá»‡t Ä‘Æ¡n trÆ°á»›c khi thá»±c hiá»‡n check-in');
+            throw new common_1.BadRequestException('Đơn đặt phòng đang ở trạng thái chờ duyệt. Lễ tân vui lòng phê duyệt đơn trước khi thực hiện check-in');
         }
         if (booking.status === client_1.BookingStatus.CHECKED_IN) {
-            throw new common_1.BadRequestException('KhÃ¡ch Ä‘Ã£ check-in trÆ°á»›c Ä‘Ã³');
+            throw new common_1.BadRequestException('Khách đã check-in trước đó');
         }
         if (booking.status === client_1.BookingStatus.CHECKED_OUT) {
-            throw new common_1.BadRequestException('ÄÆ¡n Ä‘áº·t phÃ²ng nÃ y Ä‘Ã£ hoÃ n táº¥t check-out');
+            throw new common_1.BadRequestException('Đơn đặt phòng này đã hoàn tất check-out');
         }
         const [updatedBooking] = await this.prisma.$transaction([
             this.prisma.booking.update({
@@ -510,17 +477,6 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 updatedAt: new Date().toISOString(),
             });
         }
-        this.notificationsService.sendToUser(booking.customerId, {
-            title: 'Nhận phòng thành công',
-            body: `Chào mừng Quý khách đến với phòng ${updatedBooking.room?.roomNumber ?? ''}! Chúc Quý khách một kỳ nghỉ tuyệt vời.`,
-            category: 'booking',
-            actionRoute: '/my-bookings',
-            actionLabel: 'Xem chuyến đi',
-            data: {
-                type: 'CHECK_IN_SUCCESS',
-                bookingId: booking.id,
-            },
-        }).catch(() => { });
         return this.toBookingResponse(updatedBooking);
     }
     buildSettlement(booking, dto) {
@@ -588,7 +544,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
         const booking = await this.findOne(id);
         if (booking.status !== client_1.BookingStatus.CHECKED_IN &&
             booking.status !== client_1.BookingStatus.CHECKED_OUT) {
-            throw new common_1.BadRequestException('Chá»‰ xem Ä‘Æ°á»£c báº£ng quyáº¿t toÃ¡n cá»§a Ä‘Æ¡n Ä‘ang lÆ°u trÃº (CHECKED_IN) hoáº·c Ä‘Ã£ tráº£ phÃ²ng (CHECKED_OUT)');
+            throw new common_1.BadRequestException('Chỉ xem được bảng quyết toán của đơn đang lưu trú (CHECKED_IN) hoặc đã trả phòng (CHECKED_OUT)');
         }
         const settlement = this.buildSettlement(booking);
         const pendingRequests = booking.invoice
@@ -624,25 +580,25 @@ let BookingsService = BookingsService_1 = class BookingsService {
     async checkOut(id, dto, cashierId) {
         const booking = await this.findOne(id);
         if (booking.status !== client_1.BookingStatus.CHECKED_IN) {
-            throw new common_1.BadRequestException('Chá»‰ cÃ³ thá»ƒ check-out Ä‘Æ¡n Ä‘áº·t phÃ²ng Ä‘ang á»Ÿ tráº¡ng thÃ¡i CHECKED_IN');
+            throw new common_1.BadRequestException('Chỉ có thể check-out đơn đặt phòng đang ở trạng thái CHECKED_IN');
         }
         const settlement = this.buildSettlement(booking, dto);
         const collected = (0, revenue_util_1.roundMoney)(dto.amountCollected ?? 0);
         if (collected > settlement.amountDue) {
-            throw new common_1.BadRequestException(`Sá»‘ tiá»n thu (${collected.toLocaleString('vi-VN')}Ä‘) vÆ°á»£t quÃ¡ sá»‘ cÃ²n pháº£i thu ` +
-                `(${settlement.amountDue.toLocaleString('vi-VN')}Ä‘). ` +
-                'Gá»i GET /bookings/:id/checkout-preview Ä‘á»ƒ láº¥y Ä‘Ãºng sá»‘ cÃ²n thu.');
+            throw new common_1.BadRequestException(`Số tiền thu (${collected.toLocaleString('vi-VN')}đ) vượt quá số còn phải thu ` +
+                `(${settlement.amountDue.toLocaleString('vi-VN')}đ). ` +
+                'Gọi GET /bookings/:id/checkout-preview để lấy đúng số còn thu.');
         }
         if (settlement.amountDue > 0 && collected < settlement.amountDue) {
-            throw new common_1.BadRequestException(`HÃ³a Ä‘Æ¡n chÆ°a Ä‘Æ°á»£c thanh toÃ¡n Ä‘á»§. CÃ²n thiáº¿u (${(settlement.amountDue - collected).toLocaleString('vi-VN')}Ä‘). ` +
-                'Vui lÃ²ng kiá»ƒm tra vÃ  thu Ä‘á»§ thanh toÃ¡n trÆ°á»›c khi tráº£ phÃ²ng vÃ  chuyá»ƒn tráº¡ng thÃ¡i phÃ²ng.');
+            throw new common_1.BadRequestException(`Hóa đơn chưa được thanh toán đủ. Còn thiếu (${(settlement.amountDue - collected).toLocaleString('vi-VN')}đ). ` +
+                'Vui lòng kiểm tra và thu đủ thanh toán trước khi trả phòng và chuyển trạng thái phòng.');
         }
         const now = new Date();
         const invoiceCode = `INV-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
         const { updatedBooking, invoice } = await this.prisma.$transaction(async (tx) => {
             let specialRequests = booking.specialRequests;
             if (settlement.isEarlyCheckOut) {
-                const note = `[Tráº£ phÃ²ng trÆ°á»›c háº¡n lÃºc ${now.toLocaleString('vi-VN')}: LÆ°u trÃº thá»±c táº¿ ${settlement.actualNights}/${settlement.bookedNights} Ä‘Ãªm. Tiá»n phÃ²ng: ${settlement.roomAmount.toLocaleString('vi-VN')}Ä‘${settlement.refundDue > 0 ? `, ÄÃ£ hoÃ n tráº£: ${settlement.refundDue.toLocaleString('vi-VN')}Ä‘` : ''}]`;
+                const note = `[Trả phòng trước hạn lúc ${now.toLocaleString('vi-VN')}: Lưu trú thực tế ${settlement.actualNights}/${settlement.bookedNights} đêm. Tiền phòng: ${settlement.roomAmount.toLocaleString('vi-VN')}đ${settlement.refundDue > 0 ? `, Đã hoàn trả: ${settlement.refundDue.toLocaleString('vi-VN')}đ` : ''}]`;
                 specialRequests = specialRequests ? `${specialRequests}\n${note}` : note;
             }
             const bookingRow = await tx.booking.update({
@@ -698,7 +654,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                         method: dto.paymentMethod || client_1.PaymentMethod.CASH,
                         type: client_1.PaymentEntryType.PAYMENT,
                         status: client_1.PaymentEntryStatus.CONFIRMED,
-                        note: dto.note || 'Thu tiá»n táº¡i quáº§y khi khÃ¡ch tráº£ phÃ²ng',
+                        note: dto.note || 'Thu tiền tại quầy khi khách trả phòng',
                         createdById: cashierId,
                         confirmedById: cashierId,
                         confirmedAt: now,
@@ -715,7 +671,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                         method: dto.refundMethod || dto.paymentMethod || client_1.PaymentMethod.CASH,
                         type: client_1.PaymentEntryType.REFUND,
                         status: client_1.PaymentEntryStatus.CONFIRMED,
-                        note: dto.refundReason || `HoÃ n tiá»n tráº£ phÃ²ng trÆ°á»›c háº¡n (${refundToProcess.toLocaleString('vi-VN')}Ä‘)`,
+                        note: dto.refundReason || `Hoàn tiền trả phòng trước hạn (${refundToProcess.toLocaleString('vi-VN')}đ)`,
                         createdById: cashierId,
                         confirmedById: cashierId,
                         confirmedAt: now,
@@ -744,24 +700,13 @@ let BookingsService = BookingsService_1 = class BookingsService {
             });
         }
         const remainingAmount = Math.max(0, (0, revenue_util_1.roundMoney)(invoice.finalAmount) - (0, revenue_util_1.roundMoney)(invoice.paidAmount));
-        this.notificationsService.sendToUser(booking.customerId, {
-            title: 'Trả phòng thành công',
-            body: `Cảm ơn Quý khách đã nghỉ dưỡng tại phòng ${booking.room?.roomNumber ?? ''}. Hẹn gặp lại Quý khách tại Luxe Grand Hotel!`,
-            category: 'booking',
-            actionRoute: '/my-bookings',
-            actionLabel: 'Chi tiết đơn',
-            data: {
-                type: 'CHECK_OUT_SUCCESS',
-                bookingId: booking.id,
-            },
-        }).catch(() => { });
         return {
             message: settlement.refundDue > 0
-                ? `Check-out thÃ nh cÃ´ng. ÄÃ£ hoÃ n tráº£ láº¡i ${settlement.refundDue.toLocaleString('vi-VN')}Ä‘ cho khÃ¡ch.`
+                ? `Check-out thành công. Đã hoàn trả lại ${settlement.refundDue.toLocaleString('vi-VN')}đ cho khách.`
                 : remainingAmount > 0
-                    ? `Check-out thÃ nh cÃ´ng. HÃ³a Ä‘Æ¡n cÃ²n thiáº¿u ${remainingAmount.toLocaleString('vi-VN')}Ä‘ ` +
-                        'Ä‘Ã£ Ä‘Æ°á»£c gá»­i vá» má»¥c "HÃ³a Ä‘Æ¡n cá»§a tÃ´i" Ä‘á»ƒ khÃ¡ch thanh toÃ¡n ná»‘t.'
-                    : 'Check-out vÃ  thanh toÃ¡n hÃ³a Ä‘Æ¡n thÃ nh cÃ´ng',
+                    ? `Check-out thành công. Hóa đơn còn thiếu ${remainingAmount.toLocaleString('vi-VN')}đ ` +
+                        'đã được gửi về mục "Hóa đơn của tôi" để khách thanh toán nốt.'
+                    : 'Check-out và thanh toán hóa đơn thành công',
             invoiceId: invoice.id,
             amountCollected: collected,
             refundAmount: settlement.refundDue,
@@ -779,17 +724,17 @@ let BookingsService = BookingsService_1 = class BookingsService {
     async cancel(id, dto, currentUserId, currentUserRole) {
         const booking = await this.findOne(id, currentUserId, currentUserRole);
         if (booking.status === client_1.BookingStatus.CHECKED_IN) {
-            throw new common_1.BadRequestException('KhÃ¡ch Ä‘ang á»Ÿ phÃ²ng, khÃ´ng thá»ƒ há»§y Ä‘Æ¡n Ä‘áº·t');
+            throw new common_1.BadRequestException('Khách đang ở phòng, không thể hủy đơn đặt');
         }
         if (booking.status === client_1.BookingStatus.CHECKED_OUT) {
-            throw new common_1.BadRequestException('ÄÆ¡n Ä‘áº·t phÃ²ng Ä‘Ã£ hoÃ n táº¥t, khÃ´ng thá»ƒ há»§y');
+            throw new common_1.BadRequestException('Đơn đặt phòng đã hoàn tất, không thể hủy');
         }
         if (booking.status === client_1.BookingStatus.CANCELLED) {
-            throw new common_1.BadRequestException('ÄÆ¡n Ä‘áº·t phÃ²ng nÃ y Ä‘Ã£ bá»‹ há»§y trÆ°á»›c Ä‘Ã³');
+            throw new common_1.BadRequestException('Đơn đặt phòng này đã bị hủy trước đó');
         }
         if (currentUserRole === client_1.Role.CUSTOMER && booking.status !== client_1.BookingStatus.PENDING) {
-            throw new common_1.ForbiddenException('ÄÆ¡n Ä‘áº·t phÃ²ng Ä‘Ã£ Ä‘Æ°á»£c lá»… tÃ¢n xÃ¡c nháº­n nÃªn khÃ´ng thá»ƒ tá»± há»§y. ' +
-                'Vui lÃ²ng liÃªn há»‡ lá»… tÃ¢n Ä‘á»ƒ Ä‘Æ°á»£c há»— trá»£.');
+            throw new common_1.ForbiddenException('Đơn đặt phòng đã được lễ tân xác nhận nên không thể tự hủy. ' +
+                'Vui lòng liên hệ lễ tân để được hỗ trợ.');
         }
         const updatedBooking = await this.prisma.booking.update({
             where: { id },
@@ -808,7 +753,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
     async addServiceOrder(id, dto) {
         const booking = await this.findOne(id);
         if (booking.status !== client_1.BookingStatus.CHECKED_IN) {
-            throw new common_1.BadRequestException('Chá»‰ cÃ³ thá»ƒ thÃªm dá»‹ch vá»¥ cho khÃ¡ch Ä‘ang lÆ°u trÃº táº¡i phÃ²ng');
+            throw new common_1.BadRequestException('Chỉ có thể thêm dịch vụ cho khách đang lưu trú tại phòng');
         }
         const quantity = dto.quantity || 1;
         const totalPrice = dto.unitPrice * quantity;
@@ -826,15 +771,15 @@ let BookingsService = BookingsService_1 = class BookingsService {
     async changeRoom(id, dto) {
         const booking = await this.findOne(id);
         if (booking.status !== client_1.BookingStatus.CHECKED_IN) {
-            throw new common_1.BadRequestException('Chá»‰ cÃ³ thá»ƒ Ä‘á»•i phÃ²ng cho Ä‘Æ¡n Ä‘áº·t phÃ²ng Ä‘ang lÆ°u trÃº (CHECKED_IN)');
+            throw new common_1.BadRequestException('Chỉ có thể đổi phòng cho đơn đặt phòng đang lưu trú (CHECKED_IN)');
         }
         if (dto.newRoomId === booking.roomId) {
-            throw new common_1.BadRequestException('PhÃ²ng má»›i pháº£i khÃ¡c phÃ²ng hiá»‡n táº¡i Ä‘ang á»Ÿ');
+            throw new common_1.BadRequestException('Phòng mới phải khác phòng hiện tại đang ở');
         }
         const lockKey = `lock:room:${dto.newRoomId}`;
         const lockToken = await this.redis.acquireLock(lockKey, 5000);
         if (!lockToken) {
-            throw new common_1.ConflictException('PhÃ²ng má»›i Ä‘ang Ä‘Æ°á»£c xá»­ lÃ½ bá»Ÿi má»™t thao tÃ¡c khÃ¡c, vui lÃ²ng thá»­ láº¡i');
+            throw new common_1.ConflictException('Phòng mới đang được xử lý bởi một thao tác khác, vui lòng thử lại');
         }
         try {
             const now = new Date();
@@ -849,21 +794,21 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 },
             });
             if (!newRoom) {
-                throw new common_1.NotFoundException(`KhÃ´ng tÃ¬m tháº¥y phÃ²ng má»›i vá»›i ID: ${dto.newRoomId}`);
+                throw new common_1.NotFoundException(`Không tìm thấy phòng mới với ID: ${dto.newRoomId}`);
             }
             const effectiveStatus = (0, room_status_util_1.deriveRoomStatus)(newRoom.status, newRoom.bookings, now);
             if (effectiveStatus !== newRoom.status) {
                 await this.syncRoomStatus(dto.newRoomId);
             }
             if (effectiveStatus === client_1.RoomStatus.MAINTENANCE) {
-                throw new common_1.BadRequestException(`PhÃ²ng ${newRoom.roomNumber} Ä‘ang báº£o trÃ¬, khÃ´ng thá»ƒ chuyá»ƒn vÃ o`);
+                throw new common_1.BadRequestException(`Phòng ${newRoom.roomNumber} đang bảo trì, không thể chuyển vào`);
             }
             if (effectiveStatus === client_1.RoomStatus.PENDING_APPROVAL ||
                 effectiveStatus === client_1.RoomStatus.REJECTED) {
-                throw new common_1.BadRequestException(`PhÃ²ng ${newRoom.roomNumber} chÆ°a Ä‘Æ°á»£c duyá»‡t Ä‘Æ°a vÃ o khai thÃ¡c, khÃ´ng thá»ƒ chuyá»ƒn khÃ¡ch vÃ o`);
+                throw new common_1.BadRequestException(`Phòng ${newRoom.roomNumber} chưa được duyệt đưa vào khai thác, không thể chuyển khách vào`);
             }
             if (effectiveStatus === client_1.RoomStatus.CLEANING) {
-                throw new common_1.BadRequestException(`PhÃ²ng ${newRoom.roomNumber} Ä‘ang Ä‘Æ°á»£c dá»n dáº¹p, vui lÃ²ng chá» buá»“ng phÃ²ng hoÃ n táº¥t`);
+                throw new common_1.BadRequestException(`Phòng ${newRoom.roomNumber} đang được dọn dẹp, vui lòng chờ buồng phòng hoàn tất`);
             }
             const conflictBooking = await this.prisma.booking.findFirst({
                 where: {
@@ -877,8 +822,8 @@ let BookingsService = BookingsService_1 = class BookingsService {
             });
             if (conflictBooking) {
                 throw new common_1.ConflictException(conflictBooking.status === client_1.BookingStatus.CHECKED_IN
-                    ? `PhÃ²ng ${newRoom.roomNumber} Ä‘ang cÃ³ khÃ¡ch lÆ°u trÃº, khÃ´ng thá»ƒ chuyá»ƒn vÃ o`
-                    : `PhÃ²ng ${newRoom.roomNumber} Ä‘Ã£ cÃ³ lá»‹ch Ä‘áº·t tá»« ${new Date(conflictBooking.checkInDate).toLocaleString('vi-VN')} trong khoáº£ng lÆ°u trÃº cÃ²n láº¡i`);
+                    ? `Phòng ${newRoom.roomNumber} đang có khách lưu trú, không thể chuyển vào`
+                    : `Phòng ${newRoom.roomNumber} đã có lịch đặt từ ${new Date(conflictBooking.checkInDate).toLocaleString('vi-VN')} trong khoảng lưu trú còn lại`);
             }
             let newTotalAmount = booking.totalAmount;
             if (dto.keepPrice === false) {
@@ -890,7 +835,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 newTotalAmount = (0, revenue_util_1.roundMoney)((passedNights * oldBasePrice) + (remainingNights * newBasePrice));
             }
             const oldRoomId = booking.roomId;
-            const note = `[Äá»•i phÃ²ng: tá»« ${booking.room.roomNumber} sang ${newRoom.roomNumber} lÃºc ${new Date().toLocaleString('vi-VN')}. LÃ½ do: ${dto.reason}]`;
+            const note = `[Đổi phòng: từ ${booking.room.roomNumber} sang ${newRoom.roomNumber} lúc ${new Date().toLocaleString('vi-VN')}. Lý do: ${dto.reason}]`;
             const updatedRequests = booking.specialRequests ? `${booking.specialRequests}\n${note}` : note;
             const [updatedBooking] = await this.prisma.$transaction([
                 this.prisma.booking.update({
@@ -957,7 +902,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
                 updatedAt: new Date().toISOString(),
             });
             return {
-                message: 'Äá»•i phÃ²ng thÃ nh cÃ´ng',
+                message: 'Đổi phòng thành công',
                 booking: this.toBookingResponse(updatedBooking),
             };
         }
@@ -968,10 +913,10 @@ let BookingsService = BookingsService_1 = class BookingsService {
     async requestServiceOrder(id, dto, customerId) {
         const booking = await this.findOne(id);
         if (booking.customerId !== customerId) {
-            throw new common_1.ForbiddenException('Báº¡n chá»‰ cÃ³ thá»ƒ yÃªu cáº§u dá»‹ch vá»¥ cho Ä‘Æ¡n Ä‘áº·t phÃ²ng cá»§a chÃ­nh mÃ¬nh');
+            throw new common_1.ForbiddenException('Bạn chỉ có thể yêu cầu dịch vụ cho đơn đặt phòng của chính mình');
         }
         if (booking.status !== client_1.BookingStatus.CHECKED_IN) {
-            throw new common_1.BadRequestException('Chá»‰ cÃ³ thá»ƒ gá»i dá»‹ch vá»¥ khi Ä‘ang nháº­n phÃ²ng lÆ°u trÃº (CHECKED_IN)');
+            throw new common_1.BadRequestException('Chỉ có thể gọi dịch vụ khi đang nhận phòng lưu trú (CHECKED_IN)');
         }
         const quantity = dto.quantity || 1;
         const totalPrice = (0, revenue_util_1.roundMoney)(dto.unitPrice * quantity);
@@ -993,7 +938,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
             where: { id: orderId, bookingId },
         });
         if (!order) {
-            throw new common_1.NotFoundException(`KhÃ´ng tÃ¬m tháº¥y yÃªu cáº§u dá»‹ch vá»¥ vá»›i ID: ${orderId}`);
+            throw new common_1.NotFoundException(`Không tìm thấy yêu cầu dịch vụ với ID: ${orderId}`);
         }
         const updatedNote = dto.note ? (order.note ? `${order.note} | ${dto.note}` : dto.note) : order.note;
         return this.prisma.extraServiceOrder.update({

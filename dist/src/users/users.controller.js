@@ -35,7 +35,7 @@ const client_1 = require("@prisma/client");
 const SAMPLE_USER = {
     id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d',
     email: 'reception@hotel.com',
-    fullName: 'LÃª Thu HÃ  (Lá»… TÃ¢n)',
+    fullName: 'Lê Thu Hà (Lễ Tân)',
     phone: '0903334455',
     avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
     avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
@@ -65,7 +65,7 @@ let UsersController = class UsersController {
             type: 'ready',
             retry: 5000,
             data: {
-                message: 'ÄÃ£ káº¿t ná»‘i luá»“ng cáº­p nháº­t tÃ i khoáº£n',
+                message: 'Đã kết nối luồng cập nhật tài khoản',
                 at: new Date().toISOString(),
             },
         });
@@ -95,10 +95,10 @@ let UsersController = class UsersController {
 exports.UsersController = UsersController;
 __decorate([
     (0, common_1.Patch)('me'),
-    (0, swagger_1.ApiOperation)({ summary: 'Cáº­p nháº­t thÃ´ng tin tÃ i khoáº£n hiá»‡n táº¡i (Má»¥c 03 - P1)' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Cập nhật thông tin tài khoản hiện tại (Mục 03 - P1)' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
-        description: 'Cáº­p nháº­t há»“ sÆ¡ thÃ nh cÃ´ng',
+        description: 'Cập nhật hồ sơ thành công',
         exampleData: SAMPLE_USER,
     }),
     __param(0, (0, current_user_decorator_1.CurrentUser)('id')),
@@ -128,18 +128,18 @@ __decorate([
     (0, common_1.Post)(),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, swagger_1.ApiOperation)({
-        summary: 'Admin táº¡o tÃ i khoáº£n nhÃ¢n viÃªn (Lá»… tÃ¢n / Thu ngÃ¢n / Admin)',
-        description: 'ÄÆ°á»ng chÃ­nh thá»©c Ä‘á»ƒ cáº¥p tÃ i khoáº£n ná»™i bá»™, thay cho viá»‡c mÆ°á»£n POST /auth/register ' +
-            '(Ä‘Äƒng kÃ½ cÃ´ng khai luÃ´n Ã©p vai trÃ² CUSTOMER).',
+        summary: 'Admin tạo tài khoản nhân viên (Lễ tân / Thu ngân / Admin)',
+        description: 'Đường chính thức để cấp tài khoản nội bộ, thay cho việc mượn POST /auth/register ' +
+            '(đăng ký công khai luôn ép vai trò CUSTOMER).',
     }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 201,
-        description: 'Táº¡o tÃ i khoáº£n nhÃ¢n viÃªn thÃ nh cÃ´ng',
+        description: 'Tạo tài khoản nhân viên thành công',
         exampleData: SAMPLE_USER,
     }),
     (0, api_success_response_decorator_1.ApiErrorResponse)({
         status: 409,
-        message: 'Email nÃ y Ä‘Ã£ Ä‘Æ°á»£c Ä‘Äƒng kÃ½ trong há»‡ thá»‘ng',
+        message: 'Email này đã được đăng ký trong hệ thống',
         error: 'Conflict',
         path: '/api/v1/users',
     }),
@@ -152,13 +152,13 @@ __decorate([
     (0, common_1.Get)(),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, swagger_1.ApiOperation)({
-        summary: 'Láº¥y danh sÃ¡ch ngÆ°á»i dÃ¹ng & phÃ¢n trang (Admin & Receptionist)',
-        description: 'Response luÃ´n cÃ³ dáº¡ng { data: [...], meta: { total, page, limit, totalPages } }; ' +
-            'khÃ´ng truyá»n page/limit thÃ¬ tráº£ vá» toÃ n bá»™ káº¿t quáº£ trong data.',
+        summary: 'Lấy danh sách người dùng & phân trang (Admin & Receptionist)',
+        description: 'Response luôn có dạng { data: [...], meta: { total, page, limit, totalPages } }; ' +
+            'không truyền page/limit thì trả về toàn bộ kết quả trong data.',
     }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
-        description: 'Láº¥y danh sÃ¡ch ngÆ°á»i dÃ¹ng thÃ nh cÃ´ng',
+        description: 'Lấy danh sách người dùng thành công',
         exampleData: {
             data: [SAMPLE_USER],
             meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
@@ -175,14 +175,14 @@ __decorate([
     (0, skip_transform_decorator_1.SkipTransform)(),
     (0, common_1.Header)('X-Accel-Buffering', 'no'),
     (0, swagger_1.ApiOperation)({
-        summary: 'Luá»“ng realtime danh sÃ¡ch tÃ i khoáº£n (SSE) â€” tá»± bÃ¡o khi cÃ³ ngÆ°á»i Ä‘Äƒng kÃ½ má»›i',
-        description: 'Tráº£ vá» `text/event-stream`. Client má»Ÿ káº¿t ná»‘i má»™t láº§n vÃ  nháº­n sá»± kiá»‡n ngay khi cÃ³ tÃ i khoáº£n má»›i, ' +
-            'thay vÃ¬ pháº£i F5 hoáº·c gá»i láº¡i `GET /users`.\n\n' +
-            '**TÃªn sá»± kiá»‡n:** `ready` (má»Ÿ luá»“ng thÃ nh cÃ´ng), `ping` (giá»¯ káº¿t ná»‘i má»—i 20 giÃ¢y), ' +
-            '`user.created` (tÃ i khoáº£n má»›i), `user.updated` (Ä‘á»•i thÃ´ng tin / vai trÃ²), `user.deactivated` (khÃ³a tÃ i khoáº£n).\n\n' +
-            '**XÃ¡c thá»±c:** `EventSource` cá»§a trÃ¬nh duyá»‡t khÃ´ng gá»­i Ä‘Æ°á»£c header `Authorization`, ' +
-            'nÃªn endpoint nÃ y cháº¥p nháº­n token qua query: `GET /api/v1/users/stream?token=<accessToken>`.\n\n' +
-            '**VÃ­ dá»¥ (FE):**\n' +
+        summary: 'Luồng realtime danh sách tài khoản (SSE) — tự báo khi có người đăng ký mới',
+        description: 'Trả về `text/event-stream`. Client mở kết nối một lần và nhận sự kiện ngay khi có tài khoản mới, ' +
+            'thay vì phải F5 hoặc gọi lại `GET /users`.\n\n' +
+            '**Tên sự kiện:** `ready` (mở luồng thành công), `ping` (giữ kết nối mỗi 20 giây), ' +
+            '`user.created` (tài khoản mới), `user.updated` (đổi thông tin / vai trò), `user.deactivated` (khóa tài khoản).\n\n' +
+            '**Xác thực:** `EventSource` của trình duyệt không gửi được header `Authorization`, ' +
+            'nên endpoint này chấp nhận token qua query: `GET /api/v1/users/stream?token=<accessToken>`.\n\n' +
+            '**Ví dụ (FE):**\n' +
             '```js\n' +
             "const es = new EventSource(`${API}/users/stream?token=${accessToken}`);\n" +
             "es.addEventListener('user.created', (e) => {\n" +
@@ -194,7 +194,7 @@ __decorate([
     (0, swagger_1.ApiQuery)({
         name: 'token',
         required: false,
-        description: 'Access token dÃ nh cho EventSource (khÃ´ng gá»­i Ä‘Æ°á»£c header Authorization)',
+        description: 'Access token dành cho EventSource (không gửi được header Authorization)',
     }),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
@@ -203,15 +203,15 @@ __decorate([
 __decorate([
     (0, common_1.Get)(':id'),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
-    (0, swagger_1.ApiOperation)({ summary: 'Chi tiáº¿t ngÆ°á»i dÃ¹ng theo ID' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Chi tiết người dùng theo ID' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
-        description: 'Xem thÃ´ng tin chi tiáº¿t ngÆ°á»i dÃ¹ng thÃ nh cÃ´ng',
+        description: 'Xem thông tin chi tiết người dùng thành công',
         exampleData: SAMPLE_USER,
     }),
     (0, api_success_response_decorator_1.ApiErrorResponse)({
         status: 404,
-        message: 'KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i dÃ¹ng vá»›i ID tÆ°Æ¡ng á»©ng',
+        message: 'Không tìm thấy người dùng với ID tương ứng',
         error: 'Not Found',
         path: '/api/v1/users/:id',
     }),
@@ -223,10 +223,10 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':id'),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
-    (0, swagger_1.ApiOperation)({ summary: 'Cáº­p nháº­t thÃ´ng tin / vai trÃ² ngÆ°á»i dÃ¹ng (Chá»‰ Admin)' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Cập nhật thông tin / vai trò người dùng (Chỉ Admin)' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
-        description: 'Cáº­p nháº­t thÃ´ng tin ngÆ°á»i dÃ¹ng thÃ nh cÃ´ng',
+        description: 'Cập nhật thông tin người dùng thành công',
         exampleData: SAMPLE_USER,
     }),
     __param(0, (0, common_1.Param)('id')),
@@ -240,26 +240,26 @@ __decorate([
     (0, common_1.Post)(':id/password'),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
     (0, swagger_1.ApiOperation)({
-        summary: 'Admin Ä‘á»•i / Ä‘áº·t láº¡i máº­t kháº©u cho tÃ i khoáº£n ngÆ°á»i dÃ¹ng',
-        description: 'Cho phÃ©p Quáº£n trá»‹ viÃªn Ä‘á»•i máº­t kháº©u cho cÃ¡c tÃ i khoáº£n khÃ¡c mÃ  khÃ´ng cáº§n biáº¿t máº­t kháº©u cÅ©.',
+        summary: 'Admin đổi / đặt lại mật khẩu cho tài khoản người dùng',
+        description: 'Cho phép Quản trị viên đổi mật khẩu cho các tài khoản khác mà không cần biết mật khẩu cũ.',
     }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
-        description: 'Äá»•i máº­t kháº©u tÃ i khoáº£n thÃ nh cÃ´ng',
+        description: 'Đổi mật khẩu tài khoản thành công',
         exampleData: {
             success: true,
-            message: 'ÄÃ£ Ä‘á»•i máº­t kháº©u cho tÃ i khoáº£n LÃª Thu HÃ  (Lá»… TÃ¢n) thÃ nh cÃ´ng',
+            message: 'Đã đổi mật khẩu cho tài khoản Lê Thu Hà (Lễ Tân) thành công',
         },
     }),
     (0, api_success_response_decorator_1.ApiErrorResponse)({
         status: 400,
-        message: 'Máº­t kháº©u má»›i pháº£i cÃ³ Ã­t nháº¥t 6 kÃ½ tá»±',
+        message: 'Mật khẩu mới phải có ít nhất 6 ký tự',
         error: 'Bad Request',
         path: '/api/v1/users/:id/password',
     }),
     (0, api_success_response_decorator_1.ApiErrorResponse)({
         status: 404,
-        message: 'KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i dÃ¹ng vá»›i ID tÆ°Æ¡ng á»©ng',
+        message: 'Không tìm thấy người dùng với ID tương ứng',
         error: 'Not Found',
         path: '/api/v1/users/:id/password',
     }),
@@ -272,10 +272,10 @@ __decorate([
 __decorate([
     (0, common_1.Delete)(':id'),
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
-    (0, swagger_1.ApiOperation)({ summary: 'VÃ´ hiá»‡u hÃ³a tÃ i khoáº£n (Chá»‰ Admin)' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Vô hiệu hóa tài khoản (Chỉ Admin)' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
         status: 200,
-        description: 'VÃ´ hiá»‡u hÃ³a tÃ i khoáº£n ngÆ°á»i dÃ¹ng thÃ nh cÃ´ng',
+        description: 'Vô hiệu hóa tài khoản người dùng thành công',
         exampleData: { ...SAMPLE_USER, isActive: false },
     }),
     __param(0, (0, common_1.Param)('id')),
@@ -284,7 +284,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "remove", null);
 exports.UsersController = UsersController = __decorate([
-    (0, swagger_1.ApiTags)('Users (Quáº£n lÃ½ ngÆ°á»i dÃ¹ng & NhÃ¢n sá»±)'),
+    (0, swagger_1.ApiTags)('Users (Quản lý người dùng & Nhân sự)'),
     (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     (0, common_1.Controller)('users'),
