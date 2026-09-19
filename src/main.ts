@@ -13,7 +13,10 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // Bật nén HTTP Gzip / Deflate giúp giảm 70-85% dung lượng response JSON qua mạng
-  app.use(compression());
+  const compress = typeof compression === 'function' ? compression : (compression as any)?.default;
+  if (typeof compress === 'function') {
+    app.use(compress());
+  }
 
   // Phục vụ tệp tĩnh cho ảnh tải lên (Lưu trữ cục bộ khi chưa có Supabase hoặc Supabase bảo trì)
   app.useStaticAssets(join(process.cwd(), 'uploads'), {
