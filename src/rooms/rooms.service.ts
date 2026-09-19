@@ -578,6 +578,18 @@ export class RoomsService {
 
   async updateStatus(id: string, status: RoomStatus) {
     const existing = await this.findOne(id, true);
+
+    // Không cho phép chuyển thủ công sang AVAILABLE / CLEANING / RESERVED nếu phòng đang có khách lưu trú
+    if (status !== RoomStatus.OCCUPIED) {
+      const activeStay = await this.prisma.booking.findFirst({
+        where: { roomId: id, status: BookingStatus.CHECKED_IN },
+      });
+      if (activeStay) {
+        throw new BadRequestException(
+          `Phòng ${existing.roomNumber} đang có khách lưu trú (đơn ${activeStay.bookingCode}). Vui lòng kiểm tra thanh toán và thực hiện thủ tục Trả phòng & Xuất hóa đơn trước khi đổi trạng thái phòng.`,
+        );
+      }
+    }
     const updated = await this.prisma.room.update({
       where: { id },
       data: { status },

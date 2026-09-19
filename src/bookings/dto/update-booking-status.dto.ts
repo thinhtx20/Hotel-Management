@@ -70,4 +70,63 @@ export class CheckOutDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  /**
+   * Tùy chọn tính lại tiền phòng theo số đêm thực tế khi khách trả phòng trước hạn (Early Check-Out).
+   * Mặc định là true khi trả phòng trước hạn.
+   */
+  @ApiPropertyOptional({
+    example: true,
+    default: true,
+    description: 'Tính lại tiền phòng theo số đêm thực tế (true) hay giữ nguyên tiền phòng theo đơn đặt ban đầu (false)',
+  })
+  @IsOptional()
+  recalculateRoomAmount?: boolean;
+
+  /**
+   * Số tiền phòng tùy chỉnh nếu thu ngân muốn nhập tay.
+   */
+  @ApiPropertyOptional({
+    example: 1200000,
+    description: 'Số tiền phòng tùy chỉnh (VND)',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  customRoomAmount?: number;
+
+  /**
+   * Số tiền hoàn trả cho khách tại quầy khi khách đã thanh toán/đặt cọc thừa lúc trả phòng sớm.
+   */
+  @ApiPropertyOptional({
+    example: 500000,
+    description: 'Số tiền hoàn trả cho khách tại quầy (VND)',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  refundAmount?: number;
+
+  /**
+   * Phương thức hoàn tiền cho khách.
+   */
+  @ApiPropertyOptional({
+    enum: PaymentMethod,
+    default: PaymentMethod.CASH,
+    description: 'Phương thức hoàn tiền (CASH, BANK_TRANSFER, CREDIT_CARD)',
+  })
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  refundMethod?: PaymentMethod;
+
+  /**
+   * Lý do hoàn tiền trả phòng trước hạn.
+   */
+  @ApiPropertyOptional({
+    example: 'Khách trả phòng trước hạn 2 đêm',
+    description: 'Lý do hoàn tiền',
+  })
+  @IsOptional()
+  @IsString()
+  refundReason?: string;
 }

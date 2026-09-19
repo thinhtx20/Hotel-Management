@@ -491,9 +491,7 @@ export function toRoomResponse(
 
     const active =
       room.bookings.find(
-        (b) =>
-          b.status === BookingStatus.CHECKED_IN &&
-          new Date(b.checkOutDate) > now,
+        (b) => b.status === BookingStatus.CHECKED_IN,
       ) ||
       room.bookings.find(
         (b) =>

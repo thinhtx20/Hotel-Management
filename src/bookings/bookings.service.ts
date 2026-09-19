@@ -685,7 +685,46 @@ export class BookingsService {
       confirmedServices.reduce((sum: number, s: any) => sum + s.totalPrice, 0),
     );
 
-    const roomAmount = roundMoney(booking.totalAmount);
+    // Tính toán số đêm đặt ban đầu vs số đêm thực tế (để phát hiện trả phòng trước hạn)
+    const checkIn = new Date(booking.actualCheckIn || booking.checkInDate);
+    const scheduledCheckOut = new Date(booking.checkOutDate);
+    const now = new Date();
+
+    const bookedDiffTime = Math.abs(scheduledCheckOut.getTime() - checkIn.getTime());
+    const bookedNights = Math.max(1, Math.ceil(bookedDiffTime / (1000 * 60 * 60 * 24)));
+
+    // Số đêm ở thực tế tính từ lúc nhận phòng đến hiện tại (tối thiểu 1 đêm)
+    const actualDiffTime = Math.abs(now.getTime() - checkIn.getTime());
+    const actualNights = Math.max(1, Math.ceil(actualDiffTime / (1000 * 60 * 60 * 24)));
+
+    // Nhận diện đơn trả phòng trước hạn (thời điểm hiện tại sớm hơn ngày trả dự kiến và số đêm thực tế ít hơn)
+    const isEarlyCheckOut = now < scheduledCheckOut && actualNights < bookedNights;
+
+    // Đơn giá 1 đêm cơ sở
+    const basePrice =
+      booking.room?.roomType?.basePrice ||
+      (bookedNights > 0 ? roundMoney(booking.totalAmount / bookedNights) : booking.totalAmount);
+
+    const originalRoomAmount = roundMoney(booking.totalAmount);
+    const recalculatedRoomAmount = roundMoney(actualNights * basePrice);
+
+    // Xác định tiền phòng áp dụng:
+    // 1. Nếu có customRoomAmount được truyền lên: dùng customRoomAmount
+    // 2. Nếu trả phòng trước hạn:
+    //    - Nếu dto?.recalculateRoomAmount === false: giữ nguyên originalRoomAmount
+    //    - Mặc định (hoặc dto?.recalculateRoomAmount === true): dùng recalculatedRoomAmount
+    // 3. Trả phòng đúng hạn / quá hạn: dùng originalRoomAmount
+    let roomAmount = originalRoomAmount;
+    if (dto?.customRoomAmount !== undefined && dto.customRoomAmount >= 0) {
+      roomAmount = roundMoney(dto.customRoomAmount);
+    } else if (isEarlyCheckOut) {
+      if (dto?.recalculateRoomAmount === false) {
+        roomAmount = originalRoomAmount;
+      } else {
+        roomAmount = recalculatedRoomAmount;
+      }
+    }
+
     const discount = roundMoney(dto?.discount ?? booking.invoice?.discount ?? 0);
     const taxRate = dto?.taxRate !== undefined ? dto.taxRate : 0.1;
     const taxableAmount = Math.max(0, roomAmount + servicesTotal - discount);
@@ -695,7 +734,11 @@ export class BookingsService {
     // Tiền đã thực sự vào két: tiền cọc lúc duyệt đơn + các lần khách đã trả.
     // Tất cả đều đã được cộng dồn sẵn trong invoice.paidAmount.
     const alreadyPaid = roundMoney(booking.invoice?.paidAmount ?? 0);
+
+    // Nếu khách đã trả nhiều hơn finalAmount (thường gặp khi khách cọc/trả trước toàn bộ nhưng trả phòng sớm):
+    // amountDue = 0, refundDue = alreadyPaid - finalAmount
     const amountDue = Math.max(0, finalAmount - alreadyPaid);
+    const refundDue = Math.max(0, alreadyPaid - finalAmount);
 
     return {
       roomAmount,
@@ -708,6 +751,14 @@ export class BookingsService {
       alreadyPaidAmount: alreadyPaid,
       /** Số tiền thu ngân cần thu của khách lúc trả phòng. */
       amountDue,
+      /** Số tiền khách sạn cần hoàn trả cho khách nếu đã thu dư lúc trả phòng trước hạn. */
+      refundDue,
+      isEarlyCheckOut,
+      bookedNights,
+      actualNights,
+      basePrice,
+      originalRoomAmount,
+      recalculatedRoomAmount,
       serviceItems: confirmedServices.map((s: any) => ({
         id: s.id,
         name: s.serviceName,
@@ -787,7 +838,15 @@ export class BookingsService {
       throw new BadRequestException(
         `Số tiền thu (${collected.toLocaleString('vi-VN')}đ) vượt quá số còn phải thu ` +
           `(${settlement.amountDue.toLocaleString('vi-VN')}đ). ` +
-          'Gọi GET /bookings/:id/checkout-preview để lấy đúng số cần thu.',
+          'Gọi GET /bookings/:id/checkout-preview để lấy đúng số còn thu.',
+      );
+    }
+
+    // Kiểm tra thanh toán: Nếu còn tiền phải thu, bắt buộc phải thu đủ trước khi hoàn tất trả phòng và đổi trạng thái phòng
+    if (settlement.amountDue > 0 && collected < settlement.amountDue) {
+      throw new BadRequestException(
+        `Hóa đơn chưa được thanh toán đủ. Còn thiếu (${(settlement.amountDue - collected).toLocaleString('vi-VN')}đ). ` +
+          'Vui lòng kiểm tra và thu đủ thanh toán trước khi trả phòng và chuyển trạng thái phòng.',
       );
     }
 
@@ -795,11 +854,21 @@ export class BookingsService {
     const invoiceCode = `INV-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
 
     const { updatedBooking, invoice } = await this.prisma.$transaction(async (tx) => {
+      // Ghi chú nếu là trả phòng trước hạn
+      let specialRequests = booking.specialRequests;
+      if (settlement.isEarlyCheckOut) {
+        const note = `[Trả phòng trước hạn lúc ${now.toLocaleString('vi-VN')}: Lưu trú thực tế ${settlement.actualNights}/${settlement.bookedNights} đêm. Tiền phòng: ${settlement.roomAmount.toLocaleString('vi-VN')}đ${settlement.refundDue > 0 ? `, Đã hoàn trả: ${settlement.refundDue.toLocaleString('vi-VN')}đ` : ''}]`;
+        specialRequests = specialRequests ? `${specialRequests}\n${note}` : note;
+      }
+
       const bookingRow = await tx.booking.update({
         where: { id },
         data: {
           status: BookingStatus.CHECKED_OUT,
           actualCheckOut: now,
+          checkOutDate: settlement.isEarlyCheckOut ? now : undefined,
+          totalAmount: settlement.isEarlyCheckOut ? settlement.roomAmount : undefined,
+          specialRequests,
         },
         include: BOOKING_INCLUDE,
       });
@@ -837,14 +906,15 @@ export class BookingsService {
         },
       });
 
-      if (collected > 0) {
-        const activeShift = cashierId
-          ? await tx.workShift.findFirst({
-              where: { staffId: cashierId, status: ShiftStatus.OPEN },
-              select: { id: true },
-            })
-          : null;
+      const activeShift = cashierId
+        ? await tx.workShift.findFirst({
+            where: { staffId: cashierId, status: ShiftStatus.OPEN },
+            select: { id: true },
+          })
+        : null;
 
+      // 1. Thu thêm tiền nếu có (collected > 0)
+      if (collected > 0) {
         await tx.payment.create({
           data: {
             invoiceId: invoiceRow.id,
@@ -853,6 +923,27 @@ export class BookingsService {
             type: PaymentEntryType.PAYMENT,
             status: PaymentEntryStatus.CONFIRMED,
             note: dto.note || 'Thu tiền tại quầy khi khách trả phòng',
+            createdById: cashierId,
+            confirmedById: cashierId,
+            confirmedAt: now,
+            shiftId: activeShift?.id || null,
+          },
+        });
+      }
+
+      // 2. Hoàn tiền nếu khách trả phòng trước và đã thanh toán thừa (refundAmount > 0 hoặc settlement.refundDue > 0)
+      const refundToProcess = roundMoney(
+        dto.refundAmount !== undefined ? dto.refundAmount : settlement.refundDue,
+      );
+      if (refundToProcess > 0) {
+        await tx.payment.create({
+          data: {
+            invoiceId: invoiceRow.id,
+            amount: refundToProcess,
+            method: dto.refundMethod || dto.paymentMethod || PaymentMethod.CASH,
+            type: PaymentEntryType.REFUND,
+            status: PaymentEntryStatus.CONFIRMED,
+            note: dto.refundReason || `Hoàn tiền trả phòng trước hạn (${refundToProcess.toLocaleString('vi-VN')}đ)`,
             createdById: cashierId,
             confirmedById: cashierId,
             confirmedAt: now,
@@ -897,13 +988,19 @@ export class BookingsService {
 
     return {
       message:
-        remainingAmount > 0
+        settlement.refundDue > 0
+          ? `Check-out thành công. Đã hoàn trả lại ${settlement.refundDue.toLocaleString('vi-VN')}đ cho khách.`
+          : remainingAmount > 0
           ? `Check-out thành công. Hóa đơn còn thiếu ${remainingAmount.toLocaleString('vi-VN')}đ ` +
             'đã được gửi về mục "Hóa đơn của tôi" để khách thanh toán nốt.'
           : 'Check-out và thanh toán hóa đơn thành công',
       invoiceId: invoice.id,
       /** Số thu ngân vừa thu tại quầy. */
       amountCollected: collected,
+      /** Số tiền hoàn trả cho khách (nếu có). */
+      refundAmount: settlement.refundDue,
+      /** Đơn có phải trả phòng trước hạn không. */
+      isEarlyCheckOut: settlement.isEarlyCheckOut,
       /** Số khách còn nợ sau khi trả phòng — 0 nghĩa là đã thanh toán đủ. */
       remainingAmount,
       settlement,

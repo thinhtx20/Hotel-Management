@@ -13,4 +13,9 @@ export declare class CheckOutDto {
     taxRate?: number;
     amountCollected?: number;
     note?: string;
+    recalculateRoomAmount?: boolean;
+    customRoomAmount?: number;
+    refundAmount?: number;
+    refundMethod?: PaymentMethod;
+    refundReason?: string;
 }

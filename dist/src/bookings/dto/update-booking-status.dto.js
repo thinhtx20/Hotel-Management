@@ -87,4 +87,52 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CheckOutDto.prototype, "note", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: true,
+        default: true,
+        description: 'Tính lại tiền phòng theo số đêm thực tế (true) hay giữ nguyên tiền phòng theo đơn đặt ban đầu (false)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Boolean)
+], CheckOutDto.prototype, "recalculateRoomAmount", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 1200000,
+        description: 'Số tiền phòng tùy chỉnh (VND)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], CheckOutDto.prototype, "customRoomAmount", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 500000,
+        description: 'Số tiền hoàn trả cho khách tại quầy (VND)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], CheckOutDto.prototype, "refundAmount", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: client_1.PaymentMethod,
+        default: client_1.PaymentMethod.CASH,
+        description: 'Phương thức hoàn tiền (CASH, BANK_TRANSFER, CREDIT_CARD)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(client_1.PaymentMethod),
+    __metadata("design:type", String)
+], CheckOutDto.prototype, "refundMethod", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 'Khách trả phòng trước hạn 2 đêm',
+        description: 'Lý do hoàn tiền',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CheckOutDto.prototype, "refundReason", void 0);
 //# sourceMappingURL=update-booking-status.dto.js.map

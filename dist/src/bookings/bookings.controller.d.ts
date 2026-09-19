@@ -63,6 +63,13 @@ export declare class BookingsController {
         depositAmount: number;
         alreadyPaidAmount: number;
         amountDue: number;
+        refundDue: number;
+        isEarlyCheckOut: boolean;
+        bookedNights: number;
+        actualNights: number;
+        basePrice: any;
+        originalRoomAmount: number;
+        recalculatedRoomAmount: number;
         serviceItems: any;
         bookingId: any;
         bookingCode: any;
@@ -80,6 +87,8 @@ export declare class BookingsController {
         message: string;
         invoiceId: string;
         amountCollected: number;
+        refundAmount: number;
+        isEarlyCheckOut: boolean;
         remainingAmount: number;
         settlement: {
             roomAmount: number;
@@ -91,6 +100,13 @@ export declare class BookingsController {
             depositAmount: number;
             alreadyPaidAmount: number;
             amountDue: number;
+            refundDue: number;
+            isEarlyCheckOut: boolean;
+            bookedNights: number;
+            actualNights: number;
+            basePrice: any;
+            originalRoomAmount: number;
+            recalculatedRoomAmount: number;
             serviceItems: any;
         };
         booking: any;

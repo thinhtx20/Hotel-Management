@@ -34,14 +34,8 @@ export function deriveRoomStatus(
     return currentStatus;
   }
 
-  // 1. Đang có khách CHECKED_IN và chưa qua giờ trả phòng
-  if (
-    bookings.some(
-      (b) =>
-        b.status === BookingStatus.CHECKED_IN &&
-        new Date(b.checkOutDate) > now,
-    )
-  ) {
+    // 1. Đang có khách CHECKED_IN (chưa trả phòng và thanh toán) -> luôn là OCCUPIED
+  if (bookings.some((b) => b.status === BookingStatus.CHECKED_IN)) {
     return RoomStatus.OCCUPIED;
   }
 

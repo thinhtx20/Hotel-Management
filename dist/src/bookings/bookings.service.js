@@ -480,7 +480,30 @@ let BookingsService = BookingsService_1 = class BookingsService {
     buildSettlement(booking, dto) {
         const confirmedServices = booking.serviceOrders.filter((s) => s.status === 'CONFIRMED' || !s.status);
         const servicesTotal = (0, revenue_util_1.roundMoney)(confirmedServices.reduce((sum, s) => sum + s.totalPrice, 0));
-        const roomAmount = (0, revenue_util_1.roundMoney)(booking.totalAmount);
+        const checkIn = new Date(booking.actualCheckIn || booking.checkInDate);
+        const scheduledCheckOut = new Date(booking.checkOutDate);
+        const now = new Date();
+        const bookedDiffTime = Math.abs(scheduledCheckOut.getTime() - checkIn.getTime());
+        const bookedNights = Math.max(1, Math.ceil(bookedDiffTime / (1000 * 60 * 60 * 24)));
+        const actualDiffTime = Math.abs(now.getTime() - checkIn.getTime());
+        const actualNights = Math.max(1, Math.ceil(actualDiffTime / (1000 * 60 * 60 * 24)));
+        const isEarlyCheckOut = now < scheduledCheckOut && actualNights < bookedNights;
+        const basePrice = booking.room?.roomType?.basePrice ||
+            (bookedNights > 0 ? (0, revenue_util_1.roundMoney)(booking.totalAmount / bookedNights) : booking.totalAmount);
+        const originalRoomAmount = (0, revenue_util_1.roundMoney)(booking.totalAmount);
+        const recalculatedRoomAmount = (0, revenue_util_1.roundMoney)(actualNights * basePrice);
+        let roomAmount = originalRoomAmount;
+        if (dto?.customRoomAmount !== undefined && dto.customRoomAmount >= 0) {
+            roomAmount = (0, revenue_util_1.roundMoney)(dto.customRoomAmount);
+        }
+        else if (isEarlyCheckOut) {
+            if (dto?.recalculateRoomAmount === false) {
+                roomAmount = originalRoomAmount;
+            }
+            else {
+                roomAmount = recalculatedRoomAmount;
+            }
+        }
         const discount = (0, revenue_util_1.roundMoney)(dto?.discount ?? booking.invoice?.discount ?? 0);
         const taxRate = dto?.taxRate !== undefined ? dto.taxRate : 0.1;
         const taxableAmount = Math.max(0, roomAmount + servicesTotal - discount);
@@ -488,6 +511,7 @@ let BookingsService = BookingsService_1 = class BookingsService {
         const finalAmount = (0, revenue_util_1.roundMoney)(taxableAmount + tax);
         const alreadyPaid = (0, revenue_util_1.roundMoney)(booking.invoice?.paidAmount ?? 0);
         const amountDue = Math.max(0, finalAmount - alreadyPaid);
+        const refundDue = Math.max(0, alreadyPaid - finalAmount);
         return {
             roomAmount,
             servicesAmount: servicesTotal,
@@ -498,6 +522,13 @@ let BookingsService = BookingsService_1 = class BookingsService {
             depositAmount: (0, revenue_util_1.roundMoney)(booking.depositAmount || 0),
             alreadyPaidAmount: alreadyPaid,
             amountDue,
+            refundDue,
+            isEarlyCheckOut,
+            bookedNights,
+            actualNights,
+            basePrice,
+            originalRoomAmount,
+            recalculatedRoomAmount,
             serviceItems: confirmedServices.map((s) => ({
                 id: s.id,
                 name: s.serviceName,
@@ -554,16 +585,28 @@ let BookingsService = BookingsService_1 = class BookingsService {
         if (collected > settlement.amountDue) {
             throw new common_1.BadRequestException(`Số tiền thu (${collected.toLocaleString('vi-VN')}đ) vượt quá số còn phải thu ` +
                 `(${settlement.amountDue.toLocaleString('vi-VN')}đ). ` +
-                'Gọi GET /bookings/:id/checkout-preview để lấy đúng số cần thu.');
+                'Gọi GET /bookings/:id/checkout-preview để lấy đúng số còn thu.');
+        }
+        if (settlement.amountDue > 0 && collected < settlement.amountDue) {
+            throw new common_1.BadRequestException(`Hóa đơn chưa được thanh toán đủ. Còn thiếu (${(settlement.amountDue - collected).toLocaleString('vi-VN')}đ). ` +
+                'Vui lòng kiểm tra và thu đủ thanh toán trước khi trả phòng và chuyển trạng thái phòng.');
         }
         const now = new Date();
         const invoiceCode = `INV-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
         const { updatedBooking, invoice } = await this.prisma.$transaction(async (tx) => {
+            let specialRequests = booking.specialRequests;
+            if (settlement.isEarlyCheckOut) {
+                const note = `[Trả phòng trước hạn lúc ${now.toLocaleString('vi-VN')}: Lưu trú thực tế ${settlement.actualNights}/${settlement.bookedNights} đêm. Tiền phòng: ${settlement.roomAmount.toLocaleString('vi-VN')}đ${settlement.refundDue > 0 ? `, Đã hoàn trả: ${settlement.refundDue.toLocaleString('vi-VN')}đ` : ''}]`;
+                specialRequests = specialRequests ? `${specialRequests}\n${note}` : note;
+            }
             const bookingRow = await tx.booking.update({
                 where: { id },
                 data: {
                     status: client_1.BookingStatus.CHECKED_OUT,
                     actualCheckOut: now,
+                    checkOutDate: settlement.isEarlyCheckOut ? now : undefined,
+                    totalAmount: settlement.isEarlyCheckOut ? settlement.roomAmount : undefined,
+                    specialRequests,
                 },
                 include: BOOKING_INCLUDE,
             });
@@ -595,13 +638,13 @@ let BookingsService = BookingsService_1 = class BookingsService {
                     issuedById: cashierId,
                 },
             });
+            const activeShift = cashierId
+                ? await tx.workShift.findFirst({
+                    where: { staffId: cashierId, status: client_1.ShiftStatus.OPEN },
+                    select: { id: true },
+                })
+                : null;
             if (collected > 0) {
-                const activeShift = cashierId
-                    ? await tx.workShift.findFirst({
-                        where: { staffId: cashierId, status: client_1.ShiftStatus.OPEN },
-                        select: { id: true },
-                    })
-                    : null;
                 await tx.payment.create({
                     data: {
                         invoiceId: invoiceRow.id,
@@ -610,6 +653,23 @@ let BookingsService = BookingsService_1 = class BookingsService {
                         type: client_1.PaymentEntryType.PAYMENT,
                         status: client_1.PaymentEntryStatus.CONFIRMED,
                         note: dto.note || 'Thu tiền tại quầy khi khách trả phòng',
+                        createdById: cashierId,
+                        confirmedById: cashierId,
+                        confirmedAt: now,
+                        shiftId: activeShift?.id || null,
+                    },
+                });
+            }
+            const refundToProcess = (0, revenue_util_1.roundMoney)(dto.refundAmount !== undefined ? dto.refundAmount : settlement.refundDue);
+            if (refundToProcess > 0) {
+                await tx.payment.create({
+                    data: {
+                        invoiceId: invoiceRow.id,
+                        amount: refundToProcess,
+                        method: dto.refundMethod || dto.paymentMethod || client_1.PaymentMethod.CASH,
+                        type: client_1.PaymentEntryType.REFUND,
+                        status: client_1.PaymentEntryStatus.CONFIRMED,
+                        note: dto.refundReason || `Hoàn tiền trả phòng trước hạn (${refundToProcess.toLocaleString('vi-VN')}đ)`,
                         createdById: cashierId,
                         confirmedById: cashierId,
                         confirmedAt: now,
@@ -639,12 +699,16 @@ let BookingsService = BookingsService_1 = class BookingsService {
         }
         const remainingAmount = Math.max(0, (0, revenue_util_1.roundMoney)(invoice.finalAmount) - (0, revenue_util_1.roundMoney)(invoice.paidAmount));
         return {
-            message: remainingAmount > 0
-                ? `Check-out thành công. Hóa đơn còn thiếu ${remainingAmount.toLocaleString('vi-VN')}đ ` +
-                    'đã được gửi về mục "Hóa đơn của tôi" để khách thanh toán nốt.'
-                : 'Check-out và thanh toán hóa đơn thành công',
+            message: settlement.refundDue > 0
+                ? `Check-out thành công. Đã hoàn trả lại ${settlement.refundDue.toLocaleString('vi-VN')}đ cho khách.`
+                : remainingAmount > 0
+                    ? `Check-out thành công. Hóa đơn còn thiếu ${remainingAmount.toLocaleString('vi-VN')}đ ` +
+                        'đã được gửi về mục "Hóa đơn của tôi" để khách thanh toán nốt.'
+                    : 'Check-out và thanh toán hóa đơn thành công',
             invoiceId: invoice.id,
             amountCollected: collected,
+            refundAmount: settlement.refundDue,
+            isEarlyCheckOut: settlement.isEarlyCheckOut,
             remainingAmount,
             settlement,
             booking: this.toBookingResponse({
