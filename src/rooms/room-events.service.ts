@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+﻿import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Observable, Subject, defer } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { RoomStatus } from '@prisma/client';
@@ -20,6 +20,13 @@ export interface RoomEventPayload {
   roomTypeName?: string;
   roomTypeCode?: string;
   pricePerNight?: number;
+  images?: string[];
+  imageUrl?: string;
+  amenities?: string[];
+  description?: string | null;
+  capacityAdults?: number;
+  capacityChildren?: number;
+  sizeSqM?: number;
   notes?: string | null;
   updatedAt?: Date | string;
 }
@@ -46,6 +53,12 @@ const ROOM_EVENT_SELECT = {
       name: true,
       code: true,
       basePrice: true,
+      images: true,
+      amenities: true,
+      description: true,
+      capacityAdults: true,
+      capacityChildren: true,
+      sizeSqM: true,
     },
   },
 } as const;
@@ -95,7 +108,7 @@ export class RoomEventsService implements OnModuleDestroy {
   ) {
     const dedupeKey = `${room.id}:${room.status}`;
     if (source === 'db-watcher' && this.emittedDedupeKeys.has(dedupeKey)) {
-      return; // đã được phát bởi nguồn app trong tiến trình
+      return; // Đã được phát bởi nguồn app trong tiến trình
     }
 
     this.rememberDedupeKey(dedupeKey);
@@ -177,6 +190,13 @@ export class RoomEventsService implements OnModuleDestroy {
         roomTypeName: room.roomTypeName,
         roomTypeCode: room.roomTypeCode,
         pricePerNight: room.pricePerNight,
+        images: room.images ?? [],
+        imageUrl: room.imageUrl ?? (room.images?.[0] ?? ''),
+        amenities: room.amenities ?? [],
+        description: room.description ?? null,
+        capacityAdults: room.capacityAdults ?? 2,
+        capacityChildren: room.capacityChildren ?? 1,
+        sizeSqM: room.sizeSqM,
         notes: room.notes ?? null,
         updatedAt: room.updatedAt || new Date().toISOString(),
       },
@@ -218,7 +238,7 @@ export class RoomEventsService implements OnModuleDestroy {
     if (!this.watcher) return;
     clearInterval(this.watcher);
     this.watcher = null;
-    this.logger.log('📴 Không còn client lắng nghe, tắt theo dõi trạng thái phòng');
+    this.logger.log('📡 Không còn client lắng nghe, tắt theo dõi trạng thái phòng');
   }
 
   private async pollRoomChanges() {
@@ -246,6 +266,13 @@ export class RoomEventsService implements OnModuleDestroy {
           roomTypeName: r.roomType?.name,
           roomTypeCode: r.roomType?.code,
           pricePerNight: r.roomType?.basePrice,
+          images: r.roomType?.images,
+          imageUrl: r.roomType?.images?.[0],
+          amenities: r.roomType?.amenities,
+          description: r.roomType?.description,
+          capacityAdults: r.roomType?.capacityAdults,
+          capacityChildren: r.roomType?.capacityChildren,
+          sizeSqM: r.roomType?.sizeSqM ? Number(r.roomType.sizeSqM) : undefined,
           notes: r.notes,
           updatedAt: r.updatedAt,
         };

@@ -32,7 +32,7 @@ let RoomsService = class RoomsService {
             where: { roomNumber: dto.roomNumber },
         });
         if (existing) {
-            throw new common_1.ConflictException(`Số phòng ${dto.roomNumber} đã tồn tại`);
+            throw new common_1.ConflictException(`S? ph�ng ${dto.roomNumber} d� t?n t?i`);
         }
         let roomTypeId = dto.roomTypeId;
         if (!roomTypeId) {
@@ -57,14 +57,14 @@ let RoomsService = class RoomsService {
                 roomTypeId = defaultType.id;
             }
             else {
-                throw new common_1.NotFoundException('Vui lòng chọn hoặc cung cấp loại phòng hợp lệ');
+                throw new common_1.NotFoundException('Vui l�ng ch?n ho?c cung c?p lo?i ph�ng h?p l?');
             }
         }
         const roomType = await this.prisma.roomType.findUnique({
             where: { id: roomTypeId },
         });
         if (!roomType) {
-            throw new common_1.NotFoundException(`Loại phòng ID ${roomTypeId} không tồn tại`);
+            throw new common_1.NotFoundException(`Lo?i ph�ng ID ${roomTypeId} kh�ng t?n t?i`);
         }
         const incomingImages = dto.images || (dto.imageUrl ? [dto.imageUrl] : dto.image ? [dto.image] : []);
         if (incomingImages.length > 0 ||
@@ -214,7 +214,7 @@ let RoomsService = class RoomsService {
             },
         });
         if (!room) {
-            throw new common_1.NotFoundException(`Không tìm thấy phòng với ID: ${id}`);
+            throw new common_1.NotFoundException(`Kh�ng t�m th?y ph�ng v?i ID: ${id}`);
         }
         const result = (0, room_response_dto_1.toRoomResponse)(room, includeNotes);
         await this.redis.set(cacheKey, result, 60);
@@ -224,7 +224,7 @@ let RoomsService = class RoomsService {
         const rawCheckIn = new Date(query.checkInDate);
         const rawCheckOut = new Date(query.checkOutDate);
         if (rawCheckIn >= rawCheckOut) {
-            throw new common_1.BadRequestException('Ngày nhận phòng phải trước ngày trả phòng');
+            throw new common_1.BadRequestException('Ng�y nh?n ph�ng ph?i tru?c ng�y tr? ph�ng');
         }
         const checkIn = new Date(rawCheckIn);
         checkIn.setUTCHours(14, 0, 0, 0);
@@ -326,7 +326,7 @@ let RoomsService = class RoomsService {
                 where: { roomNumber: dto.roomNumber },
             });
             if (duplicate && duplicate.id !== id) {
-                throw new common_1.ConflictException(`Số phòng ${dto.roomNumber} đã tồn tại`);
+                throw new common_1.ConflictException(`S? ph�ng ${dto.roomNumber} d� t?n t?i`);
             }
         }
         let targetRoomTypeId = dto.roomTypeId;
@@ -351,7 +351,7 @@ let RoomsService = class RoomsService {
                 where: { id: targetRoomTypeId },
             });
             if (!roomTypeExists) {
-                throw new common_1.NotFoundException(`Loại phòng ID ${targetRoomTypeId} không tồn tại`);
+                throw new common_1.NotFoundException(`Lo?i ph�ng ID ${targetRoomTypeId} kh�ng t?n t?i`);
             }
         }
         const effectiveRoomTypeId = targetRoomTypeId || existing.roomTypeId;
@@ -426,6 +426,13 @@ let RoomsService = class RoomsService {
             roomTypeName: updated.roomType?.name,
             roomTypeCode: updated.roomType?.code,
             pricePerNight: updated.roomType?.basePrice,
+            images: updated.roomType?.images ?? [],
+            imageUrl: updated.roomType?.images?.[0] ?? '',
+            amenities: updated.roomType?.amenities ?? [],
+            description: updated.roomType?.description ?? null,
+            capacityAdults: updated.roomType?.capacityAdults ?? 2,
+            capacityChildren: updated.roomType?.capacityChildren ?? 1,
+            sizeSqM: updated.roomType?.sizeSqM ? Number(updated.roomType.sizeSqM) : undefined,
             notes: updated.notes,
             updatedAt: updated.updatedAt,
         };
@@ -478,8 +485,8 @@ let RoomsService = class RoomsService {
         }
         return {
             message: changes.length > 0
-                ? `Đã đồng bộ lại trạng thái cho ${changes.length}/${rooms.length} phòng`
-                : `Toàn bộ ${rooms.length} phòng đã khớp với lịch đặt phòng, không cần thay đổi`,
+                ? `�� d?ng b? l?i tr?ng th�i cho ${changes.length}/${rooms.length} ph�ng`
+                : `To�n b? ${rooms.length} ph�ng d� kh?p v?i l?ch d?t ph�ng, kh�ng c?n thay d?i`,
             totalRooms: rooms.length,
             updatedCount: changes.length,
             changes,
@@ -492,7 +499,7 @@ let RoomsService = class RoomsService {
                 where: { roomId: id, status: client_1.BookingStatus.CHECKED_IN },
             });
             if (activeStay) {
-                throw new common_1.BadRequestException(`Phòng ${existing.roomNumber} đang có khách lưu trú (đơn ${activeStay.bookingCode}). Vui lòng kiểm tra thanh toán và thực hiện thủ tục Trả phòng & Xuất hóa đơn trước khi đổi trạng thái phòng.`);
+                throw new common_1.BadRequestException(`Ph�ng ${existing.roomNumber} dang c� kh�ch luu tr� (don ${activeStay.bookingCode}). Vui l�ng ki?m tra thanh to�n v� th?c hi?n th? t?c Tr? ph�ng & Xu?t h�a don tru?c khi d?i tr?ng th�i ph�ng.`);
             }
         }
         const updated = await this.prisma.room.update({
@@ -512,6 +519,13 @@ let RoomsService = class RoomsService {
             roomTypeName: updated.roomType?.name,
             roomTypeCode: updated.roomType?.code,
             pricePerNight: updated.roomType?.basePrice,
+            images: updated.roomType?.images ?? [],
+            imageUrl: updated.roomType?.images?.[0] ?? '',
+            amenities: updated.roomType?.amenities ?? [],
+            description: updated.roomType?.description ?? null,
+            capacityAdults: updated.roomType?.capacityAdults ?? 2,
+            capacityChildren: updated.roomType?.capacityChildren ?? 1,
+            sizeSqM: updated.roomType?.sizeSqM ? Number(updated.roomType.sizeSqM) : undefined,
             notes: updated.notes,
             updatedAt: updated.updatedAt,
         });
@@ -526,13 +540,13 @@ let RoomsService = class RoomsService {
             },
         });
         if (activeBooking) {
-            throw new common_1.BadRequestException(`Không thể xóa phòng ${existing.roomNumber} vì đang có đơn đặt phòng chưa hoàn tất (mã đơn: ${activeBooking.bookingCode}). Vui lòng xử lý đơn đặt phòng trước khi xóa.`);
+            throw new common_1.BadRequestException(`Kh�ng th? x�a ph�ng ${existing.roomNumber} v� dang c� don d?t ph�ng chua ho�n t?t (m� don: ${activeBooking.bookingCode}). Vui l�ng x? l� don d?t ph�ng tru?c khi x�a.`);
         }
         const totalBookings = await this.prisma.booking.count({
             where: { roomId: id },
         });
         if (totalBookings > 0) {
-            throw new common_1.BadRequestException(`Không thể xóa hoàn toàn phòng ${existing.roomNumber} do phòng đã có ${totalBookings} đơn đặt phòng trong lịch sử. Để ngừng kinh doanh phòng này, vui lòng chuyển trạng thái phòng sang BẢO TRÌ (MAINTENANCE) hoặc TỪ CHỐI (REJECTED).`);
+            throw new common_1.BadRequestException(`Kh�ng th? x�a ho�n to�n ph�ng ${existing.roomNumber} do ph�ng d� c� ${totalBookings} don d?t ph�ng trong l?ch s?. �? ng?ng kinh doanh ph�ng n�y, vui l�ng chuy?n tr?ng th�i ph�ng sang B?O TR� (MAINTENANCE) ho?c T? CH?I (REJECTED).`);
         }
         const deleted = await this.prisma.room.delete({
             where: { id },

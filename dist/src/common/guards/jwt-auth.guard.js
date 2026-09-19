@@ -25,7 +25,10 @@ let JwtAuthGuard = class JwtAuthGuard extends (0, passport_1.AuthGuard)('jwt') {
             context.getClass(),
         ]);
         const request = context.switchToHttp().getRequest();
-        if (isPublic && !request.headers?.authorization) {
+        if (isPublic &&
+            !request.headers?.authorization &&
+            !request.query?.token &&
+            !request.query?.access_token) {
             return true;
         }
         return super.canActivate(context);

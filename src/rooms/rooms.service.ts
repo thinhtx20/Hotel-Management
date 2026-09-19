@@ -32,7 +32,7 @@ export class RoomsService {
       where: { roomNumber: dto.roomNumber },
     });
     if (existing) {
-      throw new ConflictException(`Số phòng ${dto.roomNumber} đã tồn tại`);
+      throw new ConflictException(`S? ph�ng ${dto.roomNumber} d� t?n t?i`);
     }
 
     let roomTypeId = dto.roomTypeId;
@@ -55,7 +55,7 @@ export class RoomsService {
       if (defaultType) {
         roomTypeId = defaultType.id;
       } else {
-        throw new NotFoundException('Vui lòng chọn hoặc cung cấp loại phòng hợp lệ');
+        throw new NotFoundException('Vui l�ng ch?n ho?c cung c?p lo?i ph�ng h?p l?');
       }
     }
 
@@ -63,10 +63,10 @@ export class RoomsService {
       where: { id: roomTypeId },
     });
     if (!roomType) {
-      throw new NotFoundException(`Loại phòng ID ${roomTypeId} không tồn tại`);
+      throw new NotFoundException(`Lo?i ph�ng ID ${roomTypeId} kh�ng t?n t?i`);
     }
 
-    // Nếu client gửi kèm ảnh, tiện ích, giá phòng hoặc mô tả mới
+    // N?u client g?i k�m ?nh, ti?n �ch, gi� ph�ng ho?c m� t? m?i
     const incomingImages =
       dto.images || (dto.imageUrl ? [dto.imageUrl] : dto.image ? [dto.image] : []);
     if (
@@ -124,7 +124,7 @@ export class RoomsService {
     // Sync to Elasticsearch
     await this.esService.indexRoomEntity(room);
 
-    // Phát sự kiện realtime
+    // Ph�t s? ki?n realtime
     const roomPayload = {
       id: room.id,
       roomNumber: room.roomNumber,
@@ -165,8 +165,8 @@ export class RoomsService {
       };
     }
 
-    // Phòng chờ duyệt / bị từ chối là dữ liệu vận hành nội bộ:
-    // khách hàng và khách vãng lai không được thấy trên sơ đồ phòng.
+    // Ph�ng ch? duy?t / b? t? ch?i l� d? li?u v?n h�nh n?i b?:
+    // kh�ch h�ng v� kh�ch v�ng lai kh�ng du?c th?y tr�n so d? ph�ng.
     const internalStatuses: RoomStatus[] = [
       RoomStatus.PENDING_APPROVAL,
       RoomStatus.REJECTED,
@@ -224,7 +224,7 @@ export class RoomsService {
     const data = rooms.map((r) => toRoomResponse(r, isStaff));
     const result = buildPaginatedResult(data, total, isPaginated ? page : undefined, isPaginated ? limit : undefined);
     
-    // Lưu cache 60 giây (tự động xóa khi có thay đổi trạng thái phòng hoặc đơn đặt phòng)
+    // Luu cache 60 gi�y (t? d?ng x�a khi c� thay d?i tr?ng th�i ph�ng ho?c don d?t ph�ng)
     await this.redis.set(cacheKey, result, 60);
 
     return result;
@@ -253,7 +253,7 @@ export class RoomsService {
     });
 
     if (!room) {
-      throw new NotFoundException(`Không tìm thấy phòng với ID: ${id}`);
+      throw new NotFoundException(`Kh�ng t�m th?y ph�ng v?i ID: ${id}`);
     }
 
     const result = toRoomResponse(room, includeNotes);
@@ -262,18 +262,18 @@ export class RoomsService {
   }
 
   /**
-   * Tìm kiếm phòng trống có tích hợp Redis Caching (TTL 60 giây)
+   * T�m ki?m ph�ng tr?ng c� t�ch h?p Redis Caching (TTL 60 gi�y)
    */
   async findAvailable(query: QueryAvailableRoomsDto, includeNotes = false) {
     const rawCheckIn = new Date(query.checkInDate);
     const rawCheckOut = new Date(query.checkOutDate);
 
     if (rawCheckIn >= rawCheckOut) {
-      throw new BadRequestException('Ngày nhận phòng phải trước ngày trả phòng');
+      throw new BadRequestException('Ng�y nh?n ph�ng ph?i tru?c ng�y tr? ph�ng');
     }
 
-    // Chuẩn hóa giờ nhận phòng (14:00 UTC) và giờ trả phòng (12:00 UTC) tiêu chuẩn khách sạn
-    // Để khách trả phòng lúc 12:00 không làm xung đột khách mới nhận phòng lúc 14:00 cùng ngày
+    // Chu?n h�a gi? nh?n ph�ng (14:00 UTC) v� gi? tr? ph�ng (12:00 UTC) ti�u chu?n kh�ch s?n
+    // �? kh�ch tr? ph�ng l�c 12:00 kh�ng l�m xung d?t kh�ch m?i nh?n ph�ng l�c 14:00 c�ng ng�y
     const checkIn = new Date(rawCheckIn);
     checkIn.setUTCHours(14, 0, 0, 0);
 
@@ -288,9 +288,9 @@ export class RoomsService {
 
     const now = new Date();
 
-    // Lấy danh sách roomId đã bị đặt trong khoảng thời gian này
-    // Bao gồm cả PENDING (chờ duyệt), CONFIRMED (đã duyệt) và CHECKED_IN (đang ở)
-    // Bỏ qua các đơn quá hạn trả phòng trong quá khứ
+    // L?y danh s�ch roomId d� b? d?t trong kho?ng th?i gian n�y
+    // Bao g?m c? PENDING (ch? duy?t), CONFIRMED (d� duy?t) v� CHECKED_IN (dang ?)
+    // B? qua c�c don qu� h?n tr? ph�ng trong qu� kh?
     const busyBookings = await this.prisma.booking.findMany({
       where: {
         status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN] },
@@ -324,14 +324,14 @@ export class RoomsService {
 
     const mapped = availableRooms.map((r) => toRoomResponse(r, includeNotes));
 
-    // Lưu vào Redis cache trong 60 giây
+    // Luu v�o Redis cache trong 60 gi�y
     await this.redis.set(cacheKey, mapped, 60);
 
     return mapped;
   }
 
   /**
-   * Tìm kiếm thông minh Full-Text Search qua Elasticsearch với fallback PostgreSQL (BE-3, BE-7, BE-8)
+   * T�m ki?m th�ng minh Full-Text Search qua Elasticsearch v?i fallback PostgreSQL (BE-3, BE-7, BE-8)
    */
   async search(dto: SearchRoomDto, includeNotes = false) {
     if (this.esService.isReady) {
@@ -346,7 +346,7 @@ export class RoomsService {
       );
 
       if (esRoomIds.length > 0) {
-        // Hydrate lại từ Postgres theo đúng danh sách ID để có ảnh và tiện ích đầy đủ (BE-8)
+        // Hydrate l?i t? Postgres theo d�ng danh s�ch ID d? c� ?nh v� ti?n �ch d?y d? (BE-8)
         const rooms = await this.prisma.room.findMany({
           where: { id: { in: esRoomIds } },
           include: { roomType: true },
@@ -360,7 +360,7 @@ export class RoomsService {
       }
     }
 
-    // Fallback: Tìm kiếm trong PostgreSQL nếu ES chưa bật hoặc không có kết quả
+    // Fallback: T�m ki?m trong PostgreSQL n?u ES chua b?t ho?c kh�ng c� k?t qu?
     const where: any = {
       ...(dto.status ? { status: dto.status } : {}),
       ...(dto.floor ? { floor: dto.floor } : {}),
@@ -402,17 +402,17 @@ export class RoomsService {
   async update(id: string, dto: UpdateRoomDto) {
     const existing = await this.findOne(id, true);
 
-    // 1. Kiểm tra nếu đổi roomNumber thì không được trùng với phòng khác
+    // 1. Ki?m tra n?u d?i roomNumber th� kh�ng du?c tr�ng v?i ph�ng kh�c
     if (dto.roomNumber && dto.roomNumber !== existing.roomNumber) {
       const duplicate = await this.prisma.room.findUnique({
         where: { roomNumber: dto.roomNumber },
       });
       if (duplicate && duplicate.id !== id) {
-        throw new ConflictException(`Số phòng ${dto.roomNumber} đã tồn tại`);
+        throw new ConflictException(`S? ph�ng ${dto.roomNumber} d� t?n t?i`);
       }
     }
 
-    // 2. Xác định và kiểm tra roomTypeId nếu có đổi loại phòng
+    // 2. X�c d?nh v� ki?m tra roomTypeId n?u c� d?i lo?i ph�ng
     let targetRoomTypeId = dto.roomTypeId;
     if (!targetRoomTypeId) {
       if (dto.roomTypeCode) {
@@ -433,11 +433,11 @@ export class RoomsService {
         where: { id: targetRoomTypeId },
       });
       if (!roomTypeExists) {
-        throw new NotFoundException(`Loại phòng ID ${targetRoomTypeId} không tồn tại`);
+        throw new NotFoundException(`Lo?i ph�ng ID ${targetRoomTypeId} kh�ng t?n t?i`);
       }
     }
 
-    // 3. Cập nhật thông tin bổ sung cho RoomType (giá, ảnh, tiện ích, mô tả, sức chứa, v.v.) nếu được truyền
+    // 3. C?p nh?t th�ng tin b? sung cho RoomType (gi�, ?nh, ti?n �ch, m� t?, s?c ch?a, v.v.) n?u du?c truy?n
     const effectiveRoomTypeId = targetRoomTypeId || existing.roomTypeId;
     const incomingImages =
       dto.images || (dto.imageUrl ? [dto.imageUrl] : dto.image ? [dto.image] : undefined);
@@ -483,7 +483,7 @@ export class RoomsService {
       }
     }
 
-    // 4. Chuẩn hóa dữ liệu cập nhật riêng cho bảng Room (tránh lỗi unknown argument của Prisma)
+    // 4. Chu?n h�a d? li?u c?p nh?t ri�ng cho b?ng Room (tr�nh l?i unknown argument c?a Prisma)
     const roomUpdateData: Prisma.RoomUpdateInput = {};
     if (dto.roomNumber !== undefined) {
       roomUpdateData.roomNumber = dto.roomNumber;
@@ -522,6 +522,13 @@ export class RoomsService {
       roomTypeName: updated.roomType?.name,
       roomTypeCode: updated.roomType?.code,
       pricePerNight: updated.roomType?.basePrice,
+      images: updated.roomType?.images ?? [],
+      imageUrl: updated.roomType?.images?.[0] ?? '',
+      amenities: updated.roomType?.amenities ?? [],
+      description: updated.roomType?.description ?? null,
+      capacityAdults: updated.roomType?.capacityAdults ?? 2,
+      capacityChildren: updated.roomType?.capacityChildren ?? 1,
+      sizeSqM: updated.roomType?.sizeSqM ? Number(updated.roomType.sizeSqM) : undefined,
       notes: updated.notes,
       updatedAt: updated.updatedAt,
     };
@@ -535,10 +542,10 @@ export class RoomsService {
   }
 
   /**
-   * Rà soát và đồng bộ lại trạng thái của toàn bộ phòng theo lịch đặt phòng thực tế.
-   * Dùng để chữa dữ liệu đã lệch (phòng OCCUPIED nhưng không có đơn CHECKED_IN nào)
-   * khiến ma trận phòng của lễ tân hiện "Có khách" mà không có khách.
-   * Phòng đang MAINTENANCE / PENDING_APPROVAL / REJECTED được giữ nguyên.
+   * R� so�t v� d?ng b? l?i tr?ng th�i c?a to�n b? ph�ng theo l?ch d?t ph�ng th?c t?.
+   * D�ng d? ch?a d? li?u d� l?ch (ph�ng OCCUPIED nhung kh�ng c� don CHECKED_IN n�o)
+   * khi?n ma tr?n ph�ng c?a l? t�n hi?n "C� kh�ch" m� kh�ng c� kh�ch.
+   * Ph�ng dang MAINTENANCE / PENDING_APPROVAL / REJECTED du?c gi? nguy�n.
    */
   async syncAllStatuses() {
     const rooms = await this.prisma.room.findMany({
@@ -546,8 +553,8 @@ export class RoomsService {
         roomType: true,
         bookings: {
           where: { status: { in: [BookingStatus.CHECKED_IN, BookingStatus.CONFIRMED] } },
-          // checkInDate là bắt buộc: thiếu nó, đơn CONFIRMED của kỳ nghỉ sau
-          // cũng bị coi là đang giữ phòng hôm nay và phòng bị ghi nhầm thành RESERVED.
+          // checkInDate l� b?t bu?c: thi?u n�, don CONFIRMED c?a k? ngh? sau
+          // cung b? coi l� dang gi? ph�ng h�m nay v� ph�ng b? ghi nh?m th�nh RESERVED.
           select: { status: true, checkInDate: true, checkOutDate: true },
         },
       },
@@ -591,8 +598,8 @@ export class RoomsService {
     return {
       message:
         changes.length > 0
-          ? `Đã đồng bộ lại trạng thái cho ${changes.length}/${rooms.length} phòng`
-          : `Toàn bộ ${rooms.length} phòng đã khớp với lịch đặt phòng, không cần thay đổi`,
+          ? `�� d?ng b? l?i tr?ng th�i cho ${changes.length}/${rooms.length} ph�ng`
+          : `To�n b? ${rooms.length} ph�ng d� kh?p v?i l?ch d?t ph�ng, kh�ng c?n thay d?i`,
       totalRooms: rooms.length,
       updatedCount: changes.length,
       changes,
@@ -602,14 +609,14 @@ export class RoomsService {
   async updateStatus(id: string, status: RoomStatus) {
     const existing = await this.findOne(id, true);
 
-    // Không cho phép chuyển thủ công sang AVAILABLE / CLEANING / RESERVED nếu phòng đang có khách lưu trú
+    // Kh�ng cho ph�p chuy?n th? c�ng sang AVAILABLE / CLEANING / RESERVED n?u ph�ng dang c� kh�ch luu tr�
     if (status !== RoomStatus.OCCUPIED) {
       const activeStay = await this.prisma.booking.findFirst({
         where: { roomId: id, status: BookingStatus.CHECKED_IN },
       });
       if (activeStay) {
         throw new BadRequestException(
-          `Phòng ${existing.roomNumber} đang có khách lưu trú (đơn ${activeStay.bookingCode}). Vui lòng kiểm tra thanh toán và thực hiện thủ tục Trả phòng & Xuất hóa đơn trước khi đổi trạng thái phòng.`,
+          `Ph�ng ${existing.roomNumber} dang c� kh�ch luu tr� (don ${activeStay.bookingCode}). Vui l�ng ki?m tra thanh to�n v� th?c hi?n th? t?c Tr? ph�ng & Xu?t h�a don tru?c khi d?i tr?ng th�i ph�ng.`,
         );
       }
     }
@@ -632,6 +639,13 @@ export class RoomsService {
       roomTypeName: updated.roomType?.name,
       roomTypeCode: updated.roomType?.code,
       pricePerNight: updated.roomType?.basePrice,
+      images: updated.roomType?.images ?? [],
+      imageUrl: updated.roomType?.images?.[0] ?? '',
+      amenities: updated.roomType?.amenities ?? [],
+      description: updated.roomType?.description ?? null,
+      capacityAdults: updated.roomType?.capacityAdults ?? 2,
+      capacityChildren: updated.roomType?.capacityChildren ?? 1,
+      sizeSqM: updated.roomType?.sizeSqM ? Number(updated.roomType.sizeSqM) : undefined,
       notes: updated.notes,
       updatedAt: updated.updatedAt,
     });
@@ -642,7 +656,7 @@ export class RoomsService {
   async remove(id: string) {
     const existing = await this.findOne(id, true);
 
-    // 1. Kiểm tra đơn đặt phòng đang hoạt động (Đang ở, Đã xác nhận, Chờ duyệt)
+    // 1. Ki?m tra don d?t ph�ng dang ho?t d?ng (�ang ?, �� x�c nh?n, Ch? duy?t)
     const activeBooking = await this.prisma.booking.findFirst({
       where: {
         roomId: id,
@@ -651,17 +665,17 @@ export class RoomsService {
     });
     if (activeBooking) {
       throw new BadRequestException(
-        `Không thể xóa phòng ${existing.roomNumber} vì đang có đơn đặt phòng chưa hoàn tất (mã đơn: ${activeBooking.bookingCode}). Vui lòng xử lý đơn đặt phòng trước khi xóa.`,
+        `Kh�ng th? x�a ph�ng ${existing.roomNumber} v� dang c� don d?t ph�ng chua ho�n t?t (m� don: ${activeBooking.bookingCode}). Vui l�ng x? l� don d?t ph�ng tru?c khi x�a.`,
       );
     }
 
-    // 2. Kiểm tra lịch sử đơn đặt phòng (đã hoàn thành hoặc hủy)
+    // 2. Ki?m tra l?ch s? don d?t ph�ng (d� ho�n th�nh ho?c h?y)
     const totalBookings = await this.prisma.booking.count({
       where: { roomId: id },
     });
     if (totalBookings > 0) {
       throw new BadRequestException(
-        `Không thể xóa hoàn toàn phòng ${existing.roomNumber} do phòng đã có ${totalBookings} đơn đặt phòng trong lịch sử. Để ngừng kinh doanh phòng này, vui lòng chuyển trạng thái phòng sang BẢO TRÌ (MAINTENANCE) hoặc TỪ CHỐI (REJECTED).`,
+        `Kh�ng th? x�a ho�n to�n ph�ng ${existing.roomNumber} do ph�ng d� c� ${totalBookings} don d?t ph�ng trong l?ch s?. �? ng?ng kinh doanh ph�ng n�y, vui l�ng chuy?n tr?ng th�i ph�ng sang B?O TR� (MAINTENANCE) ho?c T? CH?I (REJECTED).`,
       );
     }
 

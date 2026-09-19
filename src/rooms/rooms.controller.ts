@@ -1,4 +1,4 @@
-import {
+﻿import {
   Controller,
   Get,
   Post,
@@ -143,14 +143,32 @@ export class RoomsController {
     const changes$ = this.roomEvents.stream().pipe(
       filter((event) => {
         if (isStaff) return true;
-        // Khách hàng / khách vãng lai không nhận thông tin phòng chờ duyệt / bị từ chối
-        const status = event.room?.status;
-        return status !== RoomStatus.PENDING_APPROVAL && status !== RoomStatus.REJECTED;
+        // Khách hàng / khách vãng lai:
+        // Cho qua tất cả các sự kiện thay đổi trạng thái và xóa
+        // Khi phòng chuyển sang PENDING_APPROVAL hoặc REJECTED, ta vẫn cho qua
+        // để map() biến đổi thành 'room.deleted', giúp FE tự động gỡ phòng khỏi UI!
+        return true;
       }),
-      map<any, MessageEvent>((event) => ({
-        type: event.type,
-        data: event,
-      })),
+      map<any, MessageEvent>((event) => {
+        if (!isStaff) {
+          const status = event.room?.status;
+          if (status === RoomStatus.PENDING_APPROVAL || status === RoomStatus.REJECTED) {
+            return {
+              type: 'room.deleted',
+              data: {
+                type: 'room.deleted',
+                source: event.source,
+                room: { id: event.room.id, roomNumber: event.room.roomNumber },
+                emittedAt: new Date().toISOString(),
+              },
+            };
+          }
+        }
+        return {
+          type: event.type,
+          data: event,
+        };
+      }),
     );
 
     return merge(ready$, changes$, ping$);

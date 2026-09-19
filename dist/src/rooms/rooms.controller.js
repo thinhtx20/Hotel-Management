@@ -81,12 +81,27 @@ let RoomsController = class RoomsController {
         const changes$ = this.roomEvents.stream().pipe((0, operators_1.filter)((event) => {
             if (isStaff)
                 return true;
-            const status = event.room?.status;
-            return status !== client_1.RoomStatus.PENDING_APPROVAL && status !== client_1.RoomStatus.REJECTED;
-        }), (0, rxjs_1.map)((event) => ({
-            type: event.type,
-            data: event,
-        })));
+            return true;
+        }), (0, rxjs_1.map)((event) => {
+            if (!isStaff) {
+                const status = event.room?.status;
+                if (status === client_1.RoomStatus.PENDING_APPROVAL || status === client_1.RoomStatus.REJECTED) {
+                    return {
+                        type: 'room.deleted',
+                        data: {
+                            type: 'room.deleted',
+                            source: event.source,
+                            room: { id: event.room.id, roomNumber: event.room.roomNumber },
+                            emittedAt: new Date().toISOString(),
+                        },
+                    };
+                }
+            }
+            return {
+                type: event.type,
+                data: event,
+            };
+        }));
         return (0, rxjs_1.merge)(ready$, changes$, ping$);
     }
     search(searchDto, user) {
