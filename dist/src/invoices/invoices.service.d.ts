@@ -165,8 +165,10 @@ export declare class InvoicesService {
         message: string;
         paymentId: string;
         amount: number;
+        bookingConfirmed: true;
         invoice: any;
     }>;
+    private syncRoomStatusAfterDeposit;
     rejectPayment(paymentId: string, dto: RejectPaymentDto, cashierId: string): Promise<{
         message: string;
         paymentId: string;

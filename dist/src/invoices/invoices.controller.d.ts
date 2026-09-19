@@ -71,6 +71,7 @@ export declare class InvoicesController {
         message: string;
         paymentId: string;
         amount: number;
+        bookingConfirmed: true;
         invoice: any;
     }>;
     rejectPayment(paymentId: string, dto: RejectPaymentDto, cashierId: string): Promise<{

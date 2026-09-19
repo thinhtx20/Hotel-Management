@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
+const schedule_1 = require("@nestjs/schedule");
 const prisma_module_1 = require("./prisma/prisma.module");
 const redis_module_1 = require("./redis/redis.module");
 const elasticsearch_module_1 = require("./elasticsearch/elasticsearch.module");
@@ -34,6 +35,7 @@ exports.AppModule = AppModule = __decorate([
                 isGlobal: true,
                 envFilePath: '.env',
             }),
+            schedule_1.ScheduleModule.forRoot(),
             prisma_module_1.PrismaModule,
             redis_module_1.RedisModule,
             elasticsearch_module_1.ElasticsearchModule,

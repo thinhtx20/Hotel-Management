@@ -16,6 +16,7 @@ const prisma_service_1 = require("../prisma/prisma.service");
 const query_invoices_dto_1 = require("./dto/query-invoices.dto");
 const pagination_util_1 = require("../common/utils/pagination.util");
 const client_1 = require("@prisma/client");
+const room_status_util_1 = require("../common/utils/room-status.util");
 const revenue_util_1 = require("../common/utils/revenue.util");
 const INVOICE_INCLUDE = {
     booking: {
@@ -543,7 +544,26 @@ let InvoicesService = class InvoicesService {
     async confirmPayment(paymentId, dto, cashierId) {
         const payment = await this.prisma.payment.findUnique({
             where: { id: paymentId },
-            include: { invoice: { select: { id: true, finalAmount: true, paidAmount: true, invoiceCode: true, booking: { select: { customerId: true } } } } },
+            include: {
+                invoice: {
+                    select: {
+                        id: true,
+                        finalAmount: true,
+                        paidAmount: true,
+                        invoiceCode: true,
+                        bookingId: true,
+                        booking: {
+                            select: {
+                                id: true,
+                                customerId: true,
+                                status: true,
+                                roomId: true,
+                                depositAmount: true,
+                            },
+                        },
+                    },
+                },
+            },
         });
         if (!payment) {
             throw new common_1.NotFoundException(`Không tìm thấy yêu cầu thanh toán ID: ${paymentId}`);
@@ -568,6 +588,11 @@ let InvoicesService = class InvoicesService {
                 select: { id: true },
             })
             : null;
+        const booking = payment.invoice?.booking;
+        const isDepositPayment = payment.type === client_1.PaymentEntryType.DEPOSIT;
+        const shouldConfirmBooking = isDepositPayment &&
+            booking &&
+            booking.status === client_1.BookingStatus.PENDING;
         const updated = await this.prisma.$transaction(async (tx) => {
             await tx.payment.update({
                 where: { id: paymentId },
@@ -585,30 +610,72 @@ let InvoicesService = class InvoicesService {
                 where: { id: payment.invoiceId },
                 data: { issuedById: cashierId },
             });
+            if (shouldConfirmBooking) {
+                await tx.booking.update({
+                    where: { id: booking.id },
+                    data: {
+                        status: client_1.BookingStatus.CONFIRMED,
+                        depositAmount: (0, revenue_util_1.roundMoney)(amount),
+                        confirmedAt: new Date(),
+                        confirmedById: cashierId,
+                        confirmationNote: 'Tự động xác nhận khi thu ngân duyệt khoản cọc',
+                    },
+                });
+            }
             return this.recalculateInvoiceTotals(tx, payment.invoiceId);
         });
+        if (shouldConfirmBooking && booking.roomId) {
+            await this.syncRoomStatusAfterDeposit(booking.roomId);
+        }
         const response = this.toInvoiceResponse(updated);
-        if (payment.invoice?.booking?.customerId) {
-            this.notificationsService.sendToUser(payment.invoice.booking.customerId, {
-                title: 'Thanh toán thành công',
-                body: `Khoản thanh toán ${amount.toLocaleString('vi-VN')}đ cho hóa đơn ${payment.invoice.invoiceCode || ''} đã được xác nhận.`,
+        if (booking?.customerId) {
+            const notifBody = shouldConfirmBooking
+                ? `Khoản cọc ${amount.toLocaleString('vi-VN')}đ đã được xác nhận. Đơn đặt phòng của bạn đã được duyệt.`
+                : `Khoản thanh toán ${amount.toLocaleString('vi-VN')}đ cho hóa đơn ${payment.invoice.invoiceCode || ''} đã được xác nhận.`;
+            this.notificationsService.sendToUser(booking.customerId, {
+                title: shouldConfirmBooking ? 'Đặt cọc thành công' : 'Thanh toán thành công',
+                body: notifBody,
                 category: 'payment',
                 actionRoute: '/my-bookings',
-                actionLabel: 'Xem hóa đơn',
+                actionLabel: 'Xem đơn đặt phòng',
                 data: {
-                    type: 'PAYMENT_CONFIRMED',
+                    type: shouldConfirmBooking ? 'DEPOSIT_CONFIRMED' : 'PAYMENT_CONFIRMED',
                     invoiceId: payment.invoiceId,
+                    bookingId: booking.id,
                 },
             }).catch(() => { });
         }
         return {
-            message: response.remainingAmount > 0
-                ? `Đã xác nhận thu ${amount.toLocaleString('vi-VN')}đ. Hóa đơn còn thiếu ${response.remainingAmount.toLocaleString('vi-VN')}đ.`
-                : `Đã xác nhận thu ${amount.toLocaleString('vi-VN')}đ. Hóa đơn đã thanh toán đủ.`,
+            message: shouldConfirmBooking
+                ? `Đã xác nhận cọc ${amount.toLocaleString('vi-VN')}đ và duyệt đơn đặt phòng thành công.`
+                : response.remainingAmount > 0
+                    ? `Đã xác nhận thu ${amount.toLocaleString('vi-VN')}đ. Hóa đơn còn thiếu ${response.remainingAmount.toLocaleString('vi-VN')}đ.`
+                    : `Đã xác nhận thu ${amount.toLocaleString('vi-VN')}đ. Hóa đơn đã thanh toán đủ.`,
             paymentId,
             amount,
+            bookingConfirmed: shouldConfirmBooking || undefined,
             invoice: response,
         };
+    }
+    async syncRoomStatusAfterDeposit(roomId) {
+        const room = await this.prisma.room.findUnique({
+            where: { id: roomId },
+            include: {
+                bookings: {
+                    where: { status: { in: [client_1.BookingStatus.CHECKED_IN, client_1.BookingStatus.CONFIRMED] } },
+                    select: { status: true, checkInDate: true, checkOutDate: true },
+                },
+            },
+        });
+        if (!room)
+            return;
+        const nextStatus = (0, room_status_util_1.deriveRoomStatus)(room.status, room.bookings);
+        if (nextStatus === room.status)
+            return;
+        await this.prisma.room.update({
+            where: { id: roomId },
+            data: { status: nextStatus },
+        });
     }
     async rejectPayment(paymentId, dto, cashierId) {
         const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
