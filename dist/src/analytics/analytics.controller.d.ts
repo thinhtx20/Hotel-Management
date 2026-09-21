@@ -19,6 +19,10 @@ export declare class AnalyticsController {
             invoiceCount: number;
         }[];
     }>;
+    getRevenueYears(): Promise<{
+        years: number[];
+    }>;
+    exportRevenue(year?: number): Promise<string>;
     getDailyRevenue(range?: number, days?: number): Promise<{
         days: number;
         availableRanges: number[];

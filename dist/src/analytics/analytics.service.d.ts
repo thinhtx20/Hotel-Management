@@ -55,6 +55,8 @@ export declare class AnalyticsService {
             invoiceCount: number;
         }[];
     }>;
+    getAvailableRevenueYears(): Promise<number[]>;
+    exportRevenueCsv(year?: number): Promise<string>;
     getOccupancyByRoomType(): Promise<{
         roomTypeId: string;
         roomTypeName: string;

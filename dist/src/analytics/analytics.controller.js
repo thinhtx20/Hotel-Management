@@ -32,6 +32,13 @@ let AnalyticsController = class AnalyticsController {
     getRevenue(year) {
         return this.analyticsService.getRevenueAnalytics(year ? Number(year) : undefined);
     }
+    async getRevenueYears() {
+        const years = await this.analyticsService.getAvailableRevenueYears();
+        return { years };
+    }
+    exportRevenue(year) {
+        return this.analyticsService.exportRevenueCsv(year ? Number(year) : undefined);
+    }
     getDailyRevenue(range, days) {
         const selected = range ?? days;
         return this.analyticsService.getDailyRevenue(selected !== undefined ? Number(selected) : revenue_util_1.DEFAULT_REVENUE_RANGE);
@@ -118,6 +125,29 @@ __decorate([
     __metadata("design:paramtypes", [Number]),
     __metadata("design:returntype", void 0)
 ], AnalyticsController.prototype, "getRevenue", null);
+__decorate([
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
+    (0, common_1.Get)('revenue/years'),
+    (0, swagger_1.ApiOperation)({ summary: 'Lấy danh sách các năm có phát sinh doanh thu (Chỉ Admin)' }),
+    (0, api_success_response_decorator_1.ApiSuccessResponse)({
+        status: 200,
+        description: 'Lấy danh sách năm thành công',
+        exampleData: { years: [2024, 2025, 2026] },
+    }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AnalyticsController.prototype, "getRevenueYears", null);
+__decorate([
+    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN),
+    (0, common_1.Get)('revenue/export'),
+    (0, swagger_1.ApiOperation)({ summary: 'Xuất báo cáo doanh thu theo năm ra định dạng CSV (A3)' }),
+    (0, swagger_1.ApiQuery)({ name: 'year', type: Number, required: false, example: 2026 }),
+    __param(0, (0, common_1.Query)('year')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", void 0)
+], AnalyticsController.prototype, "exportRevenue", null);
 __decorate([
     (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.RECEPTIONIST),
     (0, common_1.Get)('revenue/daily'),

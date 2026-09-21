@@ -296,6 +296,38 @@ let AnalyticsService = class AnalyticsService {
             monthly: monthlyRevenue,
         };
     }
+    async getAvailableRevenueYears() {
+        const invoices = await this.prisma.invoice.findMany({
+            where: {
+                paidAt: { not: null },
+                paymentStatus: { in: revenue_util_1.COLLECTED_PAYMENT_STATUSES },
+            },
+            select: { paidAt: true },
+        });
+        const yearsSet = new Set();
+        yearsSet.add(new Date().getFullYear());
+        for (const inv of invoices) {
+            if (inv.paidAt) {
+                yearsSet.add(inv.paidAt.getFullYear());
+            }
+        }
+        return Array.from(yearsSet).sort((a, b) => a - b);
+    }
+    async exportRevenueCsv(year) {
+        const data = await this.getRevenueAnalytics(year);
+        const lines = [];
+        lines.push('BÁO CÁO DOANH THU NĂM ' + data.year);
+        lines.push('Tổng doanh thu (VND),' + data.summary.totalYearRevenue);
+        lines.push('Doanh thu tiền phòng (VND),' + data.summary.totalRoomRevenue);
+        lines.push('Doanh thu dịch vụ (VND),' + data.summary.totalServicesRevenue);
+        lines.push('Tổng số hóa đơn,' + data.summary.totalInvoices);
+        lines.push('');
+        lines.push('Tháng,Doanh thu phòng (VND),Doanh thu dịch vụ (VND),Tổng doanh thu (VND),Số hóa đơn');
+        for (const m of data.monthly) {
+            lines.push('Tháng ' + m.month + ',' + m.roomRevenue + ',' + m.serviceRevenue + ',' + m.totalRevenue + ',' + m.invoiceCount);
+        }
+        return lines.join('\r\n');
+    }
     async getOccupancyByRoomType() {
         const roomTypes = await this.prisma.roomType.findMany({
             include: {

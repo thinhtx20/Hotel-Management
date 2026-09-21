@@ -88,6 +88,27 @@ export class AnalyticsController {
     return this.analyticsService.getRevenueAnalytics(year ? Number(year) : undefined);
   }
 
+  @Roles(Role.ADMIN)
+  @Get('revenue/years')
+  @ApiOperation({ summary: 'Lấy danh sách các năm có phát sinh doanh thu (Chỉ Admin)' })
+  @ApiSuccessResponse({
+    status: 200,
+    description: 'Lấy danh sách năm thành công',
+    exampleData: { years: [2024, 2025, 2026] },
+  })
+  async getRevenueYears() {
+    const years = await this.analyticsService.getAvailableRevenueYears();
+    return { years };
+  }
+
+  @Roles(Role.ADMIN)
+  @Get('revenue/export')
+  @ApiOperation({ summary: 'Xuất báo cáo doanh thu theo năm ra định dạng CSV (A3)' })
+  @ApiQuery({ name: 'year', type: Number, required: false, example: 2026 })
+  exportRevenue(@Query('year') year?: number) {
+    return this.analyticsService.exportRevenueCsv(year ? Number(year) : undefined);
+  }
+
   @Roles(Role.ADMIN, Role.RECEPTIONIST)
   @Get('revenue/daily')
   @ApiOperation({
