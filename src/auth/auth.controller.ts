@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Req, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
@@ -66,6 +66,7 @@ export class AuthController {
   }
 
   @Public()
+  @HttpCode(HttpStatus.OK)
   @Post('login')
   @ApiOperation({
     summary: 'Đăng nhập hệ thống',
@@ -105,6 +106,7 @@ export class AuthController {
   }
 
   @Public()
+  @HttpCode(HttpStatus.OK)
   @Post('refresh-token')
   @ApiOperation({ summary: 'Làm mới Access Token bằng Refresh Token' })
   @ApiSuccessResponse({
@@ -160,6 +162,7 @@ export class AuthController {
   }
 
   @Public()
+  @HttpCode(HttpStatus.OK)
   @Post('verify-reset-otp')
   @ApiOperation({ summary: 'Xác thực mã OTP để lấy resetToken' })
   @ApiSuccessResponse({
@@ -262,6 +265,7 @@ export class AuthController {
   @Public()
   @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
   @Post('logout')
   @ApiOperation({
     summary: 'Đăng xuất tài khoản và thu hồi token (Hỗ trợ Bearer Token hoặc Refresh Token)',

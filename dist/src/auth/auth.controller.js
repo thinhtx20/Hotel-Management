@@ -110,6 +110,7 @@ __decorate([
 ], AuthController.prototype, "register", null);
 __decorate([
     (0, public_decorator_1.Public)(),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, common_1.Post)('login'),
     (0, swagger_1.ApiOperation)({
         summary: 'Đăng nhập hệ thống',
@@ -151,6 +152,7 @@ __decorate([
 ], AuthController.prototype, "login", null);
 __decorate([
     (0, public_decorator_1.Public)(),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, common_1.Post)('refresh-token'),
     (0, swagger_1.ApiOperation)({ summary: 'Làm mới Access Token bằng Refresh Token' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
@@ -210,6 +212,7 @@ __decorate([
 ], AuthController.prototype, "forgotPassword", null);
 __decorate([
     (0, public_decorator_1.Public)(),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, common_1.Post)('verify-reset-otp'),
     (0, swagger_1.ApiOperation)({ summary: 'Xác thực mã OTP để lấy resetToken' }),
     (0, api_success_response_decorator_1.ApiSuccessResponse)({
@@ -318,6 +321,7 @@ __decorate([
     (0, public_decorator_1.Public)(),
     (0, swagger_1.ApiBearerAuth)('JWT-auth'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, common_1.Post)('logout'),
     (0, swagger_1.ApiOperation)({
         summary: 'Đăng xuất tài khoản và thu hồi token (Hỗ trợ Bearer Token hoặc Refresh Token)',

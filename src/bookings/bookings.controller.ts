@@ -466,9 +466,8 @@ export class BookingsController {
     description:
       'Nhận body { cancellationReason }. Lý do được lưu lại và trả về trong mọi response của đơn ' +
       'kèm cancelledAt và cancelledBy, để khách thấy được vì sao đơn bị hủy. ' +
-      'KHÁCH HÀNG chỉ được tự hủy khi đơn còn PENDING; lễ tân đã xác nhận (CONFIRMED) thì khách ' +
-      'phải liên hệ lễ tân. ADMIN/RECEPTIONIST hủy hộ được cả đơn CONFIRMED, nhưng đơn đã ' +
-      'CHECKED_IN / CHECKED_OUT thì không vai trò nào hủy được.',
+      'Cho phép khách hàng và nhân viên tự hủy đơn ở trạng thái PENDING hoặc CONFIRMED (trước khi nhận phòng). ' +
+      'Đơn đã CHECKED_IN hoặc CHECKED_OUT thì không vai trò nào hủy được.',
   })
   @ApiSuccessResponse({
     status: 200,
@@ -501,8 +500,8 @@ export class BookingsController {
   @ApiOperation({
     summary: 'Hủy đơn đặt phòng kèm lý do (PATCH alias cho client Flutter)',
     description:
-      'Cùng quy tắc với POST :id/cancel — khách chỉ tự hủy được đơn PENDING, đơn đã xác nhận ' +
-      'hoặc đã nhận phòng thì không.',
+      'Cùng quy tắc với POST :id/cancel — cho phép hủy đơn PENDING và CONFIRMED trước khi nhận phòng. ' +
+      'Đơn đã nhận phòng hoặc hoàn tất thì không thể hủy.',
   })
   @ApiSuccessResponse({
     status: 200,

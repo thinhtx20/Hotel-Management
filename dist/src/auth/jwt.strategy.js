@@ -16,6 +16,7 @@ const passport_jwt_1 = require("passport-jwt");
 const prisma_service_1 = require("../prisma/prisma.service");
 const redis_service_1 = require("../redis/redis.service");
 const session_policy_1 = require("./session-policy");
+const jwt_config_1 = require("./jwt-config");
 const jwtExtractor = passport_jwt_1.ExtractJwt.fromExtractors([
     passport_jwt_1.ExtractJwt.fromAuthHeaderAsBearerToken(),
     passport_jwt_1.ExtractJwt.fromUrlQueryParameter('token'),
@@ -27,7 +28,7 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
             jwtFromRequest: jwtExtractor,
             passReqToCallback: true,
             ignoreExpiration: false,
-            secretOrKey: process.env.JWT_SECRET || 'super-secret-hotel-jwt-key-2026-change-in-production',
+            secretOrKey: (0, jwt_config_1.getJwtSecret)(),
         });
         this.prisma = prisma;
         this.redisService = redisService;
@@ -64,7 +65,7 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
             throw new common_1.UnauthorizedException('Tài khoản không tồn tại hoặc đã bị vô hiệu hóa');
         }
         if ((0, session_policy_1.isSingleDeviceRole)(user.role) &&
-            user.activeSessionId &&
+            payload.sid &&
             payload.sid !== user.activeSessionId) {
             throw (0, session_policy_1.sessionRevokedException)(user.activeDevice);
         }

@@ -14,6 +14,7 @@ const auth_service_1 = require("./auth.service");
 const auth_controller_1 = require("./auth.controller");
 const jwt_strategy_1 = require("./jwt.strategy");
 const users_module_1 = require("../users/users.module");
+const jwt_config_1 = require("./jwt-config");
 let AuthModule = class AuthModule {
 };
 exports.AuthModule = AuthModule;
@@ -22,9 +23,11 @@ exports.AuthModule = AuthModule = __decorate([
         imports: [
             users_module_1.UsersModule,
             passport_1.PassportModule.register({ defaultStrategy: 'jwt' }),
-            jwt_1.JwtModule.register({
-                secret: process.env.JWT_SECRET || 'super-secret-hotel-jwt-key-2026-change-in-production',
-                signOptions: { expiresIn: process.env.JWT_EXPIRES_IN || '1d' },
+            jwt_1.JwtModule.registerAsync({
+                useFactory: () => ({
+                    secret: (0, jwt_config_1.getJwtSecret)(),
+                    signOptions: { expiresIn: process.env.JWT_EXPIRES_IN || '1d' },
+                }),
             }),
         ],
         controllers: [auth_controller_1.AuthController],

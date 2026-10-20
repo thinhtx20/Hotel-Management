@@ -17,6 +17,12 @@ import { Role } from '@prisma/client';
 export const SINGLE_DEVICE_ROLES: Role[] = [Role.CUSTOMER];
 
 export function isSingleDeviceRole(role: Role | string | undefined | null): boolean {
+  const mode = (process.env.SINGLE_DEVICE_MODE || '').trim().toLowerCase();
+  // Chỉ bật giới hạn 1 thiết bị khi biến môi trường SINGLE_DEVICE_MODE được đặt rõ ràng là 'kick_old' hoặc 'block_new'.
+  // Mặc định cho phép khách hàng đăng nhập trên nhiều thiết bị đồng thời (Multi-device mode) để kiểm thử và trải nghiệm liền mạch.
+  if (mode !== 'kick_old' && mode !== 'block_new') {
+    return false;
+  }
   return !!role && SINGLE_DEVICE_ROLES.includes(role as Role);
 }
 

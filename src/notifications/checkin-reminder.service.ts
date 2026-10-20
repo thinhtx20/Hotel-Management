@@ -26,7 +26,7 @@ export class CheckinReminderService {
    * Cron chạy lúc 08:00 sáng hàng ngày (giờ GMT+7 = 01:00 UTC)
    * Quét booking CONFIRMED sắp đến ngày nhận phòng (hôm nay & ngày mai)
    */
-  @Cron('0 1 * * *', { name: 'checkin-reminder', timeZone: 'Asia/Ho_Chi_Minh' })
+  @Cron('0 8 * * *', { name: 'checkin-reminder', timeZone: 'Asia/Ho_Chi_Minh' })
   async handleCheckinReminder() {
     this.logger.log('🔔 [Cron] Bắt đầu quét booking sắp đến ngày nhận phòng...');
 

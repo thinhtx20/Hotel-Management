@@ -160,80 +160,96 @@ export class BookingsService {
     }
 
     try {
-      const room = await this.prisma.room.findUnique({
-        where: { id: dto.roomId },
-        include: { roomType: true },
-      });
+      // Thực thi trong Database Transaction kết hợp Khóa dòng PostgreSQL (Row-level Lock)
+      // Đảm bảo TUYỆT ĐỐI không có 2 request nào có thể cùng đọc và tạo booking trùng lịch trên cùng 1 phòng,
+      // ngay cả khi hệ thống chạy không có Redis hoặc triển khai phân tán nhiều instance.
+      const booking = await this.prisma.$transaction(
+        async (tx) => {
+          // 1. Khóa hàng phòng bằng FOR UPDATE để tuần tự hóa mọi giao dịch đặt phòng đồng thời trên cùng 1 phòng
+          await tx.$queryRaw`SELECT id FROM "rooms" WHERE id = ${dto.roomId} FOR UPDATE`;
 
-      if (!room) {
-        throw new NotFoundException(`Không tìm thấy phòng với ID: ${dto.roomId}`);
-      }
+          const room = await tx.room.findUnique({
+            where: { id: dto.roomId },
+            include: { roomType: true },
+          });
 
-      if (room.status === RoomStatus.MAINTENANCE) {
-        throw new BadRequestException('Phòng này hiện đang bảo trì, không thể đặt');
-      }
+          if (!room) {
+            throw new NotFoundException(`Không tìm thấy phòng với ID: ${dto.roomId}`);
+          }
 
-      const now = new Date();
+          if (room.status === RoomStatus.MAINTENANCE) {
+            throw new BadRequestException('Phòng này hiện đang bảo trì, không thể đặt');
+          }
 
-      // Kiểm tra xung đột lịch đặt phòng (Overlap check trong DB)
-      // Bao gồm cả PENDING (chờ duyệt), CONFIRMED (đã duyệt) và CHECKED_IN (đang ở)
-      // Bỏ qua các đơn quá hạn trả phòng trong quá khứ
-      const conflictBooking = await this.prisma.booking.findFirst({
-        where: {
-          roomId: dto.roomId,
-          status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN] },
-          checkOutDate: { gt: now },
-          AND: [
-            { checkInDate: { lt: checkOut } },
-            { checkOutDate: { gt: checkIn } },
-          ],
+          const now = new Date();
+
+          // 2. Kiểm tra xung đột lịch đặt phòng (Overlap check trong Transaction an toàn)
+          // Bao gồm cả PENDING (chờ duyệt), CONFIRMED (đã duyệt) và CHECKED_IN (đang ở)
+          // Bỏ qua các đơn quá hạn trả phòng trong quá khứ
+          const conflictBooking = await tx.booking.findFirst({
+            where: {
+              roomId: dto.roomId,
+              status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN] },
+              checkOutDate: { gt: now },
+              AND: [
+                { checkInDate: { lt: checkOut } },
+                { checkOutDate: { gt: checkIn } },
+              ],
+            },
+          });
+
+          if (conflictBooking) {
+            throw new ConflictException(
+              'Phòng này đã có khách đặt hoặc đang ở trong khoảng thời gian được chọn',
+            );
+          }
+
+          // Tính số đêm lưu trú
+          const diffTime = Math.abs(checkOut.getTime() - checkIn.getTime());
+          const nights = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+          const totalAmount = nights * room.roomType.basePrice;
+
+          // Xác định customerId
+          const finalCustomerId =
+            currentUserRole === Role.CUSTOMER ? currentUserId : dto.customerId || currentUserId;
+
+          // Trạng thái ban đầu:
+          // Khách hàng đặt trước -> PENDING (chờ Lễ tân duyệt & xác nhận cọc)
+          // Lễ tân/Admin tạo trực tiếp -> dùng status gửi lên hoặc CONFIRMED
+          let initialStatus: BookingStatus = BookingStatus.PENDING;
+          if (currentUserRole !== Role.CUSTOMER) {
+            initialStatus = dto.status || BookingStatus.CONFIRMED;
+          }
+
+          // Sinh mã booking độc nhất
+          const bookingCode = `BK-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
+
+          const createdBooking = await tx.booking.create({
+            data: {
+              bookingCode,
+              customerId: finalCustomerId,
+              roomId: dto.roomId,
+              checkInDate: checkIn,
+              checkOutDate: checkOut,
+              guestCount: dto.guestCount || 1,
+              totalAmount,
+              depositAmount: dto.depositAmount || 0,
+              status: initialStatus,
+              specialRequests: dto.specialRequests,
+              ...(initialStatus === BookingStatus.CONFIRMED
+                ? { confirmedAt: new Date(), confirmedById: currentUserId }
+                : {}),
+            },
+            include: BOOKING_INCLUDE,
+          });
+
+          return createdBooking;
         },
-      });
-
-      if (conflictBooking) {
-        throw new ConflictException(
-          'Phòng này đã có khách đặt hoặc đang ở trong khoảng thời gian được chọn',
-        );
-      }
-
-      // Tính số đêm lưu trú
-      const diffTime = Math.abs(checkOut.getTime() - checkIn.getTime());
-      const nights = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
-      const totalAmount = nights * room.roomType.basePrice;
-
-      // Xác định customerId
-      const finalCustomerId =
-        currentUserRole === Role.CUSTOMER ? currentUserId : dto.customerId || currentUserId;
-
-      // Trạng thái ban đầu:
-      // Khách hàng đặt trước -> PENDING (chờ Lễ tân duyệt & xác nhận cọc)
-      // Lễ tân/Admin tạo trực tiếp -> dùng status gửi lên hoặc CONFIRMED
-      let initialStatus: BookingStatus = BookingStatus.PENDING;
-      if (currentUserRole !== Role.CUSTOMER) {
-        initialStatus = dto.status || BookingStatus.CONFIRMED;
-      }
-
-      // Sinh mã booking độc nhất
-      const bookingCode = `BK-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
-
-      const booking = await this.prisma.booking.create({
-        data: {
-          bookingCode,
-          customerId: finalCustomerId,
-          roomId: dto.roomId,
-          checkInDate: checkIn,
-          checkOutDate: checkOut,
-          guestCount: dto.guestCount || 1,
-          totalAmount,
-          depositAmount: dto.depositAmount || 0,
-          status: initialStatus,
-          specialRequests: dto.specialRequests,
-          ...(initialStatus === BookingStatus.CONFIRMED
-            ? { confirmedAt: new Date(), confirmedById: currentUserId }
-            : {}),
+        {
+          isolationLevel: 'ReadCommitted',
+          timeout: 10000,
         },
-        include: BOOKING_INCLUDE,
-      });
+      );
 
       // Đơn PENDING không chiếm phòng; đơn CONFIRMED (Lễ tân/Admin tạo trực tiếp)
       // đẩy phòng sang RESERVED thông qua bộ suy diễn trạng thái dùng chung.

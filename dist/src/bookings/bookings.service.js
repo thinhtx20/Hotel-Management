@@ -105,57 +105,64 @@ let BookingsService = BookingsService_1 = class BookingsService {
             throw new common_1.ConflictException('Phòng này đang được khách khác giữ chỗ để thanh toán, vui lòng thử lại sau giây lát!');
         }
         try {
-            const room = await this.prisma.room.findUnique({
-                where: { id: dto.roomId },
-                include: { roomType: true },
-            });
-            if (!room) {
-                throw new common_1.NotFoundException(`Không tìm thấy phòng với ID: ${dto.roomId}`);
-            }
-            if (room.status === client_1.RoomStatus.MAINTENANCE) {
-                throw new common_1.BadRequestException('Phòng này hiện đang bảo trì, không thể đặt');
-            }
-            const now = new Date();
-            const conflictBooking = await this.prisma.booking.findFirst({
-                where: {
-                    roomId: dto.roomId,
-                    status: { in: [client_1.BookingStatus.PENDING, client_1.BookingStatus.CONFIRMED, client_1.BookingStatus.CHECKED_IN] },
-                    checkOutDate: { gt: now },
-                    AND: [
-                        { checkInDate: { lt: checkOut } },
-                        { checkOutDate: { gt: checkIn } },
-                    ],
-                },
-            });
-            if (conflictBooking) {
-                throw new common_1.ConflictException('Phòng này đã có khách đặt hoặc đang ở trong khoảng thời gian được chọn');
-            }
-            const diffTime = Math.abs(checkOut.getTime() - checkIn.getTime());
-            const nights = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
-            const totalAmount = nights * room.roomType.basePrice;
-            const finalCustomerId = currentUserRole === client_1.Role.CUSTOMER ? currentUserId : dto.customerId || currentUserId;
-            let initialStatus = client_1.BookingStatus.PENDING;
-            if (currentUserRole !== client_1.Role.CUSTOMER) {
-                initialStatus = dto.status || client_1.BookingStatus.CONFIRMED;
-            }
-            const bookingCode = `BK-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
-            const booking = await this.prisma.booking.create({
-                data: {
-                    bookingCode,
-                    customerId: finalCustomerId,
-                    roomId: dto.roomId,
-                    checkInDate: checkIn,
-                    checkOutDate: checkOut,
-                    guestCount: dto.guestCount || 1,
-                    totalAmount,
-                    depositAmount: dto.depositAmount || 0,
-                    status: initialStatus,
-                    specialRequests: dto.specialRequests,
-                    ...(initialStatus === client_1.BookingStatus.CONFIRMED
-                        ? { confirmedAt: new Date(), confirmedById: currentUserId }
-                        : {}),
-                },
-                include: BOOKING_INCLUDE,
+            const booking = await this.prisma.$transaction(async (tx) => {
+                await tx.$queryRaw `SELECT id FROM "rooms" WHERE id = ${dto.roomId} FOR UPDATE`;
+                const room = await tx.room.findUnique({
+                    where: { id: dto.roomId },
+                    include: { roomType: true },
+                });
+                if (!room) {
+                    throw new common_1.NotFoundException(`Không tìm thấy phòng với ID: ${dto.roomId}`);
+                }
+                if (room.status === client_1.RoomStatus.MAINTENANCE) {
+                    throw new common_1.BadRequestException('Phòng này hiện đang bảo trì, không thể đặt');
+                }
+                const now = new Date();
+                const conflictBooking = await tx.booking.findFirst({
+                    where: {
+                        roomId: dto.roomId,
+                        status: { in: [client_1.BookingStatus.PENDING, client_1.BookingStatus.CONFIRMED, client_1.BookingStatus.CHECKED_IN] },
+                        checkOutDate: { gt: now },
+                        AND: [
+                            { checkInDate: { lt: checkOut } },
+                            { checkOutDate: { gt: checkIn } },
+                        ],
+                    },
+                });
+                if (conflictBooking) {
+                    throw new common_1.ConflictException('Phòng này đã có khách đặt hoặc đang ở trong khoảng thời gian được chọn');
+                }
+                const diffTime = Math.abs(checkOut.getTime() - checkIn.getTime());
+                const nights = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+                const totalAmount = nights * room.roomType.basePrice;
+                const finalCustomerId = currentUserRole === client_1.Role.CUSTOMER ? currentUserId : dto.customerId || currentUserId;
+                let initialStatus = client_1.BookingStatus.PENDING;
+                if (currentUserRole !== client_1.Role.CUSTOMER) {
+                    initialStatus = dto.status || client_1.BookingStatus.CONFIRMED;
+                }
+                const bookingCode = `BK-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
+                const createdBooking = await tx.booking.create({
+                    data: {
+                        bookingCode,
+                        customerId: finalCustomerId,
+                        roomId: dto.roomId,
+                        checkInDate: checkIn,
+                        checkOutDate: checkOut,
+                        guestCount: dto.guestCount || 1,
+                        totalAmount,
+                        depositAmount: dto.depositAmount || 0,
+                        status: initialStatus,
+                        specialRequests: dto.specialRequests,
+                        ...(initialStatus === client_1.BookingStatus.CONFIRMED
+                            ? { confirmedAt: new Date(), confirmedById: currentUserId }
+                            : {}),
+                    },
+                    include: BOOKING_INCLUDE,
+                });
+                return createdBooking;
+            }, {
+                isolationLevel: 'ReadCommitted',
+                timeout: 10000,
             });
             await this.syncRoomStatus(dto.roomId);
             await this.redis.delByPattern('cache:rooms:*');

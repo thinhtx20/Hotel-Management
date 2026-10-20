@@ -5,6 +5,7 @@ import { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { isSingleDeviceRole, sessionRevokedException } from './session-policy';
+import { getJwtSecret } from './jwt-config';
 
 /**
  * Ưu tiên header `Authorization: Bearer <token>`.
@@ -27,7 +28,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       jwtFromRequest: jwtExtractor,
       passReqToCallback: true,
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET || 'super-secret-hotel-jwt-key-2026-change-in-production',
+      secretOrKey: getJwtSecret(),
     });
   }
 
@@ -77,7 +78,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     // đã có phiên mới, nên không tồn tại đường vòng nào cho thiết bị cũ.
     if (
       isSingleDeviceRole(user.role) &&
-      user.activeSessionId &&
+      payload.sid &&
       payload.sid !== user.activeSessionId
     ) {
       throw sessionRevokedException(user.activeDevice);

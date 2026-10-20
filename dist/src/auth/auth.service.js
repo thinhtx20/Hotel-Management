@@ -44,6 +44,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var AuthService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
+const jwt_config_1 = require("./jwt-config");
 const common_1 = require("@nestjs/common");
 const jwt_1 = require("@nestjs/jwt");
 const bcrypt = __importStar(require("bcrypt"));
@@ -101,121 +102,19 @@ let AuthService = AuthService_1 = class AuthService {
     async login(dto, device) {
         const email = (dto.email || '').trim().toLowerCase();
         const inputPassword = (dto.password || '').trim();
-        const SYSTEM_DEFAULT_ACCOUNTS = {
-            'admin@hotel.com': {
-                password: 'Admin@123',
-                fullName: 'Quản Trị Viên (Super Admin)',
-                role: client_1.Role.ADMIN,
-                phone: '0901112233',
-            },
-            'reception@hotel.com': {
-                password: 'Staff@123',
-                fullName: 'Lê Thu Hà (Lễ Tân)',
-                role: client_1.Role.RECEPTIONIST,
-                phone: '0903334455',
-            },
-            'cashier@hotel.com': {
-                password: 'Staff@123',
-                fullName: 'Trần Văn Minh (Lễ Tân – Thu Ngân)',
-                role: client_1.Role.RECEPTIONIST,
-                phone: '0906667788',
-            },
-            'customer@hotel.com': {
-                password: 'Cust@123',
-                fullName: 'Nguyễn Anh Tuấn (Khách Hàng)',
-                role: client_1.Role.CUSTOMER,
-                phone: '0918889900',
-            },
-        };
-        const systemAcc = SYSTEM_DEFAULT_ACCOUNTS[email];
-        let user = await this.prisma.user.findUnique({
+        const user = await this.prisma.user.findUnique({
             where: { email },
         });
-        if (!user && systemAcc) {
-            this.logger.log(`🌱 Tự động khởi tạo tài khoản hệ thống: ${email}...`);
-            const salt = await bcrypt.genSalt(10);
-            const hashedPassword = await bcrypt.hash(systemAcc.password, salt);
-            user = await this.prisma.user.create({
-                data: {
-                    email,
-                    password: hashedPassword,
-                    fullName: systemAcc.fullName,
-                    phone: systemAcc.phone,
-                    role: systemAcc.role,
-                    isActive: true,
-                },
-            });
-            this.logger.log(`✅ Đã khởi tạo thành công tài khoản: ${email}`);
-            this.userEvents.emitCreated(user);
-        }
         if (!user) {
             const userCount = await this.prisma.user.count();
             this.logger.warn(`[Auth] Đăng nhập thất bại: Email "${email}" không tồn tại trong hệ thống. (Tổng số user trong CSDL: ${userCount})`);
             throw new common_1.UnauthorizedException('Email hoặc mật khẩu không chính xác');
         }
         if (!user.isActive) {
-            if (email === 'admin@hotel.com') {
-                user = await this.prisma.user.update({
-                    where: { id: user.id },
-                    data: { isActive: true },
-                });
-                this.logger.log(`🛡️ Tự động kích hoạt lại tài khoản Super Admin: ${email}`);
-            }
-            else {
-                this.logger.warn(`[Auth] Đăng nhập thất bại: Tài khoản "${email}" đã bị khóa.`);
-                throw new common_1.UnauthorizedException('Tài khoản của bạn đã bị khóa');
-            }
+            this.logger.warn(`[Auth] Đăng nhập thất bại: Tài khoản "${email}" đã bị khóa.`);
+            throw new common_1.UnauthorizedException('Tài khoản của bạn đã bị khóa');
         }
-        let isMatch = await bcrypt.compare(inputPassword, user.password);
-        if (!isMatch && systemAcc) {
-            const isDefaultMatch = inputPassword === systemAcc.password ||
-                inputPassword.toLowerCase() === systemAcc.password.toLowerCase() ||
-                inputPassword === '123456';
-            if (isDefaultMatch) {
-                const salt = await bcrypt.genSalt(10);
-                const newHash = await bcrypt.hash(systemAcc.password, salt);
-                await this.prisma.user.update({
-                    where: { id: user.id },
-                    data: {
-                        password: newHash,
-                        ...(email === 'admin@hotel.com' ? { isActive: true } : {}),
-                    },
-                });
-                isMatch = true;
-            }
-        }
-        if (!isMatch) {
-            const lower = inputPassword.toLowerCase();
-            if (lower === 'admin@123') {
-                isMatch =
-                    (await bcrypt.compare('Admin@123', user.password)) ||
-                        (await bcrypt.compare('admin@123', user.password));
-            }
-            else if (lower === 'staff@123') {
-                isMatch =
-                    (await bcrypt.compare('Staff@123', user.password)) ||
-                        (await bcrypt.compare('staff@123', user.password));
-            }
-            else if (lower === 'cust@123') {
-                isMatch =
-                    (await bcrypt.compare('Cust@123', user.password)) ||
-                        (await bcrypt.compare('cust@123', user.password));
-            }
-        }
-        if (!isMatch && (process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEV_PASSWORDS === 'true')) {
-            const devAccepted = [
-                '123456',
-                'admin@123',
-                'admin123',
-                'staff@123',
-                'staff123',
-                'cust@123',
-                'cust123',
-            ];
-            if (devAccepted.includes(inputPassword.toLowerCase())) {
-                isMatch = true;
-            }
-        }
+        const isMatch = await bcrypt.compare(inputPassword, user.password);
         if (!isMatch) {
             this.logger.warn(`[Auth] Đăng nhập thất bại: Mật khẩu không chính xác cho email "${email}".`);
             throw new common_1.UnauthorizedException('Email hoặc mật khẩu không chính xác');
@@ -484,7 +383,7 @@ let AuthService = AuthService_1 = class AuthService {
         };
     }
     async refreshToken(dto) {
-        const refreshSecret = process.env.JWT_REFRESH_SECRET || 'super-secret-hotel-refresh-jwt-key-2026';
+        const refreshSecret = (0, jwt_config_1.getJwtRefreshSecret)();
         let payload;
         try {
             payload = this.jwtService.verify(dto.refreshToken, {
@@ -493,7 +392,7 @@ let AuthService = AuthService_1 = class AuthService {
         }
         catch (err) {
             try {
-                const fallbackSecret = process.env.JWT_SECRET || 'super-secret-hotel-jwt-key-2026-change-in-production';
+                const fallbackSecret = (0, jwt_config_1.getJwtSecret)();
                 payload = this.jwtService.verify(dto.refreshToken, {
                     secret: fallbackSecret,
                 });
@@ -566,7 +465,7 @@ let AuthService = AuthService_1 = class AuthService {
         if (targetUserId) {
             await this.closeDeviceSession(targetUserId, refreshPayload?.sid || accessPayload?.sid);
         }
-        if (this.redisService?.isReady) {
+        if (this.redisService) {
             if (targetUserId) {
                 if (refreshToken && refreshPayload?.jti) {
                     await this.redisService.del(`auth:refresh:${targetUserId}:${refreshPayload.jti}`);
@@ -582,6 +481,9 @@ let AuthService = AuthService_1 = class AuthService {
                     await this.redisService.set(`auth:blacklist:${accessToken}`, '1', remainingTtl);
                 }
             }
+            if (targetUserId) {
+                await this.redisService.del(`auth:user:${targetUserId}`);
+            }
         }
         return {
             success: true,
@@ -589,8 +491,8 @@ let AuthService = AuthService_1 = class AuthService {
         };
     }
     async generateTokens(userId, email, role, sessionId) {
-        const accessSecret = process.env.JWT_SECRET || 'super-secret-hotel-jwt-key-2026-change-in-production';
-        const refreshSecret = process.env.JWT_REFRESH_SECRET || 'super-secret-hotel-refresh-jwt-key-2026';
+        const accessSecret = (0, jwt_config_1.getJwtSecret)();
+        const refreshSecret = (0, jwt_config_1.getJwtRefreshSecret)();
         const accessExpiresIn = process.env.JWT_EXPIRES_IN || '1d';
         const refreshExpiresIn = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
         const accessPayload = { sub: userId, email, role, type: 'access', ...(sessionId ? { sid: sessionId } : {}) };

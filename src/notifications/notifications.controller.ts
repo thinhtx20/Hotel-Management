@@ -9,6 +9,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { NotificationsService } from './notifications.service';
 import { Role } from '@prisma/client';
@@ -16,7 +18,7 @@ import { Role } from '@prisma/client';
 @ApiTags('Notifications (Thông báo & Push notification)')
 @ApiBearerAuth('JWT-auth')
 @Controller('notifications')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
@@ -58,6 +60,7 @@ export class NotificationsController {
   }
 
   @ApiOperation({ summary: 'Gửi thông báo tới một người dùng cụ thể' })
+  @Roles(Role.ADMIN)
   @Post('send')
   async sendToUser(
     @Body()
@@ -83,6 +86,7 @@ export class NotificationsController {
   }
 
   @ApiOperation({ summary: 'Broadcast thông báo tới toàn bộ người dùng hoặc theo vai trò' })
+  @Roles(Role.ADMIN)
   @Post('broadcast')
   async broadcast(
     @Body()
