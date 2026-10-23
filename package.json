@@ -64,5 +64,15 @@
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
+  },
+  "allowScripts": {
+    "bcrypt@5.1.1": true,
+    "@prisma/client@5.22.0": true,
+    "@prisma/engines@5.22.0": true,
+    "prisma@5.22.0": true,
+    "@nestjs/core@10.4.22": true,
+    "protobufjs@7.6.6": true,
+    "@firebase/util@1.15.3": true,
+    "fsevents@2.3.3": true
   }
 }

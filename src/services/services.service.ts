@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -143,18 +144,32 @@ export class ServicesService implements OnModuleInit {
   }
 
   async create(dto: CreateHotelServiceDto) {
+    const finalPrice = dto.unitPrice ?? dto.price;
+    if (finalPrice === undefined || finalPrice <= 0) {
+      throw new BadRequestException('Đơn giá dịch vụ phải lớn hơn 0');
+    }
+
+    const finalCode = (
+      dto.code?.trim() ||
+      `SRV_${Date.now().toString(36).toUpperCase()}_${Math.floor(Math.random() * 1000)}`
+    ).toUpperCase();
+
     const existing = await this.prisma.hotelService.findUnique({
-      where: { code: dto.code.toUpperCase() },
+      where: { code: finalCode },
     });
     if (existing) {
-      throw new ConflictException(`Dịch vụ với mã ${dto.code} đã tồn tại`);
+      throw new ConflictException(`Dịch vụ với mã ${finalCode} đã tồn tại`);
     }
 
     return this.prisma.hotelService.create({
       data: {
-        ...dto,
-        code: dto.code.toUpperCase(),
-        unit: dto.unit || 'lần',
+        code: finalCode,
+        name: dto.name.trim(),
+        category: dto.category?.trim() || 'CONVENIENCE',
+        description: dto.description?.trim() || null,
+        unitPrice: finalPrice,
+        unit: dto.unit?.trim() || 'lần',
+        icon: dto.icon?.trim() || dto.imageUrl?.trim() || null,
         isAvailable: dto.isAvailable !== undefined ? dto.isAvailable : true,
       },
     });
@@ -163,20 +178,36 @@ export class ServicesService implements OnModuleInit {
   async update(id: string, dto: UpdateHotelServiceDto) {
     await this.findOne(id);
 
+    const updateData: any = {};
+    if (dto.name !== undefined) updateData.name = dto.name.trim();
+    if (dto.category !== undefined) updateData.category = dto.category.trim();
+    if (dto.description !== undefined) updateData.description = dto.description?.trim() || null;
+    if (dto.unit !== undefined) updateData.unit = dto.unit?.trim() || 'lần';
+    if (dto.isAvailable !== undefined) updateData.isAvailable = dto.isAvailable;
+
+    const finalPrice = dto.unitPrice ?? dto.price;
+    if (finalPrice !== undefined) {
+      if (finalPrice <= 0) throw new BadRequestException('Đơn giá phải lớn hơn 0');
+      updateData.unitPrice = finalPrice;
+    }
+
+    const finalIcon = dto.icon ?? dto.imageUrl;
+    if (finalIcon !== undefined) updateData.icon = finalIcon?.trim() || null;
+
     if (dto.code) {
-      const codeUpper = dto.code.toUpperCase();
+      const codeUpper = dto.code.trim().toUpperCase();
       const existing = await this.prisma.hotelService.findFirst({
         where: { code: codeUpper, NOT: { id } },
       });
       if (existing) {
         throw new ConflictException(`Mã dịch vụ ${dto.code} đã được sử dụng`);
       }
-      dto.code = codeUpper;
+      updateData.code = codeUpper;
     }
 
     return this.prisma.hotelService.update({
       where: { id },
-      data: dto,
+      data: updateData,
     });
   }
 
